@@ -1,0 +1,12 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# OS·편집기
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
