@@ -383,13 +383,12 @@ fn cli_follows_common_contract() {
             .unwrap()
             .contains("활성 레포가 아닙니다")
     );
-    // --repo로 다른 폴더의 레포를 가리킨다. 아직 구현되지 않은 명령은 종료 코드 1이다
+    // --repo로 다른 폴더의 레포를 가리킨다
     let run = sb.cli(
         &sb.home,
         &["plan", "list", &format!("--repo={}", lead.display())],
     );
-    assert_eq!(run.code, Some(1), "{}", run.stderr);
-    assert!(run.stderr.contains("아직 구현되지 않았습니다"));
+    assert!(!run.stderr.contains("활성 레포가 아닙니다"), "{}", run.stderr);
     // 명령 표의 모든 명령이 등록돼 있다(설계 8.2절). --json은 명령 이름 뒤 어디에나 올 수 있다
     for command in [
         "route",
@@ -423,15 +422,8 @@ fn cli_follows_common_contract() {
         "doctor",
     ] {
         let run = sb.cli(&lead, &[command, "x", "--json", "y"]);
-        let out = json_of(&run);
-        assert_eq!(run.code, Some(1), "{command}: {}", run.stderr);
-        assert_eq!(out["error"]["kind"], "internal", "{command}");
-        assert!(
-            out["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("아직 구현되지 않았습니다")
-        );
+        // 묶음이 합쳐지면 명령마다 결과가 달라진다. 등록과 --json 형태만 본다
+        assert!(json_of(&run)["ok"].is_boolean(), "{command}");
         assert!(
             sb.cli(&lead, &["help"])
                 .stdout
@@ -441,7 +433,7 @@ fn cli_follows_common_contract() {
     }
     // 활성 표식 없이 도는 명령: init·install·doctor·migrate·rules
     for anywhere in ["init", "install", "doctor", "migrate"] {
-        assert_eq!(sb.cli(&plain, &[anywhere]).code, Some(1), "{anywhere}");
+        assert_ne!(sb.cli(&plain, &[anywhere]).code, Some(2), "{anywhere}");
     }
     assert_eq!(sb.cli(&plain, &["rules"]).code, Some(0));
     assert_eq!(sb.cli(&plain, &["status"]).code, Some(2));
@@ -485,11 +477,7 @@ fn cli_follows_common_contract() {
             "doctor", "mode", "init", "migrate", "upgrade", "status", "why", "install",
         ] {
             let run = sb.cli(&lead, &[recovery]);
-            assert!(
-                run.code == Some(1) && run.stderr.contains("아직 구현되지 않았습니다"),
-                "{recovery}: {}",
-                run.stderr
-            );
+            assert_ne!(run.code, Some(2), "{recovery}: {}", run.stderr);
         }
         assert_eq!(sb.cli(&lead, &["rules"]).code, Some(0));
     }
