@@ -1,0 +1,10 @@
+{ "v": 1, "generated_at": 1794504200, "mode": "coor", "version": "2.0.0",
+  "tasks": [ { "key": "PAY-12", "role": "dev", "stage": "reported", "rounds": 0, "budget": 2, "sha": "4f0c1a2", "held": false } ],
+  "dispatches": [ { "key": "PAY-12", "role": "dev", "purpose": "build", "agent": "claude", "model": "…", "started_at": 1794500100, "settled": true, "sub": false } ],
+  "pending": [ { "id": "msg_3", "key": "PAY-12", "sha": "4f0c1a2", "landing": "merge_left", "hold_reason": null } ],
+  "decisions": [ { "id": "D001", "key": "PAY-12", "question": "…", "options": ["진행", "생략"], "asked_at": 1794504100, "expires_at": 1794590500 } ],
+  "ready": ["PAY-13"], "sync_pending": { "art": "9c1e0aa" },
+  "metrics": { "at": 1794504000, "since": 1794000000, "human_turns": 12, "done_tasks": 5, "turns_per_task": 2.4,
+               "unattended_dispatches": 7, "unattended_tasks": 4,
+               "subagent_calls": 31, "workflow_runs": 2, "sub_dispatches": 3 },
+  "issue": null }
