@@ -1,0 +1,35 @@
+name = "패킷이 없는 과제는 패킷 검사를 타지 않는다"
+origin = "설계 12.2절 P1"
+
+# 배정(D-12) → 완료(R-10) → 대기. 패킷이 없으므로 패킷 검사를 건너뛴다
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+pending = "C"
+expect = { verdict = "pass" }
+
+# 패킷 조건이 거짓이면 검사하지 않는다(배정 때)
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "A-1", "--role", "dev"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+# 완료·리뷰 때도 같다
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "A-1", "--role", "dev", "--completion"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "snapshot", "A-1"]
+pending = "E"
+expect = { verdict = "pass" }
+
+# 리뷰 check 10번을 건너뛴다
+[[step]]
+act = "runs_fullops"
+args = ["review", "check", "A-1"]
+pending = "E"
+expect = { verdict = "pass" }

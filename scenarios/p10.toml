@@ -1,0 +1,151 @@
+name = "context: 후보 21개는 거절하고 오프라인이면 전부 keep이다"
+origin = "설계 12.2절 P10"
+
+# 준비: 필수 문서 여섯, 코드, 문서를 커밋한다
+[[step]]
+act = "file"
+path = ".fullops-squad/FULLOPS.md"
+content = '''
+# FULLOPS.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/project.md"
+content = '''
+# project.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/README.md"
+content = '''
+# README.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/coding-style.md"
+content = '''
+# coding-style.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/security.md"
+content = '''
+# security.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/testing.md"
+content = '''
+# testing.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = "src/pay/retry.rs"
+content = '''
+pub fn retry(order: u32) -> u32 {
+    order
+}
+'''
+
+[[step]]
+act = "file"
+path = "src/pay/card.rs"
+content = '''
+pub fn charge_card() -> u32 {
+    retry(1)
+}
+'''
+
+[[step]]
+act = "file"
+path = "docs/pay.md"
+content = '''
+# 결제 설계
+
+[재시도](../src/pay/retry.rs) 정책을 적는다.
+'''
+
+[[step]]
+act = "commits"
+message = "시나리오 파일"
+
+# 준비: 인박스. `task new`(C)가 합쳐지기 전이라 파일로 둔다
+[[step]]
+act = "file"
+path = ".fullops-squad/handovers/to_dev.md"
+content = '''
+---
+id: handover-dev
+title: PAY-12 — 결제 재시도 버튼
+status: draft
+updated: 2026-11-14
+owner: dev
+summary: 결제 재시도 버튼
+key: PAY-12
+role: dev
+goal: 결제 재시도 버튼
+base: 0000000000000000000000000000000000000000
+route: direct
+from: lead
+round: 0
+budget: 2
+test_level: lite
+parallel: on
+---
+# PAY-12 — 결제 재시도 버튼
+
+## 해야 할 일과 파일 소유권
+
+- [ ] `retry`의 중복 클릭을 막는다
+  * [ ] 테스트를 더한다
+
+## 완료 보고
+
+'''
+
+[[step]]
+act = "runs_fullops"
+args = ["context", "PAY-12", "--role", "dev", "--paths", "docs/c00.md", "docs/c01.md", "docs/c02.md", "docs/c03.md", "docs/c04.md", "docs/c05.md", "docs/c06.md", "docs/c07.md", "docs/c08.md", "docs/c09.md", "docs/c10.md", "docs/c11.md", "docs/c12.md", "docs/c13.md", "docs/c14.md", "docs/c15.md", "docs/c16.md", "docs/c17.md", "docs/c18.md", "docs/c19.md", "docs/c20.md"]
+expect = { verdict = "deny", rule = "J-02", flow = "stopped", escape = "find" }
+
+# J-02에 안 걸린다. 오프라인이라 전부 keep이다
+[[step]]
+act = "runs_fullops"
+args = ["context", "PAY-12", "--role", "dev", "--paths", "docs/pay.md", ".fullops-squad/FULLOPS.md", "README.md"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "fakes"
+names = ["curl"]
+
+# 무관한 후보·충돌 후보·지시문이 든 후보·필수 문서의 신호. 분류는 cmd/context.rs의 ScriptJudge 시험이 본다
+[[step]]
+act = "curl_replies"
+when = []
+stdout = "{}"
+pending = "C"
+
+[[step]]
+act = "runs_fullops"
+env = { FULLOPS_OFFLINE = "0", TYPESAFE_API_KEY = "scenario-key" }
+args = ["context", "PAY-12", "--role", "dev", "--force", "--paths", "docs/pay.md", ".fullops-squad/FULLOPS.md", "README.md"]
+pending = "C"
+expect = { verdict = "pass", exit = 0, flow = "continues" }
