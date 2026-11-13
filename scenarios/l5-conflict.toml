@@ -1,0 +1,46 @@
+name = "merge: 충돌하면 종료 코드 3으로 멈추고 --abort로 되돌린다"
+origin = "설계 12.2절 L5(충돌). 같은 단계와 --continue: review_merge.rs의 merge_conflict_stops_then_continues"
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+pending = "C"
+
+# worker가 만든 파일(src/a-1.py)을 기본 브랜치도 다르게 만들었다
+[[step]]
+act = "file"
+path = "src/a-1.py"
+content = "print('lead')\n"
+
+[[step]]
+act = "commits"
+message = "같은 파일을 다르게 만든다"
+
+[[step]]
+act = "git"
+args = ["push", "-q", "origin", "main"]
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "human", exit = 3, rule = "M-06", flow = "stopped", escape = "--continue" }
+pending = "C"
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "deny", rule = "M-03" }
+pending = "C"
+
+[[step]]
+act = "runs_fullops"
+args = ["merge", "A-1", "--abort"]
+expect = { verdict = "pass" }
+pending = "C"
+
+[[step]]
+act = "runs_fullops"
+args = ["hold", "A-1", "--reason", "배포 창을 기다린다", "--owner", "lead", "--resume", "금요일 배포 뒤"]
+expect = { verdict = "pass" }
+pending = "C"

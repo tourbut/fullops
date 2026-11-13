@@ -1,0 +1,40 @@
+name = "merge: push가 실패하면 종료 코드 4, 다시 실행하면 push만 한다"
+origin = "설계 12.2절 L5(push 실패), 8.8절 M-09. 같은 단계: review_merge.rs의 merge_push_failure_then_rerun_pushes_only"
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+pending = "C"
+
+# 원격이 없어졌다(임시 bare 원격의 주소를 없는 경로로 바꾼다)
+[[step]]
+act = "git"
+args = ["remote", "set-url", "origin", "../missing.git"]
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "external", exit = 4, flow = "stopped" }
+pending = "C"
+
+# 완료 보고는 통합 대기로 남는다
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-06" }
+pending = "C"
+
+[[step]]
+act = "git"
+args = ["remote", "set-url", "origin", "../origin.git"]
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "pass", exit = 0, escape = "already" }
+pending = "C"
+
+[[step]]
+act = "stops"
+expect = { verdict = "pass" }
+pending = "C"

@@ -1,0 +1,50 @@
+name = "결정 검증: SHA 불일치 / 허용 밖 / 늦은 답 / 모르는 ID"
+origin = "설계 8.10절, 18.2절 E의 끝났다는 확인"
+
+# 만료(24시간)는 시각을 돌릴 수 없어 crates/fullops/tests/review_merge.rs의 decision_answer_is_validated가 본다.
+[[step]]
+act = "runs_fullops"
+args = ["decision", "add", "--question", "배포할까요?", "--key", "A-1", "--option", "진행", "--option", "생략", "--blocks", "A-1", "--sha", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--allow", "owner"]
+expect = { verdict = "pass", escape = "D001" }
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D001", "--answer", "진행", "--by", "owner"]
+expect = { verdict = "deny", rule = "DC-01", flow = "stopped" }
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D001", "--answer", "진행", "--by", "owner", "--sha", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+expect = { verdict = "deny", rule = "DC-01" }
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D001", "--answer", "진행", "--by", "stranger", "--sha", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+expect = { verdict = "deny", rule = "DC-03" }
+
+# 거절은 기록을 바꾸지 않는다
+[[step]]
+act = "runs_fullops"
+args = ["decision", "list", "--open", "--json"]
+expect = { verdict = "pass", escape = '"status":"open"' }
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D001", "--answer", "진행", "--by", "owner", "--sha", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+expect = { verdict = "pass", flow = "continues" }
+
+# 늦은 답은 덮어쓰지 않고 먼저 온 답을 돌려준다
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D001", "--answer", "생략", "--by", "owner", "--via", "bot", "--sha", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--json"]
+expect = { verdict = "pass", exit = 0, escape = '"already":true' }
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "list", "--json"]
+expect = { verdict = "pass", escape = '"answer":"진행"' }
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D009", "--answer", "진행"]
+expect = { verdict = "deny", rule = "DC-00" }

@@ -1,0 +1,107 @@
+name = "수정 커밋 뒤 이전 SHA의 리뷰로 merge"
+origin = "설계 12.2절 L4. 1.24.0: 알림. 새 판: M-04에서 멈춘다"
+
+# 이전 SHA의 리뷰를 수락까지 채우는 단계는 동사가 없어(l2.toml의 주석과 같다)
+# crates/fullops/tests/review_merge.rs의 review_of_old_sha_does_not_cover_fix_commit이 본다.
+# 여기서는 이전 SHA에 고정된 결정과 리뷰 폴더가 새 SHA를 덮지 않는 것을 본다.
+
+# 400줄 변경의 완료 보고: 배정 → 작업 → lint → done → worker_done → wait
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+pending = "C"
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+path = "src/big.py"
+lines = 400
+pending = "C"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+pending = "D"
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+pending = "C"
+
+[[step]]
+act = "orca_sends"
+subject = "A-1 완료"
+pending = "C"
+
+[[step]]
+act = "lead_waits"
+pending = "C"
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "human", exit = 3, rule = "M-04" }
+pending = "C"
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D001", "--answer", "진행", "--sha", "fullops/dev"]
+expect = { verdict = "pass" }
+pending = "C"
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "snapshot", "A-1"]
+expect = { verdict = "pass" }
+pending = "C"
+
+# 수정 배정: 같은 키를 다시 열고 worker가 수정 커밋을 더해 다시 보고한다
+[[step]]
+act = "runs_fullops"
+args = ["task", "reopen", "--role", "dev", "--key", "A-1", "--goal", "리뷰 지적 수정"]
+expect = { verdict = "pass" }
+pending = "C"
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+purpose = "fix"
+bare = true
+pending = "C"
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+path = "src/big.py"
+lines = 401
+pending = "C"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+pending = "D"
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+pending = "C"
+
+[[step]]
+act = "orca_sends"
+subject = "A-1 수정 완료"
+pending = "C"
+
+[[step]]
+act = "lead_waits"
+pending = "C"
+
+# 이전 SHA의 결정(진행)과 리뷰 폴더로는 새 SHA를 병합하지 못한다
+[[step]]
+act = "runs_fullops"
+args = ["merge", "A-1", "--completion", "msg_2"]
+expect = { rule = "M-04", flow = "stopped" }
+pending = "C"

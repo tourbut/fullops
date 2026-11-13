@@ -1,0 +1,62 @@
+name = "hold 뒤 Stop / hold된 SHA가 원격에 들어간 뒤 status"
+origin = "설계 12.2절 J4. 1.24.0: 통과 / 자동 해제"
+
+# 완료 보고는 묶음 C의 dispatch·done·wait가 만든다. 그 뒤의 단계는 그 상태에 기대므로 함께 보류다.
+# E의 명령만으로 같은 단계를 보는 시험: crates/fullops/tests/review_merge.rs의 hold_resume_and_settle.
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+pending = "C"
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-06", escape = "fullops hold" }
+pending = "C"
+
+[[step]]
+act = "runs_fullops"
+args = ["hold", "A-1", "--reason", "배포 창을 기다린다", "--owner", "lead", "--resume", "금요일 배포 뒤"]
+expect = { verdict = "pass" }
+pending = "C"
+
+# 보류는 병합 완료가 아니지만 lead의 Stop을 막지 않는다(처리 표시도 hold가 한다)
+[[step]]
+act = "stops"
+expect = { verdict = "pass", flow = "continues" }
+pending = "C"
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "deny", rule = "M-02", escape = "fullops resume" }
+pending = "C"
+
+# 보류된 SHA가 날것 병합·push로 원격에 들어갔다
+[[step]]
+act = "git"
+args = ["merge", "-q", "--no-edit", "fullops/dev"]
+pending = "C"
+
+[[step]]
+act = "git"
+args = ["push", "-q", "origin", "main"]
+pending = "C"
+
+[[step]]
+act = "runs_fullops"
+args = ["status", "--json"]
+expect = { verdict = "pass", escape = '"pending":[]' }
+pending = "C"
+
+[[step]]
+act = "runs_fullops"
+args = ["settle", "--json"]
+expect = { verdict = "pass", escape = '"landed":[]' }
+pending = "C"
+
+[[step]]
+act = "stops"
+expect = { verdict = "pass" }
+pending = "C"
