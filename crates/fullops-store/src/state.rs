@@ -1,13 +1,10 @@
 //! `state.json` 읽기·쓰기와 `status.json` 재생성(설계 6.2·6.5절).
 
-use crate::files::{
-    archive_keys, load_config, now, read_archive, read_json, read_text, write_json,
-};
+use crate::files::{load_config, now, read_json, read_text, write_json};
 use crate::lock::{StoreError, acquire};
 use crate::repo::Repo;
-use crate::turns::read_turns;
 use fullops_core::model::{
-    DEFAULT_BUDGET, DecisionStatus, Known, Plan, RoleId, STATE_V, State, Status, StatusDecision,
+    DEFAULT_BUDGET, DecisionStatus, Derived, Known, STATE_V, State, Status, StatusDecision,
     StatusDispatch, StatusPending, StatusTask, TaskKey, WorkOutcome,
 };
 use std::collections::BTreeSet;
@@ -43,11 +40,12 @@ pub fn read_state(repo: &Repo) -> Known<State> {
 }
 
 /// `state.json`을 쓰는 유일한 길(설계 6.5절). 잠금 → 다시 읽기 → 수정 → 원자 교체 → `status.json` 교체 → 잠금 해제.
-/// `lead_plan`은 lead 문맥에서만 준다. 주면 `status.json`의 `ready`를 다시 계산하고 안 주면 이전 값을 유지한다.
+/// `derived`는 그 호출이 잠금 밖에서 계산한 유도값이다(설계 6.2.3절). 넘긴 것만 `status.json`에서 바뀌고 나머지는 이전 값을 잇는다.
+/// 잠금 안에서는 `state.json`, `fullops.toml`, 이전 `status.json`만 읽는다(`turns.jsonl`·`archive.jsonl`은 읽지 않는다).
 pub fn update_state<T>(
     repo: &Repo,
     wait: Duration,
-    lead_plan: Option<&Plan>,
+    derived: Option<&Derived>,
     f: impl FnOnce(&mut State) -> T,
 ) -> Result<T, StoreError> {
     let path = repo.state_path();
@@ -61,7 +59,7 @@ pub fn update_state<T>(
     state.seq += 1;
     write_json(&path, &state)?;
     // status.json은 유도값이라 실패해도 상태 쓰기는 성공으로 둔다
-    let _ = write_json(&repo.status_path(), &build_status(repo, &state, lead_plan));
+    let _ = write_json(&repo.status_path(), &build_status(repo, &state, derived));
     Ok(out)
 }
 
@@ -80,14 +78,20 @@ fn lock_path(repo: &Repo) -> PathBuf {
 }
 
 /// Orca 패널과 봇이 읽는 요약(설계 6.2.3절). 잠금 안에서 부른다.
-fn build_status(repo: &Repo, state: &State, lead_plan: Option<&Plan>) -> Status {
+/// state에서 바로 나오는 부분은 매번 다시 만들고, 유도값(`ready`·`pending[].landing`·`metrics`)은 넘겨받은 것만 바꾼다.
+fn build_status(repo: &Repo, state: &State, derived: Option<&Derived>) -> Status {
     let previous: Option<Status> = read_json(&repo.status_path()).yes().flatten();
-    let archive = read_archive(repo).yes().unwrap_or_default();
-    let archived = archive_keys(&archive);
-    let turns = read_turns(repo).yes().unwrap_or_default();
+    // archive.jsonl을 읽지 않으므로 단계는 assigned·reported·reviewing·merged 가운데 하나다
+    let no_archive = BTreeSet::new();
 
-    let mut keys: BTreeSet<&TaskKey> = state.tasks.keys().collect();
-    keys.extend(state.dispatches.iter().map(|d| &d.key));
+    let mut keys: BTreeSet<&TaskKey> = BTreeSet::new();
+    keys.extend(
+        state
+            .dispatches
+            .iter()
+            .filter(|d| d.counts())
+            .map(|d| &d.key),
+    );
     keys.extend(state.completions.iter().filter_map(|c| c.key.as_ref()));
     let tasks = keys
         .into_iter()
@@ -95,7 +99,7 @@ fn build_status(repo: &Repo, state: &State, lead_plan: Option<&Plan>) -> Status 
             let dispatch = state
                 .dispatches
                 .iter()
-                .filter(|d| &d.key == key)
+                .filter(|d| &d.key == key && d.counts())
                 .max_by_key(|d| d.started_at);
             let completions = || {
                 state
@@ -110,18 +114,13 @@ fn build_status(repo: &Repo, state: &State, lead_plan: Option<&Plan>) -> Status 
                 role: dispatch
                     .map(|d| d.role.clone())
                     .or_else(|| latest.and_then(|c| c.role.clone())),
-                stage: fullops_core::stage_of(
-                    key,
-                    state,
-                    &archived,
-                    repo.route_path(key).is_file(),
-                ),
+                stage: fullops_core::stage_of(key, state, &no_archive, true),
                 rounds: counters.map_or(0, |t| t.rounds),
                 budget: counters.map_or(DEFAULT_BUDGET, |t| t.budget),
                 sha: latest
                     .and_then(|c| c.sha.as_ref())
                     .map(|s| s.short(7).to_string()),
-                held: completions().any(|c| c.hold.is_some() && c.landed_at.is_none()),
+                held: completions().any(|c| c.hold.is_some()),
             }
         })
         .collect();
@@ -132,30 +131,32 @@ fn build_status(repo: &Repo, state: &State, lead_plan: Option<&Plan>) -> Status 
         .filter(|c| !c.direct && c.outcome == WorkOutcome::Succeeded && c.landed_at.is_none())
         .map(|c| {
             let sha = c.sha.as_ref().map(|s| s.short(7).to_string());
-            // landing은 git이 있어야 계산할 수 있어 여기서는 같은 건의 이전 값만 잇는다
-            let landing = previous
-                .as_ref()
-                .and_then(|p| {
-                    p.pending
-                        .iter()
-                        .find(|old| old.key == c.key && old.sha == sha && sha.is_some())
-                })
-                .and_then(|old| old.landing);
+            // 넘겨받은 값이 없으면 같은 completion ID의 이전 값을 잇는다
+            let carried = || {
+                previous
+                    .as_ref()?
+                    .pending
+                    .iter()
+                    .find(|old| old.id == c.id)?
+                    .landing
+            };
             StatusPending {
+                id: c.id.clone(),
                 key: c.key.clone(),
+                landing: derived
+                    .and_then(|d| d.landing.get(c.id.as_str()).copied())
+                    .or_else(carried),
                 sha,
-                landing,
                 hold_reason: c.hold.as_ref().map(|h| h.reason.clone()),
             }
         })
         .collect();
 
-    let config = load_config(repo).ok();
-    let inbox_exists = |role: &RoleId| repo.inbox_path(role).is_file();
     Status {
         v: 1,
         generated_at: now(),
-        mode: config
+        mode: load_config(repo)
+            .ok()
             .map(|c| c.mode)
             .or(previous.as_ref().and_then(|p| p.mode)),
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -163,6 +164,7 @@ fn build_status(repo: &Repo, state: &State, lead_plan: Option<&Plan>) -> Status 
         dispatches: state
             .dispatches
             .iter()
+            .filter(|d| !d.is_reservation())
             .map(|d| StatusDispatch {
                 key: d.key.clone(),
                 role: d.role.clone(),
@@ -171,6 +173,7 @@ fn build_status(repo: &Repo, state: &State, lead_plan: Option<&Plan>) -> Status 
                 model: d.tuple.model.clone(),
                 started_at: d.started_at,
                 settled: d.settled.is_some(),
+                sub: d.is_sub(),
             })
             .collect(),
         pending,
@@ -187,16 +190,19 @@ fn build_status(repo: &Repo, state: &State, lead_plan: Option<&Plan>) -> Status 
                 expires_at: d.expires_at,
             })
             .collect(),
-        ready: match lead_plan {
-            Some(plan) => fullops_core::ready(plan, state, &archived, &inbox_exists),
-            None => previous.map(|p| p.ready).unwrap_or_default(),
-        },
+        ready: derived
+            .and_then(|d| d.ready.clone())
+            .or_else(|| previous.as_ref().map(|p| p.ready.clone()))
+            .unwrap_or_default(),
         sync_pending: state
             .sync_pending
             .iter()
             .map(|(role, sha)| (role.clone(), sha.short(7).to_string()))
             .collect(),
-        metrics: fullops_core::metrics(&turns, state, &archive),
+        metrics: derived
+            .and_then(|d| d.metrics.clone())
+            .or(previous.map(|p| p.metrics))
+            .unwrap_or_default(),
         issue: None,
     }
 }

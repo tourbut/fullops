@@ -1,9 +1,12 @@
-//! 저장 계층의 통합 시험: 레포 찾기, 설정 검증, 상태 파일의 형식·동시 갱신·복구, 세션 파일.
+//! 저장 계층의 통합 시험: 레포 찾기, 설정 검증, 상태 파일의 형식·동시 갱신·복구, 세션 파일, 설계 문서의 예시.
 
-use fullops_core::config::PolicyKind;
+use fullops_core::config::{PolicyKind, RawConfig};
+use fullops_core::explore::{ContextResult, FindResult, SearchIndex};
 use fullops_core::model::*;
 use fullops_store::*;
 use fullops_testkit::{Sandbox, Setup};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -27,6 +30,129 @@ fn bare_repo(dir: &Path) -> Repo {
     std::fs::create_dir_all(&repo.git_dir).unwrap();
     std::fs::write(repo.config_path(), Setup::default().config_toml()).unwrap();
     repo
+}
+
+/// 설계 문서에서 `marker`가 든 코드 블록(``` 사이)을 꺼낸다. 자리 채움 값은 형식에 맞는 값으로 바꾼다.
+fn design_block(marker: &str) -> String {
+    let design =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/design.md"))
+            .unwrap()
+            .replace("\r\n", "\n");
+    let at = design
+        .find(marker)
+        .unwrap_or_else(|| panic!("설계 문서에 {marker:?}가 없다"));
+    let open = design[..at].rfind("\n```").expect("여는 펜스");
+    let start = open + 1 + design[open + 1..].find('\n').expect("펜스 줄 끝") + 1;
+    let end = at + design[at..].find("\n```").expect("닫는 펜스");
+    design[start..end]
+        .replace("\"…\"", &format!("\"{SHA_A}\""))
+        .replace("<기본 브랜치 SHA>", SHA_B)
+        .replace("<첫 SessionStart의 HEAD>", SHA_A)
+}
+
+/// 예시 JSON을 타입으로 읽고 다시 쓰면 같은 JSON이다.
+fn round_trip<T: DeserializeOwned + Serialize>(text: &str) -> T {
+    let example: Value = serde_json::from_str(text).unwrap_or_else(|e| panic!("{e}\n{text}"));
+    let typed: T =
+        serde_json::from_value(example.clone()).unwrap_or_else(|e| panic!("{e}\n{text}"));
+    assert_eq!(serde_json::to_value(&typed).unwrap(), example);
+    typed
+}
+
+#[test]
+fn design_examples_round_trip_through_the_types() {
+    // 6.2.1절 state.json, 6.2.3절 status.json, 6.3절 세션 파일과 탐색 색인, 6.1.4절 route, 6.1.5절 탐색 결과와 패킷
+    let state: State = round_trip(&design_block("{ \"v\": 1, \"seq\": 42,"));
+    assert_eq!(state.runs[0].coordinator.as_deref(), Some("term_3"));
+    assert_eq!(state.dispatches[0].request, "req_5f2c9a1b7d3e4f60");
+    assert!(state.dispatches[0].counts() && state.pending().count() == 1);
+    let status: Status = round_trip(&design_block("{ \"v\": 1, \"generated_at\": 1794504200"));
+    assert_eq!(
+        (status.metrics.subagent_calls, status.dispatches[0].sub),
+        (31, false)
+    );
+    let session: Session = round_trip(&design_block(
+        "{ \"v\": 1, \"sid\": \"…\", \"host\": \"claude\"",
+    ));
+    assert_eq!((session.host, session.prompt_fp), (HostId::Claude, None));
+    let route: Route = round_trip(&design_block(
+        "{ \"v\": 1, \"key\": \"PAY-12\", \"class\": \"direct\"",
+    ));
+    assert!(!route.requires_packet);
+    let index: SearchIndex = round_trip(&design_block("\"parser\": \"map-v1\", \"config_sha256\""));
+    assert!(index.files[0].searchable);
+    let find: FindResult = round_trip(&design_block("\"options\": { \"scope\": \"code\""));
+    assert_eq!(find.candidates[0].basis, "batch");
+    let context: ContextResult =
+        round_trip(&design_block("\"options\": { \"paths\": [\"docs/pay.md\"]"));
+    assert_eq!(
+        context.candidates[0].decision,
+        fullops_core::explore::Decision::Keep
+    );
+    let packet_text = design_block("\"options\": { \"seeds\": [\"src/pay/retry.rs\"]");
+    let packet: Packet = round_trip(&packet_text);
+    assert_eq!(packet.delivered[0].category, PacketCategory::DirectEdit);
+    assert!(matches!(
+        packet.producers["documents-find"],
+        PacketProducer::Unused { .. }
+    ));
+    let outcomes_text = design_block("\"packet_input_sha256\"");
+    let _: PacketOutcomes = round_trip(&outcomes_text);
+
+    // v가 1이 아니거나 JSON이 아니면 없는 것으로 본다
+    assert!(parse_packet(packet_text.as_bytes()).is_some());
+    assert!(parse_packet(packet_text.replacen("\"v\": 1", "\"v\": 2", 1).as_bytes()).is_none());
+    assert!(parse_packet(b"{ ").is_none());
+    assert!(parse_packet_outcomes(outcomes_text.as_bytes()).is_some());
+
+    // 6.3절의 추적 줄, 6.2.2절의 턴 줄, 6.2.1절의 archive 줄, 10.3절의 설치 기록
+    let design = design_block("{ \"v\": 1, \"seq\": 42,");
+    assert!(!design.is_empty());
+    let trace = r#"{"t":1794504000,"v":1,"bin":"2.0.0","host":"claude","ev":"PreToolUse","actor":"lead","intents":["OrcaWorkerStart"],"rules":[{"id":"T-01","verdict":"deny","fp":"9c1e"}],"git":0,"orca":0,"ms":7,"err":null}"#;
+    let _: TraceLine = round_trip(trace);
+    for kind in [
+        "human",
+        "machine:orca-message",
+        "machine:task-notification",
+        "subagent",
+        "workflow",
+    ] {
+        let _: Turn =
+            round_trip(&json!({"at": 1794500000, "sid": "sid-1", "kind": kind}).to_string());
+    }
+    let archive = json!({"key": "PAY-12", "role": "dev", "sha": SHA_A, "received_at": 1, "landed_at": 2, "rounds": 0,
+                         "dispatches": [{"purpose": "build", "started_at": 1, "reason": null, "sub": false}], "direct": false});
+    let _: ArchiveLine = round_trip(&archive.to_string());
+    let deps_state = r#"{"v":1,"manifest_sha256":"ab12","hosts":{"claude":{"at":1794500000,"self_version":"2.0.0","complete":true,"failed":[]}}}"#;
+    let deps_state: DepsState = round_trip(deps_state);
+    assert!(deps_state.hosts[&HostId::Claude].complete);
+
+    // 6.1.1절 fullops.toml과 10.7절 deps.toml: 읽고 다시 쓴 글을 읽으면 같은 값이다
+    let config_text = design_block("schema = 2\napplied_version");
+    let config = parse_config(&config_text).expect("설계의 fullops.toml 예시");
+    assert_eq!(
+        (config.parallel, config.test_level),
+        (Parallel::On, TestLevel::Lite)
+    );
+    assert_eq!(config.code.extensions, [".py", ".ts"]);
+    let raw: RawConfig = toml::from_str(&config_text).unwrap();
+    assert_eq!(
+        toml::from_str::<RawConfig>(&toml::to_string(&raw).unwrap()).unwrap(),
+        raw
+    );
+    let deps_text = design_block("skill_cli = [\"npx\", \"--yes\", \"skills@latest\"]");
+    let deps = parse_deps(&deps_text).expect("설계의 deps.toml 예시");
+    assert_eq!(
+        (
+            deps.plugins.len(),
+            deps.skills.len(),
+            deps.mcp.len(),
+            deps.optional.len()
+        ),
+        (3, 9, 1, 4)
+    );
+    assert_eq!(deps.own.hosts, HostId::ALL);
+    assert_eq!(parse_deps(&toml::to_string(&deps).unwrap()), Ok(deps));
 }
 
 #[test]
@@ -80,7 +206,7 @@ fn discover_handles_root_subfolder_worktree_and_inactive_repo() {
 #[test]
 fn config_validation_follows_design() {
     let valid = "schema = 2\napplied_version = \"2.0.0\"\nmode = \"coor\"\nrouting = \"legacy\"\ntest_level = \"lite\"\n\
-subagent_level = \"lite\"\nfuture_key = 1\n\n[git]\nbase = \"main\"\nremote = \"origin\"\n\n[roles.dev]\nbranch = \"fullops/dev\"\n\
+parallel = \"on\"\nfuture_key = 1\n\n[git]\nbase = \"main\"\nremote = \"origin\"\n\n[roles.dev]\nbranch = \"fullops/dev\"\n\
 kind = \"worker\"\nabout = \"서버 코드\"\n\n[roles.architecture]\nbranch = \"fullops/architecture\"\nkind = \"design\"\n";
     let config = parse_config(valid).expect("모르는 키는 무시한다");
     assert_eq!(
@@ -109,6 +235,14 @@ kind = \"worker\"\nabout = \"서버 코드\"\n\n[roles.architecture]\nbranch = \
         config.design_role().map(RoleId::as_str),
         Some("architecture")
     );
+    for (word, parallel) in [
+        ("off", Parallel::Off),
+        ("read", Parallel::Read),
+        ("ultra", Parallel::Ultra),
+    ] {
+        let text = valid.replace("parallel = \"on\"", &format!("parallel = \"{word}\""));
+        assert_eq!(parse_config(&text).unwrap().parallel, parallel);
+    }
 
     let dev = valid.replace(
         "mode = \"coor\"",
@@ -123,6 +257,8 @@ kind = \"worker\"\nabout = \"서버 코드\"\n\n[roles.architecture]\nbranch = \
         "routing = \"split\"\ntech_plan_role = \"dev\"",
     );
     assert_eq!(parse_config(&split).unwrap().routing, Routing::Split);
+    let local = valid.replace("remote = \"origin\"\n", "");
+    assert_eq!(parse_config(&local).unwrap().base_ref(), "refs/heads/main");
 
     let invalid = [
         (
@@ -163,6 +299,14 @@ kind = \"worker\"\nabout = \"서버 코드\"\n\n[roles.architecture]\nbranch = \
                 "tech_plan_role = \"architecture\"",
             ),
         ),
+        (
+            "tech_plan_role이 등록 역할이 아님",
+            split.replace("tech_plan_role = \"dev\"", "tech_plan_role = \"art\""),
+        ),
+        (
+            "remote가 빈 문자열",
+            valid.replace("remote = \"origin\"", "remote = \"\""),
+        ),
     ];
     for (what, text) in invalid {
         assert_eq!(
@@ -178,6 +322,11 @@ kind = \"worker\"\nabout = \"서버 코드\"\n\n[roles.architecture]\nbranch = \
             valid.replace("mode = \"coor\"", "mode = \"auto\""),
         ),
         ("필수 키 없음", valid.replace("test_level = \"lite\"\n", "")),
+        ("parallel 없음", valid.replace("parallel = \"on\"\n", "")),
+        (
+            "1.24.0의 레벨 값",
+            valid.replace("parallel = \"on\"", "parallel = \"lite\""),
+        ),
         (
             "[git] 없음",
             valid.replace("[git]\nbase = \"main\"\nremote = \"origin\"\n", ""),
@@ -190,6 +339,29 @@ kind = \"worker\"\nabout = \"서버 코드\"\n\n[roles.architecture]\nbranch = \
             Err(PolicyKind::Unreadable),
             "{what}"
         );
+    }
+
+    // 기준 시점의 설정: 없으면 내장 기본값, 읽히지 않거나 검증을 어기면 기본값과 fell_back
+    let custom =
+        format!("{valid}\n[review]\nmin_code_lines = 10\n").replace("\"lite\"", "\"full\"");
+    let base = baseline(Some(&custom));
+    assert_eq!(
+        (base.review.min_code_lines, base.test_level, base.fell_back),
+        (10, TestLevel::Full, false)
+    );
+    let missing = baseline(None);
+    assert_eq!(
+        (
+            missing.review.min_code_lines,
+            missing.test_level,
+            missing.fell_back
+        ),
+        (400, TestLevel::Lite, false)
+    );
+    assert!(missing.code.extensions.iter().any(|e| e == ".py"));
+    for broken in ["schema = = 2", &valid.replace("schema = 2", "schema = 1")] {
+        let fell = baseline(Some(broken));
+        assert_eq!((fell.review.min_code_lines, fell.fell_back), (400, true));
     }
 
     // 작업 트리의 파일을 읽는 쪽도 같은 판정을 낸다
@@ -210,38 +382,18 @@ kind = \"worker\"\nabout = \"서버 코드\"\n\n[roles.architecture]\nbranch = \
 
 /// 설계 6.2.1절의 예시에 모르는 필드를 더한 것.
 fn design_state() -> Value {
-    json!({
-      "v": 1, "seq": 42,
-      "runs": [ { "id": "run_ab12", "owner": "lead", "opened_at": 1794500000, "closed_at": null } ],
-      "dispatches": [ {
-          "id": "dsp_01", "task_id": "task_9", "run": "run_ab12", "key": "PAY-12", "role": "dev",
-          "purpose": "build", "tuple": { "agent": "claude", "model": "m", "effort": "medium" },
-          "terminal": "term_7", "worktree": "C:/repo/dev", "session_mode": "fresh", "reason": null,
-          "started_at": 1794500100, "bound_session": null,
-          "reported": { "branch": "fullops/dev", "sha": SHA_A, "lint_head": SHA_A,
-                        "followups": [ { "role": "tester", "text": "독립 QA" } ], "at": 1794503000 },
-          "settled": { "how": "done", "outcome": "succeeded", "message": "msg_3", "at": 1794503050 },
-          "limit_escalated": false, "future_dispatch_field": { "nested": [1, 2.5, "x"] } } ],
-      "completions": [ {
-          "id": "msg_3", "dispatch": "dsp_01", "key": "PAY-12", "role": "dev", "branch": "fullops/dev",
-          "sha": SHA_A, "sha_source": "done", "direct": false, "outcome": "succeeded",
-          "received_at": 1794503050, "hold": null, "released_hold": null,
-          "landed_at": null, "drift": null } ],
-      "messages": [ { "id": "msg_3", "delivery": "dlv_8", "run": "run_ab12", "type": "worker_done",
-                      "dispatch": "dsp_01", "received_at": 1794503050, "acked_at": null } ],
-      "tasks": { "PAY-12": { "rounds": 0, "budget": 2, "limit_redispatch": 0,
-                             "last_tuple": { "agent": "claude", "model": "m", "effort": "medium" } } },
-      "sync_pending": { "art": SHA_B },
-      "snapshots": [ { "review": "PAY-12@4f0c1a2b3c4d", "path": "C:/repo/.fullops-review-7f3a", "head": SHA_A,
-                       "base": SHA_B, "state": "active", "implementer_session": "sid-1", "reviewer_dispatch": null,
-                       "owner": "lead", "created_at": 1794504000, "hold": null } ],
-      "decisions": [ { "id": "D001", "status": "open", "key": "PAY-12", "question": "리뷰할까?", "options": ["진행", "생략"],
-                       "blocks": ["PAY-12"], "asked_at": 1794504100, "origin": "user", "sha": SHA_A,
-                       "risks": [], "allow": [], "expires_at": 1794590500,
-                       "answer": null, "decided_by": null, "via": null, "closed_at": null } ],
-      "next_decision": 2,
-      "future_top_field": true
-    })
+    let mut state: Value = serde_json::from_str(&design_block("{ \"v\": 1, \"seq\": 42,")).unwrap();
+    state["future_top_field"] = json!(true);
+    state["dispatches"][0]["future_dispatch_field"] = json!({ "nested": [1, 2.5, "x"] });
+    state["runs"][0]["future_run_field"] = json!(null);
+    state
+}
+
+fn status_of(repo: &Repo) -> Status {
+    read_json(&repo.status_path())
+        .yes()
+        .flatten()
+        .expect("status.json")
 }
 
 #[test]
@@ -262,6 +414,10 @@ fn state_keeps_design_format_and_unknown_fields() {
     assert_eq!(state.runs[0].owner, RunOwner::Lead);
     assert_eq!(state.pending().count(), 1);
     assert_eq!(state.snapshots[0].key(), "PAY-12");
+    assert_eq!(
+        ack_by(&state, &MessageId::new("msg_3").unwrap()),
+        AckBy::Merge
+    );
 
     // 아무것도 고치지 않고 다시 쓰면 seq만 달라진다
     update_state(&repo, CLI_WAIT, None, |_| ()).unwrap();
@@ -271,16 +427,8 @@ fn state_keeps_design_format_and_unknown_fields() {
     expected["seq"] = json!(43);
     assert_eq!(written, expected);
 
-    // status.json은 같은 잠금 안에서 다시 만든다
-    let plan = fullops_core::parse_plan(
-        "| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n| PAY-13 | 영수증 | art | 대기 | 지시 |\n",
-        "",
-    );
-    update_state(&repo, CLI_WAIT, Some(&plan), |_| ()).unwrap();
-    let status: Status = read_json(&repo.status_path())
-        .yes()
-        .flatten()
-        .expect("status.json");
+    // status.json의 state에서 나오는 부분은 같은 잠금 안에서 매번 다시 만든다
+    let status = status_of(&repo);
     assert_eq!(
         (status.mode, status.version.as_str()),
         (Some(Mode::Coor), env!("CARGO_PKG_VERSION"))
@@ -301,15 +449,94 @@ fn state_keeps_design_format_and_unknown_fields() {
         ),
         (1, 1, true)
     );
-    assert_eq!(status.ready, [TaskKey::new("PAY-13").unwrap()]);
     assert_eq!(
         status.sync_pending.values().next().map(String::as_str),
         Some("9c1e0aa")
     );
-    // lead 문맥이 아닌 쓰기는 ready의 이전 값을 유지한다
-    update_state(&repo, CLI_WAIT, None, |_| ()).unwrap();
-    let status: Status = read_json(&repo.status_path()).yes().flatten().unwrap();
-    assert_eq!(status.ready.len(), 1);
+    // 유도값은 넘겨받기 전에는 비어 있다
+    assert!(status.ready.is_empty() && status.pending[0].landing.is_none());
+    assert_eq!(status.metrics, Metrics::default());
+}
+
+#[test]
+fn status_changes_only_the_derived_values_it_was_given() {
+    let sb = Sandbox::empty();
+    let repo = bare_repo(&sb.root);
+    std::fs::create_dir_all(repo.shared()).unwrap();
+    std::fs::write(repo.state_path(), design_state().to_string()).unwrap();
+    // 영구히 자라는 파일은 잠금 안에서 읽지 않는다: 깨진 줄이 있어도 상관없다
+    std::fs::write(repo.archive_path(), "{ 쓰다 만\n").unwrap();
+    std::fs::write(repo.turns_path(), "{ 쓰다 만\n").unwrap();
+
+    let ready = vec![TaskKey::new("PAY-13").unwrap()];
+    let derived = Derived {
+        ready: Some(ready.clone()),
+        landing: [("msg_3".to_string(), Landing::PushLeft)].into(),
+        metrics: Some(Metrics {
+            at: 7,
+            human_turns: 12,
+            subagent_calls: 31,
+            ..Metrics::default()
+        }),
+    };
+    update_state(&repo, CLI_WAIT, Some(&derived), |_| ()).unwrap();
+    let status = status_of(&repo);
+    assert_eq!(status.ready, ready);
+    assert_eq!(status.pending[0].landing, Some(Landing::PushLeft));
+    assert_eq!((status.metrics.at, status.metrics.subagent_calls), (7, 31));
+
+    // 넘기지 않은 쓰기(hook, lead가 아닌 CLI)는 이전 값을 잇는다
+    // landing은 completion ID로 잇는다: SHA가 없는 건도 이어진다
+    update_state(&repo, CLI_WAIT, None, |s| s.completions[0].sha = None).unwrap();
+    let kept = status_of(&repo);
+    assert_eq!(
+        (kept.pending[0].id.as_str(), kept.pending[0].sha.as_deref()),
+        ("msg_3", None)
+    );
+    assert_eq!(
+        (
+            kept.ready.clone(),
+            kept.pending[0].landing,
+            kept.metrics.human_turns
+        ),
+        (ready, Some(Landing::PushLeft), 12)
+    );
+    // 넘긴 것만 바뀐다
+    let only_landing = Derived {
+        landing: [("msg_3".to_string(), Landing::MergeLeft)].into(),
+        ..Derived::default()
+    };
+    update_state(&repo, CLI_WAIT, Some(&only_landing), |_| ()).unwrap();
+    let status = status_of(&repo);
+    assert_eq!(
+        (
+            status.pending[0].landing,
+            status.ready.len(),
+            status.metrics.at
+        ),
+        (Some(Landing::MergeLeft), 1, 7)
+    );
+
+    // 하위 배정과 예약 기록: tasks에서 빠지고, 예약 기록은 dispatches에도 없다
+    update_state(&repo, CLI_WAIT, None, |s| {
+        let mut sub = s.dispatches[0].clone();
+        sub.id = DispatchId::new("ctx_sub").unwrap();
+        sub.key = TaskKey::new("SUB-1").unwrap();
+        sub.sub_of = Some(s.dispatches[0].id.clone());
+        sub.settled = None;
+        let mut reserved = sub.clone();
+        reserved.id = DispatchId::new("pending:req_1").unwrap();
+        reserved.key = TaskKey::new("RES-1").unwrap();
+        reserved.sub_of = None;
+        s.dispatches.extend([sub, reserved]);
+    })
+    .unwrap();
+    let status = status_of(&repo);
+    assert_eq!(status.tasks.len(), 1);
+    assert_eq!(
+        status.dispatches.iter().map(|d| d.sub).collect::<Vec<_>>(),
+        [false, true]
+    );
 }
 
 #[test]
@@ -454,7 +681,7 @@ fn lock_is_released_when_holder_dies() {
 }
 
 #[test]
-fn session_file_is_created_once_and_merged() {
+fn session_file_is_created_once_merged_and_keeps_unknown_fields() {
     let sb = Sandbox::empty();
     let repo = bare_repo(&sb.root);
     let sid = SessionId::from_host("abc/def 1").unwrap();
@@ -465,15 +692,14 @@ fn session_file_is_created_once_and_merged() {
         Err(StoreError::Missing)
     ));
 
-    // 설계 6.3절의 예시
-    let example = json!({
-        "v": 1, "sid": "abc_def_1", "host": "claude", "started_at": 1794500000, "last_seen": 1794504000,
-        "terminal": "term_3", "mode_at_start": ["coor", null, null], "anchor": SHA_A, "turn": 3,
-        "dispatch": { "id": "dsp_01", "task": "task_9", "bound_by": "preamble" },
-        "routed": ["PAY-12"],
-        "blocks": { "X-07": { "fp": "9c1e", "turn": 3 } },
-        "noticed": ["hook-error:io", "plan-parse"]
-    });
+    // 설계 6.3절의 예시에 모르는 필드를 더한 것
+    let mut example: Value = serde_json::from_str(&design_block(
+        "{ \"v\": 1, \"sid\": \"…\", \"host\": \"claude\"",
+    ))
+    .unwrap();
+    example["sid"] = json!("abc_def_1");
+    example["future_field"] = json!({ "a": [1] });
+    example["dispatch"]["future_field"] = json!(true);
     let session: Session = serde_json::from_value(example.clone()).unwrap();
     assert_eq!(serde_json::to_value(&session).unwrap(), example);
     assert!(create_session(&repo, &session, HOOK_WAIT).unwrap());
@@ -486,6 +712,7 @@ fn session_file_is_created_once_and_merged() {
 
     update_session(&repo, &sid, HOOK_WAIT, |s| {
         s.turn += 1;
+        s.prompt_fp = Some("0123456789abcdef".into());
         assert!(s.notice("state-broken") && !s.notice("plan-parse"));
         s.add_routed(&TaskKey::new("PAY-12").unwrap());
         s.add_routed(&TaskKey::new("PAY-13").unwrap());
@@ -493,6 +720,7 @@ fn session_file_is_created_once_and_merged() {
             id: DispatchId::new("dsp_02").unwrap(),
             task: None,
             bound_by: BoundBy::Terminal,
+            extra: Extra::new(),
         });
     })
     .unwrap();
@@ -502,6 +730,15 @@ fn session_file_is_created_once_and_merged() {
         (4, 2, 3)
     );
     assert!(saved.blocks.is_empty() && saved.anchor == Sha::new(SHA_A).ok());
+    assert_eq!(saved.extra["future_field"], json!({ "a": [1] }));
+    assert_eq!(saved.prompt_fp.as_deref(), Some("0123456789abcdef"));
+    for host in ["codex", "grok", "agy"] {
+        example["host"] = json!(host);
+        assert!(
+            serde_json::from_value::<Session>(example.clone()).is_ok(),
+            "{host}"
+        );
+    }
 }
 
 #[test]
@@ -510,51 +747,239 @@ fn committed_records_round_trip() {
     let repo = bare_repo(&sb.root);
     let (key, role) = (TaskKey::new("PAY-12").unwrap(), RoleId::new("dev").unwrap());
 
-    // 설계 6.1.4절의 예시
-    let example = json!({
-        "v": 1, "key": "PAY-12", "class": "direct", "role": "dev",
-        "deliverables": ["D03"], "origin": "user", "decided_by": "jev",
-        "reason": "", "request_file": "docs/requests/pay-12.md", "request_sha256": "ab12",
-        "probabilities": { "scope": 0.91, "role": 0.77 },
-        "thresholds": { "scope": 0.8, "role": 0.6, "deliverable": 0.5 },
-        "tuples": { "dev": { "agent": "claude", "model": "m", "effort": "medium", "why": "기존 패턴 구현" } },
-        "created_at": 1794500000, "history": []
-    });
     assert_eq!(read_route(&repo, &key), Known::Yes(None));
+    let example: Value = serde_json::from_str(&design_block(
+        "{ \"v\": 1, \"key\": \"PAY-12\", \"class\": \"direct\"",
+    ))
+    .unwrap();
     write_route(&repo, &serde_json::from_value(example.clone()).unwrap()).unwrap();
     assert_eq!(
         serde_json::to_value(read_route(&repo, &key).yes().flatten().unwrap()).unwrap(),
         example
     );
+    // requires_packet이 없는 기록은 false로 읽는다
+    let mut old = example.clone();
+    old.as_object_mut().unwrap().remove("requires_packet");
+    assert!(
+        !serde_json::from_value::<Route>(old)
+            .unwrap()
+            .requires_packet
+    );
 
     assert_eq!(read_inbox(&repo, &role), Known::Yes(None));
     let inbox = format!(
-        "---\nid: handover-dev\ntitle: PAY-12 — 결제 재시도 버튼\nstatus: draft\nupdated: 2026-11-13\nowner: dev\nsummary: 결제 재시도 버튼\n\
-key: PAY-12\nrole: dev\ngoal: 결제 재시도 버튼\nbase: {SHA_A}\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nsubagent_level: lite\n---\n# 본문\n"
+        "---\nid: handover-dev\ntitle: \"PAY-12 — 결제: 재시도 버튼\"\nstatus: draft\nupdated: 2026-11-13\nowner: dev\nsummary: 결제 재시도 버튼\n\
+key: PAY-12\nrole: dev\ngoal: 결제 재시도 버튼\nbase: {SHA_A}\nroute: direct   # direct | design | product\nfrom: lead\nround: 0\nbudget: 2\n\
+test_level: lite\nparallel: on\n---\n# 본문\n"
     );
     std::fs::create_dir_all(repo.inbox_path(&role).parent().unwrap()).unwrap();
     std::fs::write(repo.inbox_path(&role), &inbox).unwrap();
     let read = read_inbox(&repo, &role).yes().flatten().expect("인박스");
     assert_eq!(
-        (read.key, read.route, read.budget),
-        (key.clone(), RouteClass::Direct, 2)
+        (read.key, read.route, read.budget, read.parallel),
+        (key.clone(), RouteClass::Direct, 2, Parallel::On)
     );
-    std::fs::write(repo.inbox_path(&role), inbox.replace("key: PAY-12\n", "")).unwrap();
-    assert_eq!(read_inbox(&repo, &role), Known::Unknown("inbox_syntax"));
+    for broken in [
+        inbox.replace("key: PAY-12\n", ""),
+        inbox.replace("parallel: on", "subagent_level: lite"),
+        inbox.replace("title: \"PAY-12", "title: \"PAY-12 \\x"),
+    ] {
+        std::fs::write(repo.inbox_path(&role), broken).unwrap();
+        assert_eq!(read_inbox(&repo, &role), Known::Unknown("inbox_syntax"));
+    }
 
     assert!(
         read_plan(&repo, "").yes().unwrap().rows.is_empty(),
         "PLANS.md가 없으면 빈 계획이다"
     );
 
-    let line = json!({"key": "PAY-12", "role": "dev", "sha": SHA_A, "received_at": 1, "landed_at": 2, "rounds": 0,
-                      "dispatches": [{"purpose": "build", "started_at": 1, "reason": null}], "direct": false});
-    append_archive(&repo, &serde_json::from_value(line.clone()).unwrap()).unwrap();
+    // archive.jsonl: 키는 줄 훑기로 뽑는다. landed_at이 없는 줄과 결정 줄, 깨진 줄은 세지 않는다
+    assert_eq!(archive_keys(&repo), Known::Yes(Default::default()));
+    let line = |key: &str, landed: Value| {
+        json!({"key": key, "role": "dev", "sha": SHA_A, "received_at": 1, "landed_at": landed, "rounds": 0,
+               "dispatches": [{"purpose": "build", "started_at": 1, "reason": null, "sub": true}], "direct": false})
+    };
+    append_archive(
+        &repo,
+        &serde_json::from_value(line("PAY-12", json!(2))).unwrap(),
+    )
+    .unwrap();
+    append_archive(
+        &repo,
+        &serde_json::from_value(line("PAY-13", json!(null))).unwrap(),
+    )
+    .unwrap();
+    append_line(&repo.archive_path(), &json!({"decision": {"id": "D001"}})).unwrap();
+    append_line(&repo.archive_path(), &json!("깨진 줄")).unwrap();
     let archive = read_archive(&repo).yes().unwrap();
-    assert_eq!(serde_json::to_value(&archive[0]).unwrap(), line);
-    assert!(archive_keys(&archive).contains(&key));
     assert_eq!(
-        fullops_core::stage_of(&key, &State::default(), &archive_keys(&archive), true),
+        serde_json::to_value(&archive[0]).unwrap(),
+        line("PAY-12", json!(2))
+    );
+    let keys = archive_keys(&repo).yes().unwrap();
+    assert_eq!(
+        keys.iter().map(TaskKey::as_str).collect::<Vec<_>>(),
+        ["PAY-12"]
+    );
+    assert_eq!(
+        fullops_core::stage_of(&key, &State::default(), &keys, true),
         Stage::Done
+    );
+
+    // 패킷: 없거나 v가 다르면 없는 것으로 본다
+    assert_eq!(read_packet(&repo, &key), Known::Yes(None));
+    let packet = design_block("\"options\": { \"seeds\": [\"src/pay/retry.rs\"]");
+    std::fs::create_dir_all(repo.explore_dir()).unwrap();
+    std::fs::write(repo.packet_path(&key), &packet).unwrap();
+    assert_eq!(read_packet(&repo, &key).yes().flatten().unwrap().key, key);
+    std::fs::write(
+        repo.packet_path(&key),
+        packet.replacen("\"v\": 1", "\"v\": 9", 1),
+    )
+    .unwrap();
+    assert_eq!(read_packet(&repo, &key), Known::Yes(None));
+    assert_eq!(read_packet_outcomes(&repo, &key), Known::Yes(None));
+}
+
+#[test]
+fn deps_toml_is_found_in_order_and_validated() {
+    let example = design_block("skill_cli = [\"npx\", \"--yes\", \"skills@latest\"]");
+    let builtin = example.replace(
+        "source = \"tourbut/fullops\"",
+        "source = \"builtin/fullops\"",
+    );
+    let sb = Sandbox::empty();
+    let root = sb.root.join("plugin");
+    std::fs::create_dir_all(&root).unwrap();
+
+    // 플러그인 루트에 없으면 내장 사본이다(이 시험은 사용자 홈을 바꾸지 않으므로 홈의 사본이 있으면 건너뛴다)
+    if fullops_home().is_none_or(|home| !home.join("deps.toml").exists()) {
+        let (deps, path) = load_deps(Some(&root), &builtin).unwrap();
+        assert_eq!(
+            (deps.own.source.as_str(), path),
+            ("builtin/fullops", PathBuf::new())
+        );
+    }
+    std::fs::write(root.join("deps.toml"), &example).unwrap();
+    let (deps, path) = load_deps(Some(&root), &builtin).unwrap();
+    assert_eq!(
+        (deps.own.source.as_str(), path),
+        ("tourbut/fullops", root.join("deps.toml"))
+    );
+    assert_eq!(deps.skill_cli, ["npx", "--yes", "skills@latest"]);
+    // 찾은 파일이 규칙에 맞지 않으면 내장 사본으로 넘어가지 않는다
+    std::fs::write(
+        root.join("deps.toml"),
+        example.replace("schema = 1", "schema = 2"),
+    )
+    .unwrap();
+    assert_eq!(load_deps(Some(&root), &builtin), Err(DepsError::Schema(2)));
+
+    let invalid = [
+        (
+            "모르는 마켓플레이스",
+            example.replace("pstack@cursor-plugins", "pstack@nowhere"),
+        ),
+        (
+            "플러그인에 agy",
+            example.replace(
+                "hosts = [\"claude\", \"codex\"]",
+                "hosts = [\"claude\", \"agy\"]",
+            ),
+        ),
+        (
+            "https가 아닌 MCP",
+            example.replace("https://mcp.context7.com/mcp", "http://localhost/mcp"),
+        ),
+        (
+            "모르는 optional 종류",
+            example.replacen("kind = \"tool\"", "kind = \"binary\"", 1),
+        ),
+        (
+            "빈 skill_cli",
+            example.replace("[\"npx\", \"--yes\", \"skills@latest\"]", "[]"),
+        ),
+    ];
+    for (what, text) in invalid {
+        assert!(
+            matches!(parse_deps(&text), Err(DepsError::Invalid(_))),
+            "{what}"
+        );
+    }
+    let unreadable = [
+        ("TOML이 아님", "schema = = 1".to_string()),
+        ("schema 없음", example.replace("schema = 1\n", "")),
+        ("[self] 없음", example.replace("[self]", "[other]")),
+        (
+            "모르는 호스트",
+            example.replace("hosts = [\"grok\", \"agy\"]", "hosts = [\"cursor\"]"),
+        ),
+    ];
+    for (what, text) in unreadable {
+        assert!(
+            matches!(parse_deps(&text), Err(DepsError::Parse(_))),
+            "{what}"
+        );
+    }
+    // 모르는 표와 필드는 무시하고 skill_cli는 생략할 수 있다
+    let extra = format!(
+        "{}\n[future]\nx = 1\n",
+        example.replace(
+            "skill_cli = [\"npx\", \"--yes\", \"skills@latest\"]",
+            "other = 1"
+        )
+    );
+    assert_eq!(
+        parse_deps(&extra).unwrap().skill_cli,
+        ["npx", "--yes", "skills@latest"]
+    );
+}
+
+#[test]
+fn caps_table_matches_design() {
+    // 설계 7.2절의 능력 표를 읽어 caps_of와 견준다
+    let design =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/design.md"))
+            .unwrap();
+    let table = design
+        .split("| `Caps` | `claude` | `codex` | `grok` | `agy` |")
+        .nth(1)
+        .expect("능력 표");
+    let mut rows = 0;
+    for line in table.lines().skip(2).take_while(|l| l.starts_with('|')) {
+        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+        let field = cells[1].trim_matches('`');
+        for (host, cell) in HostId::ALL.into_iter().zip(&cells[2..6]) {
+            let caps = caps_of(host);
+            let flag = |value: bool| if value { "참" } else { "거짓" };
+            let actual = match field {
+                "stop_failure" => flag(caps.stop_failure),
+                "background_wake" => flag(caps.background_wake),
+                "prompt_event" => flag(caps.prompt_event),
+                "context_at_start" => flag(caps.context_at_start),
+                "context_at_prompt" => flag(caps.context_at_prompt),
+                "user_warn" => flag(caps.user_warn),
+                "workflow" => flag(caps.workflow),
+                "subagent_tool" => caps.subagent_tool,
+                "orca_agent" => caps.orca_agent,
+                other => panic!("표에 모르는 능력이 있다: {other}"),
+            };
+            // 칸은 값 뒤에 괄호로 사유를 붙일 수 있다
+            assert!(
+                cell.trim_matches('`').starts_with(actual)
+                    || cell.starts_with(&format!("`{actual}`")),
+                "{field} {host}: {cell}"
+            );
+            assert_eq!(host_of_agent(caps.orca_agent), Some(host));
+        }
+        rows += 1;
+    }
+    assert_eq!(rows, 9, "Caps의 필드는 아홉이다");
+    assert_eq!(host_of_agent("cursor"), None);
+    assert!(orca_wakes(Some("term_3"), Some("term_3")));
+    assert!(
+        !orca_wakes(Some("term_3"), Some("term_4"))
+            && !orca_wakes(None, Some("term_3"))
+            && !orca_wakes(Some(""), Some(""))
     );
 }

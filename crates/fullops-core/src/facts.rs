@@ -2,9 +2,9 @@
 
 use crate::config::PolicyError;
 use crate::model::{
-    Actor, BoundBy, Caps, ChangeSet, Config, DispatchId, HeadRef, Inbox, Known, Landing, Mode,
-    Need, Plan, ReviewEvidence, RoleId, Route, RunId, Seat, Session, Sha, SnapshotState, State,
-    TaskKey, same_path,
+    Actor, BoundBy, Caps, ChangeSet, Config, DispatchId, HeadRef, HostId, Inbox, Known, Landing,
+    Mode, Need, Plan, ReviewEvidence, RoleId, Route, RunId, Seat, Session, Sha, SkillText,
+    SnapshotState, State, TaskKey, same_path,
 };
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -12,6 +12,8 @@ use std::path::Path;
 /// 모든 사실은 지연 계산이고, 읽지 못하면 `Unknown`이다. 호출 상한(설계 7.1절)을 넘는 요청도 `Unknown`이다.
 pub trait Facts {
     fn now(&self) -> i64;
+    /// hook 인자로 고른 어댑터의 ID. S-01의 pstack 문장과 S-06이 쓴다.
+    fn host(&self) -> HostId;
     fn caps(&self) -> Caps;
     fn config(&mut self) -> Result<&Config, PolicyError>;
     /// 설정 오류 또는 세션 중 모드 변경.
@@ -36,6 +38,10 @@ pub trait Facts {
     fn qa_commit_candidates(&mut self, include_unstaged: bool) -> Known<Vec<String>>;
     fn orca_settled(&mut self, id: &DispatchId) -> Known<bool>;
     fn waiter_alive(&mut self, run: &RunId) -> Known<bool>;
+    /// 세션 핸들(설계 4절). 환경 변수 `ORCA_AGENT_SESSION_ID` → `ORCA_TERMINAL_HANDLE`에서 읽는다.
+    fn session_handle(&self) -> Option<String>;
+    /// S-06: 설치된 사용자 스킬의 본문. 파일이 없으면 `Yes(None)`.
+    fn user_skill(&mut self, name: &str) -> Known<Option<SkillText>>;
 }
 
 /// 호출자 판정의 입력. 모두 git 프로세스 없이 얻는 값이다.
@@ -46,9 +52,9 @@ pub struct ActorInput<'a> {
     pub worktree: &'a str,
     /// 세션 파일의 `dispatch.id`.
     pub session_dispatch: Option<&'a DispatchId>,
-    /// 환경 변수 `ORCA_TERMINAL_HANDLE`.
+    /// 세션 핸들(환경 변수 `ORCA_AGENT_SESSION_ID` → `ORCA_TERMINAL_HANDLE`).
     pub terminal: Option<&'a str>,
-    /// 읽지 못했으면 `None`. 그때는 2·3번 판정을 건너뛴다.
+    /// 읽지 못했으면 `None`. 그때는 2·3번 판정을 건너뛰고 `sub`는 거짓이다.
     pub state: Option<&'a State>,
 }
 
@@ -68,6 +74,7 @@ pub fn resolve_actor(input: &ActorInput) -> ResolvedActor {
     {
         let mut matches = state.dispatches.iter().filter(|d| {
             d.settled.is_none()
+                && !d.is_reservation()
                 && d.terminal.as_deref() == Some(terminal)
                 && same_path(&d.worktree, input.worktree)
         });
@@ -76,28 +83,32 @@ pub fn resolve_actor(input: &ActorInput) -> ResolvedActor {
             bind = Some((only.id.clone(), only.task_id.clone(), BoundBy::Terminal));
         }
     }
-    let seat = seat(input, dispatch.is_some());
+    let seat = seat(input);
     let direct_dev = input.config.mode == Mode::Dev && seat == Seat::Lead && dispatch.is_none();
+    let sub = match (&dispatch, input.state) {
+        (Some(id), Some(state)) => state.dispatch(id).is_some_and(|d| d.is_sub()),
+        _ => false,
+    };
     ResolvedActor {
         actor: Actor {
             seat,
             dispatch,
             direct_dev,
+            sub,
         },
         bind,
     }
 }
 
-/// dispatch가 묶인 세션의 좌석은 4~6번으로만 정한다(3번의 리뷰 사본 판정을 건너뛴다).
-fn seat(input: &ActorInput, bound: bool) -> Seat {
+/// 좌석은 3~6번으로 정한다. dispatch가 묶여도 3번을 본다: 배정받은 리뷰어가 `Reviewer`가 된다.
+fn seat(input: &ActorInput) -> Seat {
     let config = input.config;
-    let is_snapshot = !bound
-        && input.state.is_some_and(|state| {
-            state
-                .snapshots
-                .iter()
-                .any(|s| s.state == SnapshotState::Active && same_path(&s.path, input.worktree))
-        });
+    let is_snapshot = input.state.is_some_and(|state| {
+        state
+            .snapshots
+            .iter()
+            .any(|s| s.state == SnapshotState::Active && same_path(&s.path, input.worktree))
+    });
     if is_snapshot {
         return Seat::Reviewer;
     }
@@ -141,7 +152,7 @@ mod tests {
             routing: Routing::Legacy,
             tech_plan_role: None,
             test_level: TestLevel::Lite,
-            subagent_level: SubagentLevel::Lite,
+            parallel: Parallel::On,
             base: "main".into(),
             remote: None,
             roles: [RoleKind::Worker, RoleKind::Design, RoleKind::Coordinator]
@@ -156,6 +167,7 @@ mod tests {
     fn dispatch(id: &str, terminal: &str, worktree: &str) -> Dispatch {
         Dispatch {
             id: DispatchId::new(id).unwrap(),
+            request: "req_0000000000000001".into(),
             task_id: Some("task_1".into()),
             run: RunId::new("run_1").unwrap(),
             key: TaskKey::new("A-1").unwrap(),
@@ -172,6 +184,8 @@ mod tests {
             reason: None,
             started_at: 1,
             bound_session: None,
+            sub_of: None,
+            brief: None,
             reported: None,
             settled: None,
             limit_escalated: false,
@@ -317,6 +331,19 @@ mod tests {
             state: Some(&state),
         };
         assert_eq!(resolve_actor(&review(None)).actor.seat, Seat::Reviewer);
+        // dispatch로 배정받은 리뷰어도 Reviewer다. 하위 배정이면 sub가 참이다
+        let mut sub_state = state.clone();
+        sub_state.dispatches[1].worktree = "C:/w/.fullops-review-1".into();
+        sub_state.dispatches[1].sub_of = DispatchId::new("dsp_1").ok();
+        let reviewer = resolve_actor(&ActorInput {
+            state: Some(&sub_state),
+            ..review(Some("term_2"))
+        });
+        assert_eq!(
+            (reviewer.actor.seat.clone(), reviewer.actor.label()),
+            (Seat::Reviewer, "reviewer+sub".to_string())
+        );
+        assert!(reviewer.actor.sub && reviewer.bind.is_some());
         // 정산된 dispatch의 터미널로는 묶지 않는다
         assert!(
             resolve_actor(&ActorInput {
@@ -327,5 +354,55 @@ mod tests {
             .actor
             .is_lead()
         );
+    }
+
+    #[test]
+    fn sub_open_follows_the_parents_own_run() {
+        let id = |s: &str| DispatchId::new(s).unwrap();
+        let run = || RunId::new("run_sub").unwrap();
+        let mut sub = dispatch("dsp_2", "term_2", "C:/w/dev");
+        sub.run = run();
+        sub.sub_of = Some(id("dsp_1"));
+        let mut state = State::default();
+        state.dispatches = vec![dispatch("dsp_1", "term_1", "C:/w/dev"), sub];
+        state.runs = vec![Run {
+            id: run(),
+            owner: RunOwner::Dispatch(id("dsp_1")),
+            coordinator: None,
+            opened_at: 1,
+            closed_at: None,
+            extra: Extra::new(),
+        }];
+        // 부모가 소유한 Run의 정산되지 않은 하위 dispatch만 센다. lead의 Run에 있는 부모 자신은 세지 않는다
+        assert!(state.sub_open(&id("dsp_1")) && !state.sub_open(&id("dsp_2")));
+        state.dispatches[1].settled = Some(Settled {
+            how: SettledHow::Done,
+            outcome: None,
+            message: None,
+            at: 2,
+            extra: Extra::new(),
+        });
+        assert!(!state.sub_open(&id("dsp_1")));
+        // 정산돼도 보고 메시지에 처리 표시가 없으면 남아 있다
+        state.messages.push(Message {
+            id: MessageId::new("msg_1").unwrap(),
+            delivery: None,
+            run: run(),
+            kind: "worker_done".into(),
+            dispatch: Some(id("dsp_2")),
+            received_at: 3,
+            acked_at: None,
+            extra: Extra::new(),
+        });
+        assert!(state.sub_open(&id("dsp_1")));
+        state.messages[0].acked_at = Some(4);
+        // 예약 기록과 닫힌 Run은 세지 않는다
+        state.dispatches[1].settled = None;
+        state.dispatches[1].id = id("pending:req_1");
+        assert!(!state.sub_open(&id("dsp_1")));
+        state.dispatches[1].id = id("dsp_2");
+        assert!(state.sub_open(&id("dsp_1")));
+        state.runs[0].closed_at = Some(5);
+        assert!(!state.sub_open(&id("dsp_1")));
     }
 }

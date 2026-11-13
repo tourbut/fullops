@@ -2,12 +2,14 @@
 
 use crate::cli::{CliError, Ctx};
 
+mod context;
 mod decision;
 mod dispatch;
 mod doc;
 mod doctor;
 mod done;
 mod env;
+mod find;
 mod gc;
 mod hold;
 mod init;
@@ -16,6 +18,7 @@ mod lint;
 mod merge;
 mod migrate;
 mod mode;
+pub mod packet;
 mod plan;
 mod review;
 mod route;
@@ -33,7 +36,7 @@ pub struct Command {
     pub run: fn(&Ctx, lexopt::Parser) -> Result<u8, CliError>,
     /// 활성 표식이 없으면 종료 코드 2로 끝낸다(설계 7.8절).
     pub needs_repo: bool,
-    /// 정책 오류에서도 받는 복구 명령이다(설계 7.5절 T-00의 목록).
+    /// 정책 오류에서도 받는 복구 명령이다(설계 7.5절 T-00의 통과 목록과 같다).
     pub recovery: bool,
 }
 
@@ -65,6 +68,13 @@ const fn anywhere(mut c: Command) -> Command {
 
 pub static COMMANDS: &[Command] = &[
     command("route", "분류와 tuple 기록", route::run),
+    command("find", "지시서에 맞는 코드·문서 후보 찾기(추천)", find::run),
+    command("context", "후보 문서 분류(추천)", context::run),
+    command(
+        "packet",
+        "탐색 패킷 만들기(build)와 검사(check)",
+        packet::run,
+    ),
     command(
         "task",
         "인박스 생성(new), 재오픈(reopen), 끊긴 worker 복구(recover)",
@@ -77,12 +87,12 @@ pub static COMMANDS: &[Command] = &[
     ),
     command(
         "dispatch",
-        "선행 조건 검사, 준비 커밋, 동기화, Orca 배정",
+        "선행 조건 검사, 준비 커밋, 동기화, Orca 배정. worker가 부르면 하위 배정(--brief)",
         dispatch::run,
     ),
     command(
         "wait",
-        "heartbeat 흡수, 완료 보고 기록, 처리할 메시지 반환",
+        "메시지 받기, 완료 보고 기록, 처리 표시(--ack), Orca가 깨울 수 없는 세션의 기다림",
         wait::run,
     ),
     command(
@@ -133,6 +143,10 @@ pub static COMMANDS: &[Command] = &[
         "Python판에서 전환과 되돌리기",
         migrate::run,
     )),
-    anywhere(command("install", "고정 위치 실행본 설치", install::run)),
+    anywhere(command(
+        "install",
+        "실행본 복사, 네 호스트의 플러그인 등록, 의존 플러그인·스킬 설치와 확인",
+        install::run,
+    )),
     anywhere(command("doctor", "설치와 레포 상태 점검", doctor::run)),
 ];

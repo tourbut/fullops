@@ -1,4 +1,5 @@
-//! 임시 레포·원격(bare)·역할 워크트리와 격리된 환경에서의 프로세스 실행.
+//! 임시 레포·원격(bare)·역할 워크트리·임시 홈과 격리된 환경에서의 프로세스 실행(설계 12.1절).
+//! 실제 호스트 CLI, 네트워크, 사용자 홈은 건드리지 않는다.
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -34,8 +35,9 @@ pub struct Setup {
     pub routing: String,
     pub tech_plan_role: Option<String>,
     pub test_level: String,
-    pub subagent_level: String,
-    /// hook을 부를 호스트. `claude` 또는 `codex`.
+    /// 병렬 방침. `off`·`read`·`on`·`ultra`.
+    pub parallel: String,
+    /// hook을 부를 호스트. `claude`·`codex`·`grok`·`agy`. 구동기가 그 호스트의 입력 모양과 등록 인자로 hook을 부른다.
     pub host: String,
 }
 
@@ -49,7 +51,7 @@ impl Default for Setup {
             routing: "legacy".into(),
             tech_plan_role: None,
             test_level: "lite".into(),
-            subagent_level: "lite".into(),
+            parallel: "on".into(),
             host: "claude".into(),
         }
     }
@@ -72,8 +74,8 @@ impl Setup {
             out.push_str(&format!("tech_plan_role = \"{role}\"\n"));
         }
         out.push_str(&format!(
-            "test_level = \"{}\"\nsubagent_level = \"{}\"\n",
-            self.test_level, self.subagent_level
+            "test_level = \"{}\"\nparallel = \"{}\"\n",
+            self.test_level, self.parallel
         ));
         out.push_str("\n[git]\nbase = \"main\"\n");
         if self.remote {
@@ -100,18 +102,21 @@ fn bin_path(name: &str) -> PathBuf {
     profile.join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
 }
 
-/// 시험 실행 파일 옆(`target/<profile>/`)의 바이너리(`fullops`, `fake-orca`). 없으면 한 번 빌드한다.
+/// 시험 실행 파일 옆(`target/<profile>/`)의 바이너리(`fullops`, `fake-orca`, `fake-host`, `fake-curl`).
+/// 시험 프로세스마다 이름당 한 번 `cargo build`로 최신인지 맞춘다(패키지 하나만 시험할 때 낡은 바이너리로 돌지 않게 한다).
 pub fn bin(name: &str) -> PathBuf {
+    static BUILT: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     let path = bin_path(name);
-    if !path.exists() {
+    let mut built = BUILT.lock().unwrap_or_else(|e| e.into_inner());
+    if !built.iter().any(|b| b == name) {
         // shortcut: 기본 target 디렉터리와 debug·release만 다룬다, `--target`으로 시험할 일이 생기면 경로를 인자로 받는다
-        let package = if name == "fake-orca" {
+        let package = if name.starts_with("fake-") {
             "fullops-testkit"
         } else {
             name
         };
         let mut cargo = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
-        cargo.args(["build", "-p", package, "--bin", name]);
+        cargo.args(["build", "--quiet", "-p", package, "--bin", name]);
         if path
             .parent()
             .and_then(Path::file_name)
@@ -119,12 +124,13 @@ pub fn bin(name: &str) -> PathBuf {
         {
             cargo.arg("--release");
         }
-        let built = cargo.status().is_ok_and(|s| s.success());
+        let ok = cargo.status().is_ok_and(|s| s.success());
         assert!(
-            built && path.exists(),
+            ok && path.exists(),
             "{name} 바이너리를 만들지 못했습니다: {}",
             path.display()
         );
+        built.push(name.to_string());
     }
     path
 }
@@ -139,6 +145,12 @@ pub struct Sandbox {
     pub home: PathBuf,
     /// fake-orca의 각본과 호출 기록 폴더(`FAKE_ORCA_DIR`).
     pub orca_dir: PathBuf,
+    /// fake-host의 각본과 호출 기록 폴더(`FAKE_HOST_DIR`).
+    pub host_dir: PathBuf,
+    /// fake-curl의 각본과 호출 기록 폴더(`FAKE_CURL_DIR`).
+    pub curl_dir: PathBuf,
+    /// PATH 맨 앞에 놓이는 폴더. `install_fakes`가 가짜 실행 파일을 여기에 둔다.
+    pub bin_dir: PathBuf,
     /// `with`로 만들었을 때의 설정.
     pub setup: Option<Setup>,
 }
@@ -172,11 +184,21 @@ impl Sandbox {
         let sb = Self {
             home: root.join("home"),
             orca_dir: root.join("orca"),
+            host_dir: root.join("host"),
+            curl_dir: root.join("curl"),
+            bin_dir: root.join("bin"),
             root,
             setup: None,
         };
-        std::fs::create_dir_all(&sb.home).expect("홈 만들기");
-        std::fs::create_dir_all(&sb.orca_dir).expect("fake-orca 폴더 만들기");
+        for dir in [
+            &sb.home,
+            &sb.orca_dir,
+            &sb.host_dir,
+            &sb.curl_dir,
+            &sb.bin_dir,
+        ] {
+            std::fs::create_dir_all(dir).expect("임시 폴더 만들기");
+        }
         sb.write(
             &sb.home.join(".gitconfig"),
             "[user]\n\tname = fullops-test\n\temail = test@example.invalid\n[init]\n\tdefaultBranch = main\n\
@@ -246,6 +268,15 @@ impl Sandbox {
         let dir = self.root.join(name);
         std::fs::create_dir_all(&dir).expect("레포 폴더 만들기");
         self.git_ok(&dir, &["init", "-q", "-b", "main"]);
+        // 격리 환경 밖에서 도는 git(시험 프로세스 안의 GitCli)도 같은 설정으로 커밋하게 레포 설정에도 적는다
+        for (key, value) in [
+            ("user.name", "fullops-test"),
+            ("user.email", "test@example.invalid"),
+            ("commit.gpgsign", "false"),
+            ("core.autocrlf", "false"),
+        ] {
+            self.git_ok(&dir, &["config", key, value]);
+        }
         self.write(&dir.join("README.md"), "# 시험 레포\n");
         self.git_ok(&dir, &["add", "-A"]);
         self.git_ok(&dir, &["commit", "-q", "-m", "처음"]);
@@ -259,10 +290,17 @@ impl Sandbox {
         std::fs::write(path, text).expect("파일 쓰기");
     }
 
-    /// 격리된 환경의 프로세스. 사용자의 홈·git 설정·Orca·API 키가 새어 들지 않는다.
+    /// 격리된 환경의 프로세스. 사용자의 홈·git 설정·Orca·호스트 설정·API 키가 새어 들지 않는다.
     pub fn command(&self, program: impl AsRef<std::ffi::OsStr>, cwd: &Path) -> Command {
         let mut cmd = Command::new(program);
+        let path = std::env::join_paths(std::iter::once(self.bin_dir.clone()).chain(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+        ))
+        .expect("PATH 만들기");
         cmd.current_dir(cwd)
+            .env("PATH", path)
+            .env("FAKE_HOST_DIR", &self.host_dir)
+            .env("FAKE_CURL_DIR", &self.curl_dir)
             .env("HOME", &self.home)
             .env("USERPROFILE", &self.home)
             .env("GIT_CONFIG_GLOBAL", self.home.join(".gitconfig"))
@@ -273,9 +311,16 @@ impl Sandbox {
             .env("FULLOPS_OFFLINE", "1");
         for name in [
             "ORCA_TERMINAL_HANDLE",
+            "ORCA_AGENT_SESSION_ID",
             "ORCA_DEV_REPO_ROOT",
+            "GROK_HOOK_EVENT",
+            "GROK_HOME",
+            "CODEX_HOME",
+            "CLAUDE_CONFIG_DIR",
             "TYPESAFE_API_KEY",
             "OPENROUTER_API_KEY",
+            "FULLOPS_JEV_ENABLED",
+            "FULLOPS_JEV_CACHE_BYPASS",
             "FULLOPS_TRACE",
         ] {
             cmd.env_remove(name);
@@ -325,9 +370,12 @@ impl Sandbox {
         self.run(cmd, stdin)
     }
 
-    /// `fullops hook <host>`에 이벤트 JSON을 넣는다.
-    pub fn hook(&self, host: &str, cwd: &Path, event: &serde_json::Value) -> Run {
-        self.fullops(cwd, &["hook", host], &[], event.to_string().as_bytes())
+    /// `fullops hook <args…>`에 이벤트 JSON을 넣는다. `args`는 호스트 인자와 등록 문자열의 나머지 인자다(agy는 `--event <이름>`).
+    pub fn hook(&self, args: &[&str], cwd: &Path, event: &serde_json::Value) -> Run {
+        let args: Vec<&str> = std::iter::once("hook")
+            .chain(args.iter().copied())
+            .collect();
+        self.fullops(cwd, &args, &[], event.to_string().as_bytes())
     }
 
     /// `fullops <args…>`를 CLI로 실행한다.
@@ -335,10 +383,8 @@ impl Sandbox {
         self.fullops(cwd, args, &[], b"")
     }
 
-    /// fake-orca 각본에 규칙을 덧붙인다(형식은 `src/bin/fake-orca.rs`).
-    pub fn orca_rule(&self, rule: serde_json::Value) {
-        bin("fake-orca");
-        let path = self.orca_dir.join("script.json");
+    fn add_rule(&self, dir: &Path, rule: serde_json::Value) {
+        let path = dir.join("script.json");
         let mut script: serde_json::Value = std::fs::read_to_string(&path)
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
@@ -349,12 +395,61 @@ impl Sandbox {
         self.write(&path, &script.to_string());
     }
 
+    /// fake-orca 각본에 규칙을 덧붙인다(형식은 `fake.rs`).
+    pub fn orca_rule(&self, rule: serde_json::Value) {
+        bin("fake-orca");
+        self.add_rule(&self.orca_dir, rule);
+    }
+
+    /// fake-orca의 우편함에 그 Run의 메시지 하나를 넣는다. `check`가 안 읽은 것을 내고 소비형이 읽음으로 바꾼다.
+    pub fn orca_mail(&self, run: &str, message: serde_json::Value) {
+        bin("fake-orca");
+        let line = serde_json::json!({ "run": run, "message": message });
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.orca_dir.join("mail.jsonl"))
+            .expect("우편함 열기");
+        writeln!(file, "{line}").expect("우편함 쓰기");
+    }
+
     /// fake-orca가 받은 호출 기록(`calls.jsonl`).
     pub fn orca_calls(&self) -> Vec<serde_json::Value> {
-        std::fs::read_to_string(self.orca_dir.join("calls.jsonl"))
-            .unwrap_or_default()
-            .lines()
-            .filter_map(|line| serde_json::from_str(line).ok())
-            .collect()
+        crate::fake::calls(&self.orca_dir)
+    }
+
+    /// 가짜 실행 파일을 PATH 앞(`bin_dir`)에 그 이름으로 놓는다. `curl`은 fake-curl, 그 밖(`claude`·`codex`·`grok`·`agy`·`npx`)은 fake-host다.
+    pub fn install_fakes(&self, names: &[&str]) {
+        for name in names {
+            let source = bin(if *name == "curl" {
+                "fake-curl"
+            } else {
+                "fake-host"
+            });
+            let target = self
+                .bin_dir
+                .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+            std::fs::copy(&source, &target).expect("가짜 실행 파일 복사");
+        }
+    }
+
+    /// fake-host 각본에 규칙을 덧붙인다. `when`의 첫 낱말은 실행 파일 이름이다.
+    pub fn host_rule(&self, rule: serde_json::Value) {
+        self.add_rule(&self.host_dir, rule);
+    }
+
+    /// fake-host가 받은 호출 기록.
+    pub fn host_calls(&self) -> Vec<serde_json::Value> {
+        crate::fake::calls(&self.host_dir)
+    }
+
+    /// fake-curl 각본에 규칙을 덧붙인다.
+    pub fn curl_rule(&self, rule: serde_json::Value) {
+        self.add_rule(&self.curl_dir, rule);
+    }
+
+    /// fake-curl이 받은 호출 기록. `stdin`에 요청 글 전부가 있다.
+    pub fn curl_calls(&self) -> Vec<serde_json::Value> {
+        crate::fake::calls(&self.curl_dir)
     }
 }

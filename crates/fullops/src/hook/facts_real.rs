@@ -3,8 +3,8 @@
 use fullops_core::config::PolicyError;
 use fullops_core::facts::Facts;
 use fullops_core::model::{
-    Actor, Caps, ChangeSet, Config, DispatchId, Inbox, Known, Landing, Need, Plan, ReviewEvidence,
-    RoleId, Route, RunId, Session, Sha, State, TaskKey,
+    Actor, Caps, ChangeSet, Config, DispatchId, HostId, Inbox, Known, Landing, Need, Plan,
+    ReviewEvidence, RoleId, Route, RunId, Session, Sha, SkillText, State, TaskKey, caps_of,
 };
 use fullops_store::Repo;
 use std::collections::BTreeSet;
@@ -14,15 +14,15 @@ const TODO: &str = "unimplemented";
 
 pub struct RealFacts {
     pub repo: Repo,
-    caps: Caps,
+    host: HostId,
     config: Option<Result<Config, PolicyError>>,
 }
 
 impl RealFacts {
-    pub fn new(repo: Repo, caps: Caps) -> Self {
+    pub fn new(repo: Repo, host: HostId) -> Self {
         Self {
             repo,
-            caps,
+            host,
             config: None,
         }
     }
@@ -32,8 +32,11 @@ impl Facts for RealFacts {
     fn now(&self) -> i64 {
         fullops_store::now()
     }
+    fn host(&self) -> HostId {
+        self.host
+    }
     fn caps(&self) -> Caps {
-        self.caps
+        caps_of(self.host)
     }
     fn config(&mut self) -> Result<&Config, PolicyError> {
         self.config
@@ -96,6 +99,12 @@ impl Facts for RealFacts {
         Known::Unknown(TODO)
     }
     fn waiter_alive(&mut self, _run: &RunId) -> Known<bool> {
+        Known::Unknown(TODO)
+    }
+    fn session_handle(&self) -> Option<String> {
+        crate::cli::session_handle()
+    }
+    fn user_skill(&mut self, _name: &str) -> Known<Option<SkillText>> {
         Known::Unknown(TODO)
     }
 }

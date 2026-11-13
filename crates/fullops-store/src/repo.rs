@@ -117,6 +117,20 @@ impl Repo {
             .join(head.short(12))
     }
 
+    /// `docs/evaluations/jev/` (탐색 결과와 패킷, 설계 6.1.5절).
+    pub fn explore_dir(&self) -> PathBuf {
+        self.squad().join("docs").join("evaluations").join("jev")
+    }
+    /// `<KEY>-packet.json`.
+    pub fn packet_path(&self, key: &TaskKey) -> PathBuf {
+        self.explore_dir().join(format!("{key}-packet.json"))
+    }
+    /// `<KEY>-packet-outcomes.json`.
+    pub fn packet_outcomes_path(&self, key: &TaskKey) -> PathBuf {
+        self.explore_dir()
+            .join(format!("{key}-packet-outcomes.json"))
+    }
+
     /// `<git-common-dir>/fullops/` (모든 워크트리가 공유, 설계 6.2절).
     pub fn shared(&self) -> PathBuf {
         self.common_dir.join("fullops")
@@ -158,6 +172,10 @@ impl Repo {
     }
     pub fn trace_path(&self, sid: &SessionId) -> PathBuf {
         self.local().join("trace").join(format!("{sid}.jsonl"))
+    }
+    /// 탐색 색인 `code.json`, `documents.json`, `lock`이 있는 폴더(설계 6.3절).
+    pub fn search_dir(&self) -> PathBuf {
+        self.local().join("search")
     }
     /// `result.json`, `pass.json`, `logs/`, `lock`이 있는 폴더.
     pub fn lint_dir(&self) -> PathBuf {

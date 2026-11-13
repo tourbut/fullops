@@ -1,6 +1,6 @@
-//! 작업 트리별 Git 디렉터리의 파일 형식(설계 6.3절).
+//! 작업 트리별 Git 디렉터리의 파일 형식(설계 6.3절)과 `turns.jsonl`(6.2.2절).
 
-use super::{DispatchId, EventKind, HostKind, ModeTuple, SessionId, Sha, TaskKey, words};
+use super::{DispatchId, EventKind, Extra, HostId, ModeTuple, SessionId, Sha, TaskKey, words};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -9,19 +9,21 @@ pub const SESSION_V: u32 = 1;
 
 words!(BoundBy { Preamble = "preamble", Terminal = "terminal" });
 words!(
-    /// `turns.jsonl`의 `kind`.
-    TurnKind { Human = "human", MachineOrcaMessage = "machine:orca-message", MachineTaskNotification = "machine:task-notification" }
+    /// `turns.jsonl`의 `kind`. 사람 턴으로 세는 것은 `Human`뿐이다. `Subagent`·`Workflow`는 T-13이 쓴다.
+    TurnKind { Human = "human", OrcaMessage = "machine:orca-message", TaskNotification = "machine:task-notification",
+               Subagent = "subagent", Workflow = "workflow" }
 );
 
-/// `sessions/<sid>.json`.
+/// `sessions/<sid>.json`. 모르는 필드는 보존한다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub v: u32,
     pub sid: SessionId,
-    pub host: HostKind,
+    /// hook 인자로 고른 어댑터의 ID.
+    pub host: HostId,
     pub started_at: i64,
     pub last_seen: i64,
-    /// `ORCA_TERMINAL_HANDLE`.
+    /// 세션 파일을 만들 때의 세션 핸들(`ORCA_AGENT_SESSION_ID` → `ORCA_TERMINAL_HANDLE`).
     pub terminal: Option<String>,
     /// `[mode, primary_role, primary_branch]`.
     pub mode_at_start: ModeTuple,
@@ -29,6 +31,9 @@ pub struct Session {
     pub anchor: Option<Sha>,
     #[serde(default)]
     pub turn: u32,
+    /// 프롬프트 이벤트가 없는 호스트(agy)만 쓴다. 마지막으로 본 사용자 입력의 sha256 앞 16자.
+    #[serde(default)]
+    pub prompt_fp: Option<String>,
     #[serde(default)]
     pub dispatch: Option<SessionDispatch>,
     #[serde(default)]
@@ -39,20 +44,26 @@ pub struct Session {
     /// 세션당 한 번 낸 안내·경고의 키.
     #[serde(default)]
     pub noticed: Vec<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionDispatch {
     pub id: DispatchId,
     /// Orca task ID.
     pub task: Option<String>,
     pub bound_by: BoundBy,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BlockMark {
     pub fp: String,
     pub turn: u32,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 impl Session {
@@ -110,7 +121,7 @@ pub struct TraceLine {
     pub v: u32,
     /// 실행본 버전.
     pub bin: String,
-    pub host: HostKind,
+    pub host: HostId,
     pub ev: EventKind,
     /// `Actor::label()`. 판정하지 못했으면 `null`.
     pub actor: Option<String>,

@@ -68,3 +68,8 @@ pub(super) fn t11(_input: &HookInput, _facts: &mut dyn Facts) -> Finding {
 pub(super) fn t12(_input: &HookInput, _facts: &mut dyn Facts) -> Finding {
     Finding::None
 }
+
+/// T-13
+pub(super) fn t13(_input: &HookInput, _facts: &mut dyn Facts) -> Finding {
+    Finding::None
+}

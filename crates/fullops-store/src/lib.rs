@@ -3,18 +3,22 @@
 pub mod files;
 pub mod lock;
 pub mod repo;
+pub mod search;
 pub mod session;
 pub mod state;
 pub mod trace;
 pub mod turns;
 
 pub use files::{
-    append_archive, append_line, archive_keys, load_config, now, parse_config, read_archive,
-    read_current, read_inbox, read_json, read_lint_pass, read_plan, read_route, read_text,
-    write_atomic, write_current, write_json, write_route,
+    DepsError, append_archive, append_line, archive_keys, baseline, fixed_bin, fullops_home, home,
+    load_config, load_deps, now, parse_config, parse_deps, read_archive, read_current,
+    read_deps_state, read_inbox, read_json, read_lint_pass, read_plan, read_route, read_text,
+    write_atomic, write_current, write_deps_state, write_json, write_route,
 };
+pub use fullops_core::model::{DepsState, Derived, HostInstall, path_text, same_path};
 pub use lock::{CLI_WAIT, HOOK_WAIT, LockGuard, StoreError};
 pub use repo::{Repo, discover, head};
+pub use search::{read_packet, read_packet_outcomes, update_index, write_explore_result};
 pub use session::{create_session, read_session, update_session};
 pub use state::{quarantine_state, read_state, update_state};
 pub use trace::append_trace;

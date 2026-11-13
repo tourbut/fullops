@@ -3,6 +3,7 @@
 // 뼈대 단계: 다른 묶음이 쓸 공용 규약이 아직 불리지 않는다. 묶음을 합친 뒤 지운다.
 #![allow(dead_code)]
 
+mod assets;
 mod cli;
 mod cmd;
 mod hook;

@@ -1,4 +1,4 @@
-//! 시나리오 파일 형식(설계 12.1절). `scenarios/<묶음>/<이름>.toml` 하나가 시나리오 하나다.
+//! 시나리오 파일 형식(설계 12.1절). `scenarios/<ID 소문자>.toml` 하나가 시나리오 하나다(경우가 많으면 `<id>-<경우>.toml`).
 //! 상황과 단계를 의도 수준의 동사로 적고 상태 파일을 직접 주입하지 않는다.
 
 use crate::sandbox::Setup;
@@ -24,6 +24,9 @@ pub struct Step {
     pub act: String,
     #[serde(default)]
     pub expect: Option<Expect>,
+    /// 그 단계가 기대는 다른 묶음의 글자. 있으면 구동기가 그 단계를 건너뛰고 "보류"로 적는다.
+    #[serde(default)]
+    pub pending: Option<String>,
     /// 동사의 인자.
     #[serde(flatten)]
     pub args: toml::Table,

@@ -4,7 +4,17 @@ use crate::model::{Plan, PlanRow, PlanStatus, RoleId, TaskKey};
 
 /// `template`은 내장 `PLANS.md` 템플릿이다. 위임 범위에서 안내 문장을 빼는 데만 쓴다.
 pub fn parse_plan(text: &str, template: &str) -> Plan {
-    let lines: Vec<&str> = text.lines().collect();
+    // 코드 펜스 안의 줄은 읽지 않는다. 줄 번호가 밀리지 않게 빈 줄로 바꾼다
+    let mut fenced = false;
+    let lines: Vec<&str> = text
+        .lines()
+        .map(|line| {
+            let fence = line.trim_start().starts_with("```");
+            let skip = fenced || fence;
+            fenced ^= fence;
+            if skip { "" } else { line }
+        })
+        .collect();
     let mut plan = Plan::default();
     let mut i = 0;
     while i + 1 < lines.len() {
@@ -132,7 +142,8 @@ fn row(cols: &Columns, cells: &[String], line: u32, plan: &mut Plan) {
         return;
     };
     let status = cell(Some(cols.status));
-    let role = cell(cols.role);
+    // 사람이 쓰는 표라 담당 칸의 대소문자를 봐준다
+    let role = cell(cols.role).to_ascii_lowercase();
     let role_end = role
         .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
         .unwrap_or(role.len());
@@ -180,7 +191,7 @@ fn after(status: &str) -> Vec<TaskKey> {
         return Vec::new();
     };
     list.split(|c: char| c == ',' || c.is_whitespace())
-        .filter_map(|token| TaskKey::new(token.trim_end_matches('.')).ok())
+        .filter_map(|token| TaskKey::new(token.trim_end_matches(['.', ')', '）'])).ok())
         .collect()
 }
 
@@ -216,7 +227,7 @@ mod tests {
 | `PAY-13` | 영수증 | art | 대기 선행: PAY-12, PAY-11. | 사용자 지시 11-13 |\n\
 | PAY-14 | 배포 | dev | 대기(사람: 배포) | 승인 |\n\
 | PAY-15 | 정리 | DEV | 대기（사람: 결정 D003） | 승인 |\n\
-| PAY-16 | 실험 | | 보류(범위 미정 (다음 분기)) 선행: PAY-12 | |\n\
+| PAY-16 | 실험 | | 보류(범위 미정 (다음 분기), 선행: PAY-12) | |\n\
 | PAY-17 | 끝남 | dev | 완료(4f0c1a2) | 승인 |\n\
 | 결제 17 | 문법 오류 | dev | 대기 | 승인 |\n\
 |  | 빈 키 | dev | 대기 | 승인 |\n\
@@ -259,11 +270,12 @@ mod tests {
             plan.rows[3].status,
             PlanStatus::WaitHuman("사람: 결정 D003".into())
         );
-        assert_eq!(plan.rows[3].role, None);
+        assert_eq!(plan.rows[3].role.as_ref().map(RoleId::as_str), Some("dev"));
         assert_eq!(
             plan.rows[4].status,
-            PlanStatus::Held("범위 미정 (다음 분기)".into())
+            PlanStatus::Held("범위 미정 (다음 분기), 선행: PAY-12".into())
         );
+        // 괄호 안에 적은 선행의 마지막 키가 버려지지 않는다
         assert_eq!(plan.rows[4].after.len(), 1);
         assert_eq!(plan.rows[4].source, "");
         assert_eq!(
@@ -280,6 +292,11 @@ mod tests {
             ["- 2026-11-13 \"결제 묶음은 묻지 말고 끝까지\""]
         );
         assert!(parse_plan("", TEMPLATE).rows.is_empty());
+        // 코드 펜스 안의 표는 읽지 않고 줄 번호는 그대로다
+        let fenced = format!("```\n{PLAN}```\n| 과제 | 상태 |\n|---|---|\n| Z-1 | 대기 |\n");
+        let plan = parse_plan(&fenced, TEMPLATE);
+        assert_eq!(plan.rows.len(), 1);
+        assert_eq!(plan.rows[0].line as usize, fenced.lines().count());
         assert!(parse_plan("| 과제 | 상태 |\n", TEMPLATE).rows.is_empty());
     }
 }

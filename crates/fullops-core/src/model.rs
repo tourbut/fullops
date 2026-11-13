@@ -118,7 +118,7 @@ id!(
     opaque
 );
 id!(
-    /// Orca dispatch ID 또는 `pending:<run>:<started_at>`(설계 8.5절 9단계).
+    /// Orca dispatch ID. Orca 응답을 받기 전의 예약 기록은 `pending:<request>`다(설계 6.2.1절).
     DispatchId,
     opaque
 );
@@ -173,8 +173,8 @@ words!(
     TestLevel { Minimal = "minimal", Lite = "lite", Standard = "standard", Full = "full", Exhaustive = "exhaustive" }
 );
 words!(
-    /// 순서가 있다. 뒤로 갈수록 높은 레벨이다.
-    SubagentLevel { Off = "off", Lite = "lite", Standard = "standard", Full = "full" }
+    /// 병렬 방침(설계 8.15절). `fullops.toml`의 `parallel`.
+    Parallel { Off = "off", Read = "read", On = "on", Ultra = "ultra" }
 );
 words!(
     /// 1.24.0의 simple·implementation = Direct, design = Design, product = Product.
@@ -270,7 +270,7 @@ pub struct Config {
     pub routing: Routing,
     pub tech_plan_role: Option<RoleId>,
     pub test_level: TestLevel,
-    pub subagent_level: SubagentLevel,
+    pub parallel: Parallel,
     pub base: String,
     pub remote: Option<String>,
     pub roles: BTreeMap<RoleId, Role>,
@@ -327,6 +327,8 @@ pub struct Actor {
     pub dispatch: Option<DispatchId>,
     /// `mode == Dev && is_lead()`
     pub direct_dev: bool,
+    /// 묶인 dispatch가 하위 배정이다(`state.json`의 그 dispatch에 `sub_of`가 있다). 하위 worker다.
+    pub sub: bool,
 }
 
 impl Actor {
@@ -334,7 +336,7 @@ impl Actor {
         self.seat == Seat::Lead && self.dispatch.is_none()
     }
 
-    /// 추적 줄의 `actor` 값. `lead`, `role:<id>`, `reviewer`, `other`이고 dispatch가 묶였으면 `+dispatch`가 붙는다.
+    /// 추적 줄의 `actor` 값. `lead`, `role:<id>`, `reviewer`, `other`이고 dispatch가 묶였으면 `+dispatch`가, 하위 worker면 `+sub`가 붙는다.
     pub fn label(&self) -> String {
         let seat = match &self.seat {
             Seat::Lead => "lead".to_string(),
@@ -342,10 +344,10 @@ impl Actor {
             Seat::Reviewer => "reviewer".to_string(),
             Seat::Other => "other".to_string(),
         };
-        if self.dispatch.is_some() {
-            format!("{seat}+dispatch")
-        } else {
-            seat
+        match (self.dispatch.is_some(), self.sub) {
+            (_, true) => format!("{seat}+sub"),
+            (true, false) => format!("{seat}+dispatch"),
+            (false, false) => seat,
         }
     }
 }
@@ -455,22 +457,70 @@ pub struct Refusal {
     pub exit: u8,
 }
 
-/// 모르는 JSON 필드를 보존하는 값. core가 serde_json에 기대지 않도록 직접 둔다.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Json {
-    Null,
-    Bool(bool),
-    Int(i64),
-    Uint(u64),
-    Float(f64),
-    Text(String),
-    List(Vec<Json>),
-    Map(BTreeMap<String, Json>),
+/// `#[serde(flatten)]`으로 받아 다시 쓰는 모르는 필드 묶음(설계 5절).
+pub type Extra = BTreeMap<String, serde_json::Value>;
+
+/// 기준 시점(merge-base 커밋)의 검사 기준(설계 6.1.1절). `config::baseline`이 만든다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Baseline {
+    pub review: ReviewPolicy,
+    pub code: CodeDef,
+    pub test_level: TestLevel,
+    /// 그 커밋의 설정을 읽지 못해 내장 기본값을 썼다. `lint`·`review need`·`merge`가 한 줄 알린다.
+    pub fell_back: bool,
 }
 
-/// `#[serde(flatten)]`으로 받아 다시 쓰는 모르는 필드 묶음(설계 6.2.1절).
-pub type Extra = BTreeMap<String, Json>;
+/// `parallel_brief`가 문구를 넣는 자리(설계 8.15절).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BriefAt<'a> {
+    /// S-01과 `fullops status`의 첫머리.
+    Session,
+    /// dispatch의 spec. `command`는 spec에 적는 실행 명령(`messages::spec_command`), `key`는 그 과제의 키,
+    /// `sub`는 하위 배정이다(하위 배정의 spec에는 하위 배정 문장을 붙이지 않는다).
+    Spec {
+        command: &'a str,
+        key: &'a TaskKey,
+        sub: bool,
+    },
+}
+
+words!(
+    /// 메시지의 처리 표시를 누가 하는가(설계 8.6절). `Merge`: 통합 대기인 완료 보고라 `merge`(M-10)·`hold`·통합 확인이 표시한다.
+    /// `Ack`: 그 밖 전부. 처리한 뒤 `fullops wait --ack`로 표시한다.
+    AckBy { Merge = "merge", Ack = "ack" }
+);
+
+/// X-05의 "Orca가 깨운다": 이 세션이 그 Run에 묶인 조율자인가. 둘 다 있고 같으면 참이다.
+/// `wait`의 깨움 판정과 `dispatch`의 다음 할 일 안내가 같은 함수를 쓴다(미정-M5가 바꾸는 곳은 여기 하나다).
+pub fn orca_wakes(session_handle: Option<&str>, coordinator: Option<&str>) -> bool {
+    matches!((session_handle, coordinator), (Some(a), Some(b)) if !a.is_empty() && a == b)
+}
+
+/// `state.json`만 보고 그 메시지의 처리 표시를 누가 하는지 정한다(설계 8.6절의 `ack_by`).
+pub fn ack_by(state: &State, message: &MessageId) -> AckBy {
+    let done = state
+        .messages
+        .iter()
+        .any(|m| &m.id == message && m.kind == "worker_done");
+    let pending = state
+        .completions
+        .iter()
+        .any(|c| &c.id == message && c.is_pending());
+    if done && pending {
+        AckBy::Merge
+    } else {
+        AckBy::Ack
+    }
+}
+
+/// sha256의 소문자 hex 64자. 지문(`brief`, `prompt_fp`는 앞 16자)과 `input_sha256` 계산이 함께 쓴다.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
 
 /// 상태 파일에 쓰는 경로 표기. 구분자는 `/`이고 Windows의 `\\?\` 접두어와 끝의 `/`를 뗀다.
 pub fn path_text(path: &Path) -> String {

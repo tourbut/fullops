@@ -17,29 +17,39 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         let rules: Vec<_> = RULES
             .iter()
             .map(|r| {
+                let escapes: Vec<_> = r
+                    .escapes
+                    .iter()
+                    .map(|(case, escape)| json!({"case": case, "escape": escape}))
+                    .collect();
                 json!({"id": r.id, "event": r.event.as_str(), "strength": r.strength.as_str(),
-                       "escape": r.escape, "origin": r.origin})
+                       "escapes": escapes, "origin": r.origin})
             })
             .collect();
-        println!("{}", json!({ "rules": rules }));
+        ctx.print("", json!({ "rules": rules }));
         return Ok(EXIT_OK);
     }
-    println!("| ID | 이벤트 | 강도 | 탈출구 | 1.24.0의 대응 동작 |");
+    println!("| ID | 이벤트 | 강도 | 탈출구 | 1.24.0의 대응 기능 |");
     println!("|---|---|---|---|---|");
     for r in RULES {
-        let cell = |text: &str| {
-            if text.is_empty() {
-                "-".to_string()
-            } else {
-                text.replace('|', "\\|")
-            }
+        let escapes: Vec<String> = r
+            .escapes
+            .iter()
+            .map(|(case, escape)| match *case {
+                "" => escape.to_string(),
+                case => format!("({case}) {escape}"),
+            })
+            .collect();
+        let cell = |text: &str| match text {
+            "" => "-".to_string(),
+            text => text.replace('|', "\\|"),
         };
         println!(
             "| {} | {} | {} | {} | {} |",
             r.id,
             r.event,
             r.strength.as_str(),
-            cell(r.escape),
+            cell(&escapes.join(" ")),
             cell(r.origin)
         );
     }

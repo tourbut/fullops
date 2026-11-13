@@ -127,6 +127,8 @@ dependencies = [
  "fancy-regex",
  "globset",
  "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -134,6 +136,7 @@ name = "fullops-ext"
 version = "2.0.0"
 dependencies = [
  "fullops-core",
+ "fullops-testkit",
  "serde",
  "serde_json",
  "sha2",
@@ -154,6 +157,7 @@ dependencies = [
 name = "fullops-testkit"
 version = "2.0.0"
 dependencies = [
+ "fullops-ext",
  "serde",
  "serde_json",
  "toml",

@@ -1,8 +1,8 @@
 //! `state.json`, `archive.jsonl`, `status.json`의 형식(설계 6.2절).
 
 use super::{
-    DecisionId, DispatchId, Extra, Json, Landing, MessageId, Mode, ModelTuple, Origin, Purpose,
-    RoleId, RunId, SessionId, Sha, Stage, TaskKey, words,
+    DecisionId, DispatchId, Extra, Landing, MessageId, Mode, ModelTuple, Origin, Purpose, RoleId,
+    RunId, SessionId, Sha, Stage, TaskKey, words,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -18,10 +18,6 @@ words!(
     WorkOutcome { Succeeded = "succeeded", Failed = "failed" }
 );
 words!(ShaSource { Done = "done", Body = "body", BranchTip = "branch_tip", Manual = "manual" });
-words!(
-    /// `state.json`에 넣는 메시지 종류. heartbeat·status는 넣지 않는다.
-    MessageType { WorkerDone = "worker_done", Question = "question", Escalation = "escalation" }
-);
 words!(SnapshotState { Creating = "creating", Active = "active", Removed = "removed", Abandoned = "abandoned", Missing = "missing" });
 words!(DecisionStatus { Open = "open", Answered = "answered", Dropped = "dropped" });
 
@@ -121,12 +117,33 @@ impl State {
     pub fn pending(&self) -> impl Iterator<Item = &Completion> {
         self.completions.iter().filter(|c| c.is_pending())
     }
+
+    /// 하위 작업 남음(설계 6.6절): `parent`가 소유한 열린 Run에 정산되지 않은 dispatch나 미처리 메시지가 있다.
+    /// X-01·X-03이 건너뛰는 조건이고 `done`의 R-11이 거절하는 조건이다. 예약 기록은 세지 않는다.
+    pub fn sub_open(&self, parent: &DispatchId) -> bool {
+        let open = |run: &RunId| {
+            let waiting =
+                |d: &Dispatch| &d.run == run && d.settled.is_none() && !d.is_reservation();
+            self.dispatches.iter().any(waiting)
+                || self
+                    .messages
+                    .iter()
+                    .any(|m| &m.run == run && m.acked_at.is_none())
+        };
+        self.runs.iter().any(|r| {
+            r.closed_at.is_none()
+                && matches!(&r.owner, RunOwner::Dispatch(id) if id == parent)
+                && open(&r.id)
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Run {
     pub id: RunId,
     pub owner: RunOwner,
+    /// 그 Run이 Orca에서 묶여 있는 세션의 세션 핸들. Orca가 깨우는 대상이다(X-05).
+    pub coordinator: Option<String>,
     pub opened_at: i64,
     pub closed_at: Option<i64>,
     #[serde(flatten)]
@@ -135,8 +152,11 @@ pub struct Run {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Dispatch {
+    /// Orca dispatch ID. 예약 기록은 `pending:<request>`다.
     pub id: DispatchId,
-    /// Orca task ID.
+    /// `fullops dispatch`가 만든 요청 ID(`req_` + 16진수 16자). `worker-start --retry-request`의 값이다.
+    pub request: String,
+    /// Orca task ID. 예약 기록은 `null`.
     pub task_id: Option<String>,
     pub run: RunId,
     pub key: TaskKey,
@@ -150,6 +170,10 @@ pub struct Dispatch {
     pub reason: Option<DispatchReason>,
     pub started_at: i64,
     pub bound_session: Option<SessionId>,
+    /// 하위 배정이면 부모 dispatch의 ID.
+    pub sub_of: Option<DispatchId>,
+    /// 하위 배정에 준 `--brief` 글의 sha256 앞 16자. 글은 저장하지 않는다.
+    pub brief: Option<String>,
     pub reported: Option<Reported>,
     pub settled: Option<Settled>,
     #[serde(default)]
@@ -162,6 +186,21 @@ impl Dispatch {
     /// Build·Fix dispatch인가. completion은 이 둘에서만 생긴다.
     pub fn is_work(&self) -> bool {
         matches!(self.purpose, Purpose::Build | Purpose::Fix)
+    }
+
+    /// Orca 응답을 받기 전의 예약 기록인가. dispatch로 세지 않는다.
+    pub fn is_reservation(&self) -> bool {
+        self.id.as_str().starts_with("pending:")
+    }
+
+    /// 하위 배정인가. completion을 만들지 않고 단계·지표·`status.json`의 `tasks`에서 건너뛴다.
+    pub fn is_sub(&self) -> bool {
+        self.sub_of.is_some()
+    }
+
+    /// 과제의 배정으로 세는가: 예약 기록도 하위 배정도 아니다(`stage_of`, D-03, D-10).
+    pub fn counts(&self) -> bool {
+        !self.is_reservation() && !self.is_sub()
     }
 }
 
@@ -245,14 +284,16 @@ pub struct Hold {
     pub extra: Extra,
 }
 
-/// 처리할 메시지. 본문은 넣지 않는다.
+/// 처리할 메시지(`heartbeat`·`status`가 아닌 모든 종류). 본문은 넣지 않는다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub id: MessageId,
+    /// 옛 Orca가 준 전달 ID. 현재 Orca는 주지 않아 보통 `null`이다.
     pub delivery: Option<String>,
     pub run: RunId,
+    /// Orca의 메시지 종류 그대로(`worker_done`, `question`, `escalation`, `dispatch`, 모르는 종류 등).
     #[serde(rename = "type")]
-    pub kind: MessageType,
+    pub kind: String,
     pub dispatch: Option<DispatchId>,
     pub received_at: i64,
     /// `null`이면 미처리다.
@@ -309,7 +350,16 @@ pub struct Snapshot {
     pub owner: RunOwner,
     pub created_at: i64,
     /// 정리하지 못한 사유.
-    pub hold: Option<String>,
+    pub hold: Option<SnapshotHold>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// `snapshots[].hold`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SnapshotHold {
+    pub reason: String,
+    pub at: i64,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -386,6 +436,9 @@ pub struct ArchivedDispatch {
     pub purpose: Purpose,
     pub started_at: i64,
     pub reason: Option<DispatchReason>,
+    /// 하위 배정이었다.
+    #[serde(default)]
+    pub sub: bool,
 }
 
 /// `status.json`(설계 6.2.3절). token, 본문, 프롬프트는 넣지 않는다.
@@ -401,12 +454,25 @@ pub struct Status {
     pub dispatches: Vec<StatusDispatch>,
     pub pending: Vec<StatusPending>,
     pub decisions: Vec<StatusDecision>,
+    /// 유도값. lead 문맥이 넘긴 것만 바뀐다.
     pub ready: Vec<TaskKey>,
     /// 역할 → 기본 브랜치 SHA 앞 7자.
     pub sync_pending: BTreeMap<RoleId, String>,
+    /// 유도값. `status`와 `merge`가 계산해 넘긴 것만 바뀐다. 계산된 적이 없으면 `at`이 0이다.
     pub metrics: Metrics,
     /// v1에서는 항상 `null`(이슈 자동 모드 자리).
-    pub issue: Option<Json>,
+    pub issue: Option<serde_json::Value>,
+}
+
+/// `update_state`에 넘기는 유도값(설계 6.2.3절, 10.2절). 넘긴 것만 `status.json`에서 바뀌고 나머지는 이전 값을 잇는다.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Derived {
+    /// lead 문맥이 lead 체크아웃에서 계산한 `ready()`.
+    pub ready: Option<Vec<TaskKey>>,
+    /// completion ID → 그 호출이 계산한 통합 위치.
+    pub landing: BTreeMap<String, Landing>,
+    /// `fullops status`와 `merge`(M-13)가 잠금 밖에서 계산한 지표.
+    pub metrics: Option<Metrics>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -430,14 +496,18 @@ pub struct StatusDispatch {
     pub model: String,
     pub started_at: i64,
     pub settled: bool,
+    /// 하위 배정이다.
+    pub sub: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StatusPending {
+    /// 그 completion의 ID. 유도값 `landing`을 잇는 키다.
+    pub id: MessageId,
     pub key: Option<TaskKey>,
     /// SHA 앞 7자. SHA가 없으면 `null`.
     pub sha: Option<String>,
-    /// 같은 SHA의 이전 값을 유지한다. 계산된 적이 없으면 `null`.
+    /// 유도값. `merge_left`·`push_left`·`null`(아직 계산하지 않았다).
     pub landing: Option<Landing>,
     pub hold_reason: Option<String>,
 }
@@ -455,6 +525,8 @@ pub struct StatusDecision {
 /// 지표(설계 6.7절). 어떤 규칙의 조건으로도 쓰지 않는다.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Metrics {
+    /// 계산한 시각. 계산된 적이 없으면 0.
+    pub at: i64,
     /// 첫 사람 턴의 시각. 사람 턴이 없으면 0.
     pub since: i64,
     pub human_turns: u32,
@@ -463,4 +535,10 @@ pub struct Metrics {
     pub turns_per_task: Option<f64>,
     pub unattended_dispatches: u32,
     pub unattended_tasks: u32,
+    /// `turns.jsonl`에서 `kind == "subagent"`인 줄 수.
+    pub subagent_calls: u32,
+    /// `kind == "workflow"`인 줄 수.
+    pub workflow_runs: u32,
+    /// `state.json`과 `archive.jsonl`에서 하위 배정인 dispatch 수.
+    pub sub_dispatches: u32,
 }

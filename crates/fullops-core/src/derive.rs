@@ -9,7 +9,7 @@ pub fn stage_of(key: &TaskKey, state: &State, archive: &BTreeSet<TaskKey>, route
         state
             .dispatches
             .iter()
-            .filter(|d| &d.key == key && d.is_work())
+            .filter(|d| &d.key == key && d.is_work() && d.counts())
     };
     let completions = || {
         state
@@ -17,7 +17,8 @@ pub fn stage_of(key: &TaskKey, state: &State, archive: &BTreeSet<TaskKey>, route
             .iter()
             .filter(|c| c.key.as_ref() == Some(key))
     };
-    let any_dispatch = state.dispatches.iter().any(|d| &d.key == key);
+    // 하위 배정과 예약 기록은 이 판정에서 없는 것으로 본다
+    let any_dispatch = state.dispatches.iter().any(|d| &d.key == key && d.counts());
 
     if archive.contains(key) && !any_dispatch && completions().next().is_none() {
         return Stage::Done;

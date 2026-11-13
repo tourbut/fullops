@@ -1,83 +1,100 @@
-//! 가짜 Orca CLI. 시험이 `ORCA_CLI_COMMAND`로 가리킨다. 각본대로 응답하고 받은 호출을 기록한다.
+//! 가짜 Orca CLI. 시험이 `ORCA_CLI_COMMAND`로 가리킨다. 응답의 형태는 `scenarios/fixtures/orca/`의 표본을 따른다.
 //!
-//! 규약 (`FAKE_ORCA_DIR` 폴더 안):
-//! - `script.json`: `{"rules":[{"when":["orchestration","check"],"times":1,"sleep_ms":0,"exit":0,
-//!   "stdout":{…},"stderr":""}]}`. `when`의 낱말이 argv에 그 순서로 모두 있으면 맞는다.
-//!   위에서부터 처음 맞고 `times`(없으면 무제한)를 다 쓰지 않은 규칙의 응답을 낸다.
-//!   `stdout`이 문자열이면 그대로, 그 밖이면 JSON으로 낸다.
-//! - `calls.jsonl`: 호출마다 `{"argv":[…],"cwd":"…","terminal":"…"|null,"rule":<번호>|null,"stdout":…}` 한 줄.
-//! - 맞는 규칙이 없으면 `{"ok":false,"error":{"code":"unscripted",…}}`와 종료 코드 1을 낸다.
+//! `FAKE_ORCA_DIR` 폴더의 각본 규약은 `fullops_testkit::fake`에 있다. 각본에 맞는 규칙이 없을 때의 기본 동작:
+//! - `orchestration worker-start … --retry-request <ID>`: 같은 요청 ID로 이미 답한 적이 있으면 그 답을 다시 낸다
+//!   (새 worker가 뜨지 않는다. 기록에 `"replayed": true`). 이 검사는 각본보다 먼저다.
+//! - `orchestration check`: 우편함 `mail.jsonl`(`{"run":"<Run>","message":{…}}` 줄)에서 그 Run의 안 읽은 메시지를 낸다.
+//!   `--peek`는 읽음으로 바꾸지 않고, 소비형은 돌려준 묶음을 읽음으로 바꾼다(`mail.read`에 ID를 적는다).
+//!   `--wait`인데 없으면 `timedOut: true`, `--types`가 있으면 그 종류만, `--ack`면 빈 묶음을 낸다.
+//! - 그 밖: `{"ok":false,"error":{"code":"unscripted",…}}`와 종료 코드 1.
+//!
+//! 기록에는 `"terminal"`(`ORCA_TERMINAL_HANDLE`)과 `"stdin"`(`worker-start`의 spec)이 더 남는다.
 
+use fullops_testkit::fake::{Reply, calls, finish, flag, script_dir, scripted};
 use serde_json::{Value, json};
-use std::io::Write;
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::path::Path;
 use std::process::ExitCode;
 
-fn matches(when: &Value, argv: &[String]) -> bool {
-    let mut rest = argv.iter();
-    when.as_array().is_some_and(|words| {
-        words
-            .iter()
-            .all(|w| w.as_str().is_some_and(|w| rest.any(|a| a == w)))
-    })
+fn mailbox(dir: &Path, argv: &[String]) -> Reply {
+    if flag(argv, "--ack").is_some() {
+        return Reply::plain(json!({"ok": true, "result": {"messages": []}}), 0);
+    }
+    let read = std::fs::read_to_string(dir.join("mail.read")).unwrap_or_default();
+    let run = flag(argv, "--run");
+    let types: Option<Vec<&str>> = flag(argv, "--types").map(|t| t.split(',').collect());
+    let unread: Vec<Value> = std::fs::read_to_string(dir.join("mail.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|mail| run.is_none_or(|run| mail["run"] == run))
+        .map(|mail| mail["message"].clone())
+        .filter(|m| !read.lines().any(|id| m["id"] == id))
+        .filter(|m| {
+            types
+                .as_ref()
+                .is_none_or(|types| types.contains(&m["type"].as_str().unwrap_or("status")))
+        })
+        .collect();
+    if !argv.iter().any(|a| a == "--peek")
+        && let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("mail.read"))
+    {
+        for message in &unread {
+            let _ = writeln!(file, "{}", message["id"].as_str().unwrap_or_default());
+        }
+    }
+    let mut result = json!({ "messages": unread });
+    if unread.is_empty() && argv.iter().any(|a| a == "--wait") {
+        result["timedOut"] = json!(true);
+    }
+    Reply::plain(json!({"ok": true, "result": result}), 0)
 }
 
 fn main() -> ExitCode {
-    let Some(dir) = std::env::var_os("FAKE_ORCA_DIR").map(PathBuf::from) else {
-        eprintln!("fake-orca: FAKE_ORCA_DIR이 없습니다");
-        return ExitCode::from(97);
+    let dir = match script_dir("FAKE_ORCA_DIR") {
+        Ok(dir) => dir,
+        Err(code) => return code,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap_or_default();
-    let script: Value = serde_json::from_str(&read("script.json")).unwrap_or(Value::Null);
-    let calls: Vec<Value> = read("calls.jsonl")
-        .lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect();
-    let used = |index: usize| calls.iter().filter(|c| c["rule"] == json!(index)).count() as u64;
-
-    let rules = script["rules"].as_array().cloned().unwrap_or_default();
-    let hit = rules.iter().enumerate().find(|(i, rule)| {
-        matches(&rule["when"], &argv) && rule["times"].as_u64().is_none_or(|times| used(*i) < times)
-    });
-    let (index, stdout, stderr, exit, sleep_ms) = match hit {
-        Some((i, rule)) => (
-            Some(i),
-            rule["stdout"].clone(),
-            rule["stderr"].as_str().unwrap_or_default().to_string(),
-            rule["exit"].as_u64().unwrap_or(0) as u8,
-            rule["sleep_ms"].as_u64().unwrap_or(0),
-        ),
-        None => (
-            None,
-            json!({"ok": false, "error": {"code": "unscripted", "message": format!("각본에 없는 호출: {argv:?}")}}),
-            String::new(),
-            1,
-            0,
-        ),
+    let is = |a: &str, b: &str| {
+        argv.first().is_some_and(|x| x == a) && argv.get(1).is_some_and(|x| x == b)
     };
-
-    let record = json!({
-        "argv": argv,
-        "cwd": std::env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
-        "terminal": std::env::var("ORCA_TERMINAL_HANDLE").ok(),
-        "rule": index,
-        "stdout": stdout,
+    let mut stdin = String::new();
+    if flag(&argv, "--spec-file") == Some("-") {
+        let _ = std::io::stdin().read_to_string(&mut stdin);
+    }
+    let request = flag(&argv, "--retry-request").filter(|_| is("orchestration", "worker-start"));
+    let replay = request.and_then(|request| {
+        calls(&dir)
+            .into_iter()
+            .find(|call| call["request"] == request && call["rule"].is_number())
     });
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("calls.jsonl"))
-    {
-        let _ = file.write_all(format!("{record}\n").as_bytes());
-    }
-
-    std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
-    match &stdout {
-        Value::Null => {}
-        Value::String(text) => print!("{text}"),
-        other => println!("{other}"),
-    }
-    eprint!("{stderr}");
-    ExitCode::from(exit)
+    let replayed = replay.is_some();
+    let reply = match replay {
+        Some(call) => Reply::plain(
+            call["stdout"].clone(),
+            call["exit"].as_u64().unwrap_or(0) as u8,
+        ),
+        None => scripted(&dir, &argv).unwrap_or_else(|| {
+            if is("orchestration", "check") {
+                mailbox(&dir, &argv)
+            } else {
+                let message = format!("각본에 없는 호출: {argv:?}");
+                Reply::plain(
+                    json!({"ok": false, "error": {"code": "unscripted", "message": message}}),
+                    1,
+                )
+            }
+        }),
+    };
+    let extra = json!({
+        "terminal": std::env::var("ORCA_TERMINAL_HANDLE").ok(),
+        "request": request,
+        "replayed": replayed,
+        "stdin": stdin,
+    });
+    finish(&dir, &argv, reply, extra)
 }

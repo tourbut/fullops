@@ -1,8 +1,8 @@
 //! `fullops.toml`의 형태와 검증(설계 6.1.1절). TOML 해석은 `fullops-store`가 한다.
 
 use crate::model::{
-    CodeDef, Config, Mode, ModeTuple, ReviewPolicy, Role, RoleId, RoleKind, Routing, SubagentLevel,
-    TestLevel, WaitConfig,
+    Baseline, CodeDef, Config, Mode, ModeTuple, Parallel, ReviewPolicy, Role, RoleId, RoleKind,
+    Routing, TestLevel, WaitConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -72,7 +72,7 @@ pub struct RawConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tech_plan_role: Option<RoleId>,
     pub test_level: TestLevel,
-    pub subagent_level: SubagentLevel,
+    pub parallel: Parallel,
     pub git: RawGit,
     #[serde(default)]
     pub roles: BTreeMap<RoleId, Role>,
@@ -186,6 +186,11 @@ pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
                     "routing = \"split\"에는 tech_plan_role이 필요합니다.".into(),
                 ));
             }
+            Some(role) if !raw.roles.contains_key(role) => {
+                return Err(invalid(format!(
+                    "tech_plan_role {role}은 등록된 역할이 아닙니다."
+                )));
+            }
             Some(role) if Some(role) == design => {
                 return Err(invalid(format!(
                     "tech_plan_role {role}은 design 역할과 달라야 합니다."
@@ -193,6 +198,11 @@ pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
             }
             Some(_) => {}
         }
+    }
+    if raw.git.remote.as_deref() == Some("") {
+        return Err(invalid(
+            "[git].remote가 빈 문자열입니다. 로컬 전용이면 키를 지웁니다.".into(),
+        ));
     }
     Ok(Config {
         schema: raw.schema,
@@ -203,7 +213,7 @@ pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
         routing: raw.routing,
         tech_plan_role: raw.tech_plan_role,
         test_level: raw.test_level,
-        subagent_level: raw.subagent_level,
+        parallel: raw.parallel,
         base: raw.git.base,
         remote: raw.git.remote,
         roles: raw.roles,
@@ -211,6 +221,29 @@ pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
         code: raw.code,
         wait: raw.wait,
     })
+}
+
+/// 새 레포의 `test_level` 기본값(설계 10.6절). 기준 시점에 설정이 없을 때도 이 값을 쓴다.
+pub const DEFAULT_TEST_LEVEL: TestLevel = TestLevel::Lite;
+
+/// 기준 시점(merge-base 커밋)의 검사 기준을 고른다(설계 6.1.1절). `parsed`는 그 커밋의 `fullops.toml`을 해석한 결과이고
+/// 파일이 없으면 `None`이다. 없으면 내장 기본값, 읽히지 않거나 검증을 어기면 내장 기본값과 `fell_back = true`다.
+/// TOML 글을 받는 `baseline(toml_text)`는 `fullops-store`에 있다(core는 `toml`을 쓰지 않는다).
+pub fn baseline(parsed: Option<Result<Config, PolicyError>>) -> Baseline {
+    match parsed {
+        Some(Ok(config)) => Baseline {
+            review: config.review,
+            code: config.code,
+            test_level: config.test_level,
+            fell_back: false,
+        },
+        other => Baseline {
+            review: ReviewPolicy::default(),
+            code: CodeDef::default(),
+            test_level: DEFAULT_TEST_LEVEL,
+            fell_back: other.is_some(),
+        },
+    }
 }
 
 /// 세션이 시작한 뒤 모드가 바뀌었으면 정책 오류다(설계 7.8절).

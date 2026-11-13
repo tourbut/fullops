@@ -33,3 +33,8 @@ pub(super) fn s04(_input: &HookInput, _facts: &mut dyn Facts) -> Finding {
 pub(super) fn s05(_input: &HookInput, _facts: &mut dyn Facts) -> Finding {
     Finding::None
 }
+
+/// S-06
+pub(super) fn s06(_input: &HookInput, _facts: &mut dyn Facts) -> Finding {
+    Finding::None
+}

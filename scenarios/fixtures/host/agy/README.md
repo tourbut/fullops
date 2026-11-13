@@ -33,7 +33,7 @@ agy 1.4.8이 hook에 주는 입력 JSON과 hook이 내는 출력 JSON의 형식 
 
 | 파일 | Verdict | 비고 |
 |---|---|---|
-| `pass.pre_tool_use.json` | `Pass` (PreToolUse) | `decision`이 필수다. `allow`가 권한 확인을 건너뛰게 하는지는 **확인하지 못했다**. 건너뛴다면 `ask`로 바꿔야 한다 |
+| `pass.pre_tool_use.json` | `Pass` (PreToolUse) | `decision`이 필수다. 값은 `ask`다(설계 7.2절: 확인 전에는 권한을 넓히지 않는 값을 쓴다). `allow`가 "의견 없음"으로 확인되면 `allow`로 바꾼다(미정-M11) |
 | `pass.stop.json` | `Pass` (Stop) | `continue`가 아닌 값이면 멈춘다 |
 | `pass.json` | `Pass` (SessionStart와 그 밖) | |
 | `deny.pre_tool_use.json` | `Deny` | |
