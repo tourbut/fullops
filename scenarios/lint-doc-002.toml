@@ -1,0 +1,122 @@
+name = "DOC-002: 바뀐 산출물 원천 문서의 front matter"
+origin = "8.11절 9번 DOC-002, 8.12절"
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+# 기준 시점의 산출물 인덱스: D01은 review, D02는 범위 밖이다
+[[step]]
+act = "file"
+path = ".fullops-squad/docs/deliverables/README.md"
+content = """
+---
+title: 산출물 인덱스
+status: draft
+updated: 2026-11-14
+owner: lead
+summary: 산출물과 원천 문서의 대응
+---
+
+| ID | 단계 | 산출물 | 원천 | 상태 |
+|---|---|---|---|---|
+| D01 | 착수 | 사업계획서 | `docs/planning/business-plan.md` | review |
+| D02 | 분석 | 요구사항정의서 | `docs/planning/product-specs/` | 범위 밖 |
+"""
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 필드 순서가 정해진 형식과 다르다
+[[step]]
+act = "file"
+path = ".fullops-squad/docs/planning/business-plan.md"
+content = """
+---
+title: 사업계획서
+id: D01
+status: review
+updated: 2026-11-14
+owner: lead
+summary: 사업 목표와 범위
+---
+
+# 사업계획서
+"""
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR DOC-002 .fullops-squad/docs/planning/business-plan.md D01 front matter: 정해진 형식과 다름" }
+
+# 검출: 인덱스 상태(review)와 문서 상태(draft)가 다르다
+[[step]]
+act = "file"
+path = ".fullops-squad/docs/planning/business-plan.md"
+content = """
+---
+id: D01
+title: 사업계획서
+status: draft
+updated: 2026-11-14
+owner: lead
+summary: 사업 목표와 범위
+---
+
+# 사업계획서
+"""
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "인덱스 상태(review)와 문서 상태(draft)가 다름" }
+
+# 비검출: 형식과 상태가 맞는 원천 문서, 범위 밖 산출물의 원천
+[[step]]
+act = "file"
+path = ".fullops-squad/docs/planning/business-plan.md"
+content = """
+---
+id: D01
+title: 사업계획서
+status: review
+updated: 2026-11-14
+owner: lead
+tasks: [PAY-12]
+summary: 사업 목표와 범위
+---
+
+# 사업계획서
+"""
+
+[[step]]
+act = "file"
+path = ".fullops-squad/docs/planning/product-specs/login.md"
+content = "front matter 없는 메모\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

@@ -1,9 +1,11 @@
 //! 프로세스 실행기(설계 10.2절). 셸을 거치지 않는 인자 배열로 실행한다.
-//! 뼈대의 기본 구현이다. 프로세스 트리 종료(Windows Job Object, POSIX 프로세스 그룹)는 묶음 D가 더한다.
+//! 제한 시간이 지나면 프로세스 트리를 끝낸다(설계 8.11절 8번). `run`의 시그니처는 뼈대가 동결한 그대로다.
 
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +16,7 @@ pub enum ProcStatus {
     NotFound,
 }
 
+/// `TimedOut`이면 `stdout`·`stderr`는 끝내기 전까지 나온 출력이다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcResult {
     pub status: ProcStatus,
@@ -43,17 +46,79 @@ fn failed(status: ProcStatus) -> ProcResult {
     }
 }
 
-fn read_all(pipe: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
+/// 트리를 끝낸 뒤 남은 출력을 기다리는 한도. 트리를 벗어난 자손이 파이프를 쥐고 있을 수 있어 오래 기다리지 않는다.
+const KILL_WAIT: Duration = Duration::from_secs(5);
+/// 출력이 제한 시간 끝에 맞춰 끝났을 때 프로세스의 종료를 마저 기다리는 최소 시간.
+const EXIT_GRACE: Duration = Duration::from_millis(200);
+
+type Shared = Arc<Mutex<Vec<u8>>>;
+
+/// 파이프를 끝까지 읽어 공유 버퍼에 쌓는다. 다 읽으면 `done`을 버려, 받는 쪽이 끊김으로 안다.
+fn read_all(pipe: Option<impl Read + Send + 'static>, done: mpsc::Sender<()>) -> Shared {
+    let buf = Shared::default();
+    let sink = buf.clone();
     std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(mut pipe) = pipe {
-            let _ = pipe.read_to_end(&mut buf);
+        let _done = done;
+        let Some(mut pipe) = pipe else { return };
+        let mut chunk = [0u8; 8192];
+        loop {
+            match pipe.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if let (Ok(mut buf), Some(bytes)) = (sink.lock(), chunk.get(..n)) {
+                        buf.extend_from_slice(bytes);
+                    }
+                }
+                Err(e) if e.kind() == ErrorKind::Interrupted => {}
+                Err(_) => break,
+            }
         }
-        buf
-    })
+    });
+    buf
 }
 
+fn take(buf: &Shared) -> Vec<u8> {
+    buf.lock()
+        .map(|mut bytes| std::mem::take(&mut *bytes))
+        .unwrap_or_default()
+}
+
+fn quiet(mut command: Command) {
+    let _ = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+/// 직접 띄운 프로세스와 그 자손을 끝낸다.
+#[cfg(windows)]
+fn kill_tree(pid: u32) {
+    // shortcut: Job Object는 unsafe FFI가 있어야 해서 taskkill로 트리를 끝낸다. 직접 띄운 프로세스가 먼저 끝난 뒤 남은 손자는 찾지 못한다, unsafe나 windows-sys를 허용하면 Job Object로 바꾼다
+    let taskkill = std::env::var_os("SystemRoot")
+        .map(|root| Path::new(&root).join("System32").join("taskkill.exe"))
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| "taskkill".into());
+    let mut command = Command::new(taskkill);
+    command.args(["/T", "/F", "/PID", &pid.to_string()]);
+    quiet(command);
+}
+
+/// 직접 띄운 프로세스와 그 자손을 끝낸다.
+#[cfg(unix)]
+fn kill_tree(pid: u32) {
+    // 프로세스 그룹 ID가 직접 띄운 프로세스의 PID다(`process_group(0)`). 그 프로세스가 먼저 끝나도 그룹은 남는다.
+    // libc 없이 신호를 보내려고 kill 명령을 쓴다
+    let mut command = Command::new("kill");
+    command.args(["-KILL", "--", &format!("-{pid}")]);
+    quiet(command);
+}
+
+#[cfg(not(any(windows, unix)))]
+fn kill_tree(_pid: u32) {}
+
 /// `argv[0]`을 `cwd`에서 실행하고 끝나기를 기다린다. `env`는 물려받은 환경에 덧붙인다.
+/// 제한 시간이 지나면 프로세스 트리를 끝내고 `TimedOut`을 돌려준다.
 pub fn run(
     argv: &[String],
     cwd: &Path,
@@ -64,7 +129,8 @@ pub fn run(
     let Some((program, args)) = argv.split_first() else {
         return failed(ProcStatus::NotFound);
     };
-    let spawned = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(args)
         .current_dir(cwd)
         .envs(env.iter().copied())
@@ -74,9 +140,13 @@ pub fn run(
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
-    let Ok(mut child) = spawned else {
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        // 제한 시간이 지나면 자손까지 끝낼 수 있게 자기 프로세스 그룹을 준다
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    }
+    let Ok(mut child) = command.spawn() else {
         return failed(ProcStatus::NotFound);
     };
 
@@ -86,26 +156,45 @@ pub fn run(
             let _ = pipe.write_all(&bytes);
         });
     }
-    let out = read_all(child.stdout.take());
-    let err = read_all(child.stderr.take());
+    let (done, readers) = mpsc::channel::<()>();
+    let out = read_all(child.stdout.take(), done.clone());
+    let err = read_all(child.stderr.take(), done);
+    // 읽는 스레드가 둘 다 끝났는가를 `limit`까지 기다려 본다
+    let drained = |limit: Duration| {
+        matches!(
+            readers.recv_timeout(limit),
+            Err(RecvTimeoutError::Disconnected)
+        )
+    };
 
     let deadline = Instant::now() + timeout;
-    let code = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status.code().unwrap_or(-1),
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(2)),
-            _ => {
-                // shortcut: 직접 띄운 프로세스만 끝낸다, 하위 프로세스까지 끝내야 하는 lint 실행기(묶음 D)에서 트리 종료로 바꾼다
-                let _ = child.kill();
-                let _ = child.wait();
-                return failed(ProcStatus::TimedOut);
+    // 출력이 끝나는 것으로 종료를 안다(종료 상태를 폴링하는 것보다 빨리 깬다).
+    // 직접 띄운 프로세스가 끝나도 자손이 파이프를 쥐고 있으면 출력이 끝나지 않는다. 그것도 제한 시간 안에 끝나야 한다
+    if drained(timeout) {
+        // 파이프를 닫고도 계속 도는 프로세스는 남은 시간 동안 기다린다. 막 끝나는 프로세스에는 짧은 여유를 준다
+        let until = deadline.max(Instant::now() + EXIT_GRACE);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    return ProcResult {
+                        status: ProcStatus::Exited(status.code().unwrap_or(-1)),
+                        stdout: take(&out),
+                        stderr: take(&err),
+                    };
+                }
+                Ok(None) if Instant::now() < until => std::thread::sleep(Duration::from_millis(1)),
+                _ => break,
             }
         }
-    };
+    }
+    kill_tree(child.id());
+    let _ = child.kill();
+    let _ = child.wait();
+    drained(KILL_WAIT);
     ProcResult {
-        status: ProcStatus::Exited(code),
-        stdout: out.join().unwrap_or_default(),
-        stderr: err.join().unwrap_or_default(),
+        status: ProcStatus::TimedOut,
+        stdout: take(&out),
+        stderr: take(&err),
     }
 }
 

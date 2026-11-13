@@ -1,0 +1,80 @@
+name = "ANTI-002: 추가된 줄의 eval(·exec("
+origin = "8.11절 9번 ANTI-002"
+
+[setup]
+remote = false
+roles = {}
+
+# 기준 시점: 통과하는 명령 하나를 등록해 깨끗한 실행의 경고가 0이 되게 한다
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: Python의 eval(
+[[step]]
+act = "file"
+path = "src/calc.py"
+content = "\"\"\"계산기.\"\"\"\nvalue = eval(user_input)\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR ANTI-002 src/calc.py:2" }
+
+# 검출: JS 계열의 exec (
+[[step]]
+act = "file"
+path = "src/calc.py"
+content = "\"\"\"계산기.\"\"\"\nvalue = 1\n"
+
+[[step]]
+act = "file"
+path = "src/run.ts"
+content = "// 실행기.\nconst out = exec (code);\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR ANTI-002 src/run.ts:2" }
+
+# 비검출: 앞 글자가 단어·점·$인 호출, 대상이 아닌 확장자
+[[step]]
+act = "file"
+path = "src/calc.py"
+content = "\"\"\"계산기.\"\"\"\nvalue = literal_eval(user_input)\nother = parser.eval(user_input)\n"
+
+[[step]]
+act = "file"
+path = "src/run.ts"
+content = "// 실행기.\nconst out = $exec(code);\n"
+
+[[step]]
+act = "file"
+path = "src/run.go"
+content = "// 실행기.\nvar out = eval(code)\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

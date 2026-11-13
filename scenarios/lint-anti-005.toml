@@ -1,0 +1,68 @@
+name = "ANTI-005: 테스트 케이스 수 감소와 테스트 파일 삭제"
+origin = "8.11절 9번 ANTI-005"
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+[[step]]
+act = "file"
+path = "tests/test_pay.py"
+content = "\"\"\"결제 시험.\"\"\"\n\ndef test_retry():\n    assert True\n\ndef test_refund():\n    assert True\n"
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 케이스 하나를 지운다
+[[step]]
+act = "file"
+path = "tests/test_pay.py"
+content = "\"\"\"결제 시험.\"\"\"\n\ndef test_retry():\n    assert True\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING ANTI-005 tests/test_pay.py 테스트 케이스 1개 감소" }
+
+# 비검출: 케이스를 바꾸고 더했다(수가 줄지 않았다)
+[[step]]
+act = "file"
+path = "tests/test_pay.py"
+content = "\"\"\"결제 시험.\"\"\"\n\ndef test_retry():\n    assert True\n\ndef test_refund_all():\n    assert True\n\ndef test_cancel():\n    assert True\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }
+
+# 검출: 테스트 파일을 지운다
+[[step]]
+act = "git"
+args = ["rm", "-q", "tests/test_pay.py"]
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING ANTI-005 tests/test_pay.py 테스트 파일 삭제" }

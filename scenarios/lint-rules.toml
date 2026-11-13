@@ -1,0 +1,164 @@
+name = "레포 정규식 규칙: 추가된 줄, 확장자, 제외 경로·무늬, 여러 줄, 끈 규칙, 컴파일 실패"
+origin = "8.11절 9번 rules[].code"
+
+[setup]
+remote = false
+roles = {}
+
+# 기준 시점의 규칙. rules를 적으면 내장 템플릿의 규칙을 대신한다
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '''
+{
+  "schema_version": 1,
+  "commands": [{"name": "version", "run": ["git", "--version"]}],
+  "rules": [
+    {"code": "CUSTOM-001", "description": "담당 없는 TODO", "pattern": "TODO\\(", "file_extensions": [".py"],
+     "severity": "ERROR", "suggestion": "담당과 기한을 적는다", "exclude_patterns": ["TODO\\(ok\\)"], "exclude_paths": ["legacy/**"]},
+    {"code": "CUSTOM-002", "description": "빈 블록", "pattern": "begin\\s*\\n\\s*end", "multiline": true, "severity": "WARNING"},
+    {"code": "CUSTOM-003", "description": "꺼 둔 규칙", "pattern": "value", "severity": "ERROR", "enabled": false},
+    {"code": "CUSTOM-004", "description": "검증 없는 호출", "pattern": "(?<!safe_)danger\\(", "severity": "ERROR"}
+  ]
+}
+'''
+
+# 기준 시점에 이미 규칙에 걸리는 줄이 있는 파일
+[[step]]
+act = "file"
+path = "src/old.py"
+content = "\"\"\"옛 모듈.\"\"\"\nvalue = 1  # TODO(누군가)\n"
+
+[[step]]
+act = "file"
+path = "src/keep.txt"
+content = "begin\n  end\n"
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 한 줄 규칙(ERROR), lookbehind 규칙, 여러 줄 규칙(WARNING)
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "\"\"\"결제.\"\"\"\nvalue = 1  # TODO(누군가)\ndanger(value)\n"
+
+[[step]]
+act = "file"
+path = "src/block.txt"
+content = "begin\n  end\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR CUSTOM-001 src/pay.py:2 담당 없는 TODO 담당과 기한을 적는다" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", escape = "ERROR CUSTOM-004 src/pay.py:3" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", escape = "WARNING CUSTOM-002 src/block.txt:1" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", escape = "ERROR 2 / WARNING 1 / 실행 불가 0" }
+
+# 비검출: 제외 무늬, 제외 경로, 다른 확장자, 끈 규칙, lookbehind에 막힌 호출,
+# 기준 시점부터 있던 줄(옛 파일에 줄만 더했다), 추가 줄이 걸치지 않는 여러 줄 일치
+[[step]]
+act = "git"
+args = ["rm", "-q", "src/block.txt"]
+
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "\"\"\"결제.\"\"\"\nvalue = 1  # TODO(ok)\nsafe_danger(value)\n"
+
+[[step]]
+act = "file"
+path = "legacy/pay.py"
+content = "\"\"\"옛 결제.\"\"\"\nvalue = 1  # TODO(누군가)\n"
+
+[[step]]
+act = "file"
+path = "src/pay.ts"
+content = "// 결제.\nconst value = 1; // TODO(누군가)\n"
+
+[[step]]
+act = "file"
+path = "src/old.py"
+content = "\"\"\"옛 모듈.\"\"\"\nvalue = 1  # TODO(누군가)\nother = 2\n"
+
+[[step]]
+act = "file"
+path = "src/keep.txt"
+content = "begin\n  end\ntail\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }
+
+# 컴파일하지 못하는 규칙은 실행 불가 한 건이고 통과를 막는다. 다른 규칙은 그대로 돈다
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '''
+{
+  "schema_version": 1,
+  "commands": [{"name": "version", "run": ["git", "--version"]}],
+  "rules": [
+    {"code": "CUSTOM-005", "description": "닫지 않은 괄호", "pattern": "(unclosed"},
+    {"code": "CUSTOM-006", "description": "디버그 표식", "pattern": "DEBUG"}
+  ]
+}
+'''
+
+[[step]]
+act = "commits"
+message = "둘째 기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base2"]
+
+[[step]]
+act = "file"
+path = "notes/a.txt"
+content = "DEBUG 켜 둠\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base2"]
+expect = { verdict = "deny", exit = 2, escape = "[unrunnable] CUSTOM-005" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base2"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR 0 / WARNING 1 / 실행 불가 1" }

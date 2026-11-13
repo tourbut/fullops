@@ -1,0 +1,84 @@
+name = "ANTI-004: 테스트 파일에 추가된 skip·only 표식"
+origin = "8.11절 9번 ANTI-004"
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: pytest의 skip 표식
+[[step]]
+act = "file"
+path = "tests/test_pay.py"
+content = "\"\"\"결제 시험.\"\"\"\nimport pytest\n\n@pytest.mark.skip\ndef test_retry():\n    assert True\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR ANTI-004 tests/test_pay.py:4" }
+
+# 검출: JS의 .only(와 Rust의 #[ignore]
+[[step]]
+act = "file"
+path = "tests/test_pay.py"
+content = "\"\"\"결제 시험.\"\"\"\n\ndef test_retry():\n    assert True\n"
+
+[[step]]
+act = "file"
+path = "web/pay.test.ts"
+content = "// 결제 시험.\nit.only(\"retry\", () => {});\n"
+
+[[step]]
+act = "file"
+path = "core/tests/pay.rs"
+content = "//! 결제 시험.\n#[test]\n#[ignore]\nfn retry() {}\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR 2 / WARNING 0" }
+
+# 비검출: 표식이 없는 테스트, 테스트 파일이 아닌 곳의 같은 글
+[[step]]
+act = "file"
+path = "web/pay.test.ts"
+content = "// 결제 시험.\nit(\"retry\", () => {});\n"
+
+[[step]]
+act = "file"
+path = "core/tests/pay.rs"
+content = "//! 결제 시험.\n#[test]\nfn retry() {}\n"
+
+[[step]]
+act = "file"
+path = "src/skipper.ts"
+content = "// 건너뛰기 도구.\nqueue.skip(job);\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

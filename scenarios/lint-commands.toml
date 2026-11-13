@@ -1,0 +1,283 @@
+name = "명령 선택과 실행 순서: paths, level, 코드 변경 없음, required, 앞 단계 실패, 실행 불가, 타임아웃"
+origin = "8.11절 6~8번"
+
+[setup]
+remote = false
+roles = {}
+test_level = "lite"
+
+# 기준 시점의 명령 다섯
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '''
+{
+  "schema_version": 1,
+  "commands": [
+    {"name": "always", "run": ["git", "--version"]},
+    {"name": "web-only", "run": ["git", "--version"], "paths": ["web/**"]},
+    {"name": "unit", "kind": "test", "run": ["git", "--version"]},
+    {"name": "full-only", "kind": "test", "level": "full", "run": ["git", "--version"]},
+    {"name": "must", "kind": "test", "level": "full", "required": true, "run": ["git", "--version"]}
+  ]
+}
+'''
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 문서만 바꿨다: paths가 안 맞는 명령, 레벨이 높은 시험, required가 아닌 시험은 건너뛰고 required 시험은 돈다
+[[step]]
+act = "file"
+path = "notes/a.md"
+content = "# 메모\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "[passed] always" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", escape = "[skipped] web-only: git --version (건너뜀: 바뀐 파일이 명령의 paths와 맞지 않음)" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", escape = "[skipped] unit: git --version (건너뜀: 코드 파일 변경 없음)" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", escape = "[skipped] full-only: git --version (건너뜀: 적용 레벨 lite, 명령의 최소 레벨 full)" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", escape = "[passed] must" }
+
+# 코드를 바꿨다: 레벨 없는 시험이 돈다. 레벨이 높은 시험은 여전히 건너뛴다
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "\"\"\"결제.\"\"\"\nvalue = 1\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "[passed] unit" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", escape = "[skipped] full-only" }
+
+# --level로 올리면 그 레벨의 시험이 돈다. 낮추는 값은 무시한다
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base", "--level", "full"]
+expect = { verdict = "pass", exit = 0, escape = "[passed] full-only" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base", "--level", "minimal"]
+expect = { verdict = "pass", exit = 0, escape = "[passed] unit" }
+
+# paths에 맞는 파일을 바꾸면 그 명령이 돈다
+[[step]]
+act = "file"
+path = "web/view.ts"
+content = "// 화면.\nexport const view = 1;\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "[passed] web-only" }
+
+# 시험이 아닌 명령이 실패하면 나머지 앞 단계 명령은 끝까지 돌고 시험 명령은 건너뛴다. 미통과다
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '''
+{
+  "schema_version": 1,
+  "commands": [
+    {"name": "broken", "run": ["git", "--fullops-no-such-option"]},
+    {"name": "after", "kind": "build", "run": ["git", "--version"]},
+    {"name": "unit", "kind": "test", "run": ["git", "--version"]},
+    {"name": "must", "kind": "test", "required": true, "run": ["git", "--version"]}
+  ]
+}
+'''
+
+[[step]]
+act = "commits"
+message = "둘째 기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base2"]
+
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "\"\"\"결제.\"\"\"\nvalue = 2\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base2"]
+expect = { verdict = "deny", exit = 2, escape = "[failed] broken" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base2"]
+expect = { verdict = "deny", escape = "[passed] after" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base2"]
+expect = { verdict = "deny", escape = "[skipped] must: git --version (건너뜀: 앞 단계 명령이 실패해 실행하지 않음)" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base2"]
+expect = { verdict = "deny", escape = "ERROR 1 / WARNING 0 / 실행 불가 0" }
+
+# 차례 실행(parallel_tests: false): 시험 하나가 실패하면 남은 시험을 건너뛴다. 실행 파일이 없는 명령은 실행 불가다
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '''
+{
+  "schema_version": 1,
+  "parallel_tests": false,
+  "commands": [
+    {"name": "missing", "run": ["fullops-no-such-program"]},
+    {"name": "first", "kind": "test", "run": ["git", "--fullops-no-such-option"]},
+    {"name": "second", "kind": "test", "run": ["git", "--version"]}
+  ]
+}
+'''
+
+[[step]]
+act = "commits"
+message = "셋째 기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base3"]
+
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "\"\"\"결제.\"\"\"\nvalue = 3\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base3"]
+expect = { verdict = "deny", exit = 2, escape = "[unrunnable] missing" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base3"]
+expect = { verdict = "deny", escape = "[failed] first" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base3"]
+expect = { verdict = "deny", escape = "[skipped] second: git --version (건너뜀: 앞 단계 명령이 실패해 실행하지 않음)" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base3"]
+expect = { verdict = "deny", escape = "ERROR 1 / WARNING 0 / 실행 불가 1" }
+
+# 동시 실행: 시험 둘이 함께 돌고, 제한 시간(명령의 timeout_seconds)을 넘긴 시험은 timeout이며 미통과다
+[[step]]
+act = "fakes"
+names = ["fullops-hang-tool"]
+
+[[step]]
+act = "host_replies"
+when = ["fullops-hang-tool"]
+sleep_ms = 60000
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '''
+{
+  "schema_version": 1,
+  "commands": [
+    {"name": "hang", "kind": "test", "run": ["fullops-hang-tool"], "timeout_seconds": 2},
+    {"name": "quick", "kind": "test", "run": ["git", "--version"]}
+  ]
+}
+'''
+
+[[step]]
+act = "commits"
+message = "넷째 기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base4"]
+
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "\"\"\"결제.\"\"\"\nvalue = 4\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base4"]
+expect = { verdict = "deny", exit = 2, escape = "[timeout] hang" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base4"]
+expect = { verdict = "deny", escape = "[passed] quick" }

@@ -1,0 +1,43 @@
+name = "LINT-002: 범위 없는 명령이 120초를 넘었다(검출, 2분 넘게 걸린다)"
+origin = "8.11절 9번 LINT-002"
+
+[setup]
+remote = false
+roles = {}
+
+# 121초 동안 멈춰 있다가 성공하는 가짜 도구
+[[step]]
+act = "fakes"
+names = ["fullops-slow-tool"]
+
+[[step]]
+act = "host_replies"
+when = ["fullops-slow-tool"]
+sleep_ms = 121000
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "slow", "run": ["fullops-slow-tool"]}]}'
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+[[step]]
+act = "file"
+path = "notes/a.txt"
+content = "메모\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING LINT-002 .fullops-squad/lint/lint.json 명령 slow이 12" }
