@@ -293,9 +293,20 @@ impl Sandbox {
     /// 격리된 환경의 프로세스. 사용자의 홈·git 설정·Orca·호스트 설정·API 키가 새어 들지 않는다.
     pub fn command(&self, program: impl AsRef<std::ffi::OsStr>, cwd: &Path) -> Command {
         let mut cmd = Command::new(program);
-        let path = std::env::join_paths(std::iter::once(self.bin_dir.clone()).chain(
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-        ))
+        // 실제 호스트 CLI·npx가 든 폴더는 뺀다. 시험이 FULLOPS_OFFLINE을 풀어도 이 PC의 호스트 설정에 닿지 않는다
+        let real_host = |dir: &PathBuf| {
+            ["claude", "codex", "grok", "agy", "npx"].iter().any(|name| {
+                ["", ".exe", ".cmd"]
+                    .iter()
+                    .any(|ext| dir.join(format!("{name}{ext}")).exists())
+            })
+        };
+        let path = std::env::join_paths(
+            std::iter::once(self.bin_dir.clone()).chain(
+                std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+                    .filter(|dir| !real_host(dir)),
+            ),
+        )
         .expect("PATH 만들기");
         cmd.current_dir(cwd)
             .env("PATH", path)
