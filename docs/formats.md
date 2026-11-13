@@ -3,7 +3,7 @@
 이 문서는 [design.md](design.md) 6절의 형식과 8절·10절의 공용 규약을 필드 단위로 옮겨 적은 것이다. 구현 묶음은 설계 문서 전체를 다시 읽지 않고 이 문서로 형식을 본다. 설계 문서가 정본이고, 둘이 어긋나면 이 문서가 틀린 것이다.
 
 - Rust 타입은 따로 적지 않으면 `fullops_core::model`에 있다. 이 문서의 표는 그 타입의 serde 형식과 같다.
-- 시각은 모두 에폭 초(`i64`)다. 날짜 문자열을 쓰지 않는다.
+- 시각은 모두 에폭 초(`i64`)다. 날짜 문자열은 사람이 읽는 두 곳에만 쓴다: 문서 front matter의 `updated`(`YYYY-MM-DD`)와 `PLANS.md` 배정 기록의 `YYYY-MM-DD HH:MM`.
 - "쓰는 주체" 열이 비어 있으면 그 객체를 쓰는 주체와 같다.
 - 형식을 바꿔야 하면 `fullops-core::model`과 이 문서를 함께 고친다. 묶음 A 담당에게 요청한다(설계 18.3절).
 - 설계 6.1.1·6.1.4·6.1.5·6.2.1·6.2.3·6.3·10.7절의 예시 JSON·TOML이 타입으로 읽히고 다시 쓰면 같은 값이 되는지는 `crates/fullops-store/tests/store.rs`가 설계 문서에서 예시를 꺼내 확인한다.
@@ -48,7 +48,7 @@
 | 자리 | 경로 | `Repo` 메서드 |
 |---|---|---|
 | 커밋되는 파일 | `<작업 트리>/.fullops-squad/` | `squad()` |
-| | `fullops.toml` | `config_path()` |
+| | `fullops.toml`(`migrate --rollback` 뒤에는 `fullops.toml.rolled-back`으로 이름이 바뀌어 남는다) | `config_path()` |
 | | `PLANS.md` | `plan_path()` |
 | | `handovers/to_<역할>.md` | `inbox_path(role)` |
 | | `handovers/logs/<KEY>.<역할>.r<차수>.md` | `handover_log_path(key, role, round)` |
@@ -63,7 +63,7 @@
 | | `archive.jsonl` | `archive_path()` |
 | | `turns.jsonl` | `turns_path()` |
 | | `waiters/<run>.json` | `waiter_path(run)` |
-| | `py-backup/` | (묶음 F) |
+| | `py-backup/`(Python판 상태 폴더의 사본, 되돌리기 기록 `migrate.json`, 바꾸기 전의 `delegation.md`) | (묶음 F의 `migrate`) |
 | 작업 트리별 Git 디렉터리 | `<git-dir>/fullops/` | `local()` |
 | | `sessions/<sid>.json`, `sessions/<sid>.json.lock` | `session_path(sid)` |
 | | `sessions/<sid>.seen/<이벤트>` | `seen_path(sid, event)` |
@@ -226,26 +226,60 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `accepted.json` | `v`(1), `key`, `base`, `head`, `result_sha256`, `lint_sha256`, `reviewer_session`, `implementer_session`(글 \| null), `at`. 두 해시가 현재 파일과 같을 때만 유효하다 |
 | `waiver.json` | `v`(1), `key`, `base`, `head`, `reason`, `decision`(`DecisionId`), `decided_by`(`"user"`), `need`(`Need` 객체), `at`. 덮어쓰지 않는다 |
 | `superseded.json` | `by`, `old_result_sha256`, `new_result_sha256`, `at` |
-| `abandoned.json` | 묶음 E가 필드를 정해 이 표에 적는다(설계 18절) |
+| `abandoned.json` | `v`(1), `key`, `head`, `reason`, `at`. `review cleanup --abandon`이 쓴다 |
+
+리뷰의 `base`는 `merge-base(refs/heads/<base>, head)`이고 `targets.json`의 `base`와 `merge_base`가 같은 값이다(dev 직접 작업처럼 merge-base가 `head` 자신이면 통합 기준 ref, 세션 anchor 순으로 넘어간다). `policy_sha256`은 lead 체크아웃 작업 트리의 `review/rule.json`을 CRLF → LF로 맞춘 글의 sha256이고 파일이 없으면 빈 글의 해시다. `accepted.json`의 두 해시는 파일 바이트 그대로의 sha256이다. `result.json` 뼈대에서 미리 건너뛴 대상(`preset = "skipped"`)은 `review_status: "skipped"`와 고정 사유가 채워져 있다. 묶음 B(X-02)는 `accepted.json`의 형식과 `head`만 본다(해시 검증은 `review check`).
 
 `Need` 객체: `required`(불), `action`(`skip` \| `ask` \| `review`), `reason`, `code_files`, `code_lines`, `always`(걸린 경로 목록), `base`, `head`, `merge_base`.
 
 ### 3.6 `lint/lint.json`, `review/rule.json`, 산출물 인덱스
 
-1.24.0의 형식을 그대로 읽는다(변환하지 않는다). 사람이 쓴다. 설계가 이름을 든 키는 다음과 같고, 전체 키와 타입은 묶음 D(`lint.json`)와 묶음 E(`rule.json`)가 1.24.0 템플릿을 읽고 이 절에 적는다(설계 18절이 그 묶음에 맡겼다).
+1.24.0의 형식을 그대로 읽는다(변환하지 않는다). 사람이 쓴다. 전체 키와 타입은 묶음 D(`lint.json`)와 묶음 E(`rule.json`)가 정했다.
 
-| 파일 | 설계가 든 키 |
-|---|---|
-| `lint/lint.json` | `commands[]`: `name`, `run[]`, `cwd`, `kind`, `level`, `required`, `paths`, `timeout_seconds`. `exclude`(glob 목록), `timeout_seconds`(기본 600), `parallel_tests`, `size`: `severity`, `max_code_lines`, `max_doc_lines`, `max_diff_added`. `rules[]`: `code`, `file_extensions`, `exclude_paths`, `exclude_patterns`, `multiline`, `enabled` |
-| `review/rule.json` | `include`, `exclude`, `rules[]`: `path`(glob)와 규칙 문장 |
+`lint/lint.json`(해석은 `fullops_core::lint_rules::parse_lint_config(lint_json, template)`):
+
+| 키 | 타입과 기본값 | 뜻 |
+|---|---|---|
+| `schema_version` | 정수, `1` | |
+| `timeout_seconds` | 정수, 기본 600 | 명령에 값이 없을 때의 제한 시간 |
+| `parallel_tests` | 불, 기본 `true` | test 명령을 동시에 실행한다 |
+| `exclude` | glob 배열 | lint 제외 경로 |
+| `size.severity` | `ERROR` \| `WARNING` | SIZE-001의 심각도 |
+| `size.max_code_lines`, `size.max_doc_lines`, `size.max_diff_added` | 정수 | `max_diff_added`가 0이면 SIZE-002를 끈다 |
+| `commands[].name` | 글, 필수 | |
+| `commands[].run` | 글 배열, 필수, 비어 있지 않음 | 셸을 거치지 않는 인자 배열 |
+| `commands[].cwd` | 글, 기본 `.` | 레포 안의 상대 경로 |
+| `commands[].kind` | 글, 기본 `lint` | `test`면 시험 명령 |
+| `commands[].level` | `TestLevel` | test 명령만 |
+| `commands[].required` | 불, 기본 `false` | |
+| `commands[].paths` | glob 배열 | 있으면 비어 있지 않아야 한다 |
+| `commands[].timeout_seconds` | 정수 | 없으면 최상위 값 |
+| `rules[].code`, `description`, `pattern`, `suggestion` | 글 | 레포 정규식 규칙(fancy-regex) |
+| `rules[].file_extensions`, `exclude_patterns`, `exclude_paths` | 글 배열 | `exclude_paths`는 glob |
+| `rules[].severity` | 기본 `WARNING` | |
+| `rules[].multiline` | 불, 기본 `false` | |
+| `rules[].enabled` | 불, 기본 `true` | |
+
+읽는 규칙: 내장 템플릿 위에 최상위 키를 덮고 `size`만 한 단계 더 합친다. glob의 `*`는 `/`도 넘는다(1.24.0의 fnmatch와 같다). 형식이 어긋나면 `fullops lint`가 종료 코드 1로 끝난다.
+
+`review/rule.json`: `{ "include": …, "exclude": [glob], "rules": [{ "path": glob, "rule": 문장 }] }`. `include`는 읽지 않는다(리뷰 대상은 바뀐 파일 전부다). `exclude`에 맞는 파일은 `targets.json`에서 `preset = "skipped"`가 되고, `rules`에서 `path`가 처음 맞는 `rule` 문장이 그 파일의 `rule`이다.
 
 내장 템플릿은 `assets::LINT_JSON`(1.24.0 템플릿 그대로)이다. `lint_excludes(lint_json, template_lint_json)`이 `exclude`를 `GlobSet`으로 만든다.
 
-산출물 인덱스 `docs/deliverables/README.md`의 표 문법(미정-M7)은 묶음 D가 확정해 이 절에 적는다. 내장 템플릿 `assets::DELIVERABLES_README`의 표 머리는 `| ID | 단계 | 산출물 | 원천 | 상태 |`다. `parse_deliverable_index(text) -> Vec<DeliverableRow>`의 `DeliverableRow`는 `{ id(D01 형식), title, summary, status, sources(원천 문서의 레포 상대 경로) }`다.
+산출물 인덱스 `docs/deliverables/README.md`의 표 문법(묶음 D가 확정했다. 설계의 미정-M7을 닫았다). 내장 템플릿 `assets::DELIVERABLES_README`의 표 머리는 `| ID | 단계 | 산출물 | 원천 | 상태 |`다. `parse_deliverable_index(text) -> Vec<DeliverableRow>`가 읽는다.
+
+| 대상 | 규칙 |
+|---|---|
+| 행 | `\|`로 시작하고 칸이 정확히 다섯이며 첫 칸이 `D`+숫자 두 자리인 줄. 같은 ID가 두 번이면 뒤 행이 이긴다. 칸 안의 `\|`는 다루지 않는다 |
+| `id` | 첫 칸 |
+| `summary` | 단계 칸(착수·분석·설계…). 인덱스에는 요약 칸이 없다 |
+| `title` | 산출물 칸 |
+| `status` | 상태 칸의 글 그대로(`미작성`·`범위 밖`·`draft`·`review`·`approved`) |
+| `sources` | 원천 칸의 백틱 안 글마다 첫 공백 앞까지에 `.fullops-squad/`를 앞에 붙인 레포 상대 경로. `/`로 끝나는 원천은 폴더이고 그 아래의 `.md` 파일 전부가 원천이다(`lint_rules`의 `owns(row, path)`가 그 판정이다). 백틱 밖의 글(예: '엔티티 절')은 버린다 |
 
 ### 3.7 탐색 결과와 패킷 `docs/evaluations/jev/`
 
-네 파일(`<KEY>-find.json`, `<KEY>-documents-find.json`, `<KEY>-context.json`, `<KEY>-packet.json`)은 같은 머리 필드를 가진다. `v`가 없거나 `1`이 아니면(1.24.0이 남긴 파일 포함) 읽는 쪽은 파일이 없는 것으로 본다. 쓰는 주체는 묶음 J의 `find`·`context`·`packet build`이고, `<KEY>-packet-outcomes.json`만 worker가 쓴다. `history/`는 `--force`가 남기는 덮어쓰기 전 사본이고 커밋하지 않는다.
+네 파일(`<KEY>-find.json`, `<KEY>-documents-find.json`, `<KEY>-context.json`, `<KEY>-packet.json`)은 같은 머리 필드를 가진다. `v`가 없거나 `1`이 아니면(1.24.0이 남긴 파일 포함) 읽는 쪽은 파일이 없는 것으로 본다. 쓰는 주체는 묶음 J의 `find`·`context`·`packet build`이고, `<KEY>-packet-outcomes.json`만 worker가 쓴다. `history/`는 덮어쓰기 전 사본이고 커밋하지 않는다(내장 `.gitignore`에 줄이 있다). `--force`의 덮어쓰기뿐 아니라 읽히지 않는 옛 파일(`v`가 다른 파일 포함)도 `history/`로 옮긴다.
 
 | 머리 필드 | 타입 | 뜻 |
 |---|---|---|
@@ -269,8 +303,8 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `seed_paths`, `remaining_candidates`, `unreadable_files` | 글 목록 | 레포 상대 경로 |
 | `existence` | `{ status, found_probability(수 \| null) }` | `status`는 `found` \| `unclear` \| `not_confirmed` \| `unknown` |
 | `semantic`, `partial`, `input_partial` | 불 | |
-| `error` | 글 \| null | |
-| `usage` | `{ calls, input_tokens, output_tokens, cost(수 \| null) }` | |
+| `error` | 글 \| null | Jev를 부르지 못했거나 답을 쓰지 못한 이유. `offline`·`no key`·`request`·`response`(응답 검증 실패), `unsafe`(지시서 본문이나 요청 본문이 글 규칙에 걸려 보내지 않았다) |
+| `usage` | `{ calls, input_tokens, output_tokens, cost(수 \| null) }` | `calls`는 실패한 호출도 센다 |
 | `model` | 글 \| null | Jev를 한 번도 부르지 못했으면 null |
 
 `<KEY>-context.json`(타입 `explore::ContextResult`):
@@ -556,7 +590,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `parser` | 글 | `map-v1` |
 | `config_sha256` | 글 | `{scope, exclude(HEAD의 lint.json), max_blob: 65536}`의 sha256. `parser`나 이 값이 다르면 전부 다시 만든다 |
 | `files_sha256` | 글 | `files`를 키 정렬한 JSON의 sha256. 읽을 때 다르면 색인을 버린다 |
-| `files[]` | `IndexEntry` | `path`, `blob`(blob OID), `summary`(240자), `headings`(160자 24개), `definitions`(240자 24개), `searchable`(불), `read_error`(글 \| null) |
+| `files[]` | `IndexEntry` | `path`, `blob`(blob OID), `summary`(240자), `headings`(160자 24개), `definitions`(240자 24개), `searchable`(불), `read_error`(글 \| null. UTF-8이 아니면 `not utf-8`, blob을 읽지 못하면 `unreadable`. 값이 있는 항목은 다음 실행에서 다시 읽는다) |
 
 ### 5.6 `lint/result.json`
 
@@ -568,12 +602,12 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `base` | `Sha` | `--from`을 푼 값 |
 | `merge_base` | `Sha` | `merge-base(from, HEAD)`. 설정을 읽는 기준 시점 |
 | `head` | `Sha` | |
-| `config_sha256` | 글 | 기준 시점 설정의 sha256 |
+| `config_sha256` | 글 | 기준 시점 `lint/lint.json` blob 바이트의 sha256. 기준 시점에 파일이 없으면 내장 템플릿 글의 sha256이다. `fullops.toml`은 넣지 않는다 |
 | `test_level` | `TestLevel` | 적용 레벨 |
 | `started_at` | 시각 | |
 | `seconds` | 수 | |
-| `commands[]` | | `name`, `kind`, `run[]`, `cwd`, `status`(`passed` \| `failed` \| `timeout` \| `unrunnable` \| `skipped`), `exit_code`(정수 \| null), `seconds`, `reason`, `output_tail`(끝 40줄), `log`(로그 경로) |
-| `findings[]` | | `code`, `severity`(`ERROR` \| `WARNING`), `path`, `line`(정수 \| null), `message`, `suggestion` |
+| `commands[]` | | `name`, `kind`, `run[]`, `cwd`, `status`(`passed` \| `failed` \| `timeout` \| `unrunnable` \| `skipped`), `exit_code`(정수 \| null), `seconds`, `reason`, `output_tail`(끝 40줄), `log`(로그 경로. 출력이 없으면 빈 글). skipped 항목은 `exit_code: null`, `seconds: 0`이다. 컴파일하지 못한 정규식 규칙은 `{name: <규칙 코드>, kind: "rule", status: "unrunnable", reason}` 항목으로 들어간다 |
+| `findings[]` | | `code`, `severity`(`ERROR` \| `WARNING`), `path`, `line`(정수 \| null), `message`, `suggestion`. SIZE-002의 `path`는 빈 글이다 |
 | `errors`, `warnings`, `unrunnable` | 정수 | `failed`·`timeout`은 ERROR로 센다 |
 | `passed` | 불 | `errors == 0 && unrunnable == 0` |
 
@@ -594,6 +628,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `deps.toml` | 실행본을 복사할 때 통합 패키지에서 함께 복사한 의존 목록(아래) |
 | `deps-state.json` | 의존 설치 기록(아래) |
 | `package/<버전>/grok/`, `package/<버전>/agy/` | `install`의 `plugin` 단계가 통합 패키지의 `hosts/` 재료로 조립한 패키지 |
+| `package/<버전>/<호스트>.old-<시각>/` | 다시 조립하기 전에 있던 패키지 폴더 |
 | `skill-backups/<호스트>/<스킬 이름>/<폴더 sha256 앞 12자>/` | 스킬을 다시 설치하기 전에 있던 폴더의 사본 |
 | `cache/jev/<요청 sha256>.json` | Jev 응답 캐시(분류와 탐색이 함께 쓴다) |
 
@@ -616,7 +651,9 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 
 `load_deps(plugin_root: Option<&Path>, builtin: &str) -> Result<(Deps, PathBuf), DepsError>`: (1) 플러그인 루트의 `deps.toml` (2) `~/.fullops/deps.toml` (3) `builtin`(바이너리에 내장한 빌드 시점 사본의 글. store는 바이너리의 자산을 모르므로 부르는 쪽이 넘긴다. 그 글은 묶음 F가 더하는 `fullops::assets::DEPS_TOML`이고 `plugin/deps.toml`을 `include_str!`로 읽은 것이다) 순으로 찾는다. 내장 사본을 썼으면 돌려주는 경로는 비어 있다. 찾은 파일이 규칙에 맞지 않으면 다음 자리로 넘어가지 않고 오류를 돌려준다.
 
-`deps-state.json`(타입 `DepsState`. `read_deps_state()`·`write_deps_state(state)`): `v`(1), `manifest_sha256`(설치한 시점의 `deps.toml`의 sha256), `hosts`(객체. `HostId` → `{ at, self_version, complete(불), failed(실패한 명령의 `Step.what` 목록) }`). 파일이 없으면 빈 기록이다.
+`deps-state.json`(타입 `DepsState`. `read_deps_state()`·`write_deps_state(state)`): `v`(1), `manifest_sha256`(설치한 시점의 `deps.toml`의 sha256), `hosts`(객체. `HostId` → `{ at, self_version, complete(불), failed(실패한 명령의 `Step.what` 목록) }`). 파일이 없으면 빈 기록이다. `complete`는 실패가 없어도 건너뛴 단계가 있으면(npx가 없어 스킬을 건너뜀, 패키지 폴더가 없어 grok·agy 플러그인을 건너뜀) `false`다. `--only`로 일부 단계만 한 실행은 이전 값을 잇고, `deps.toml`의 sha256이 바뀌면 이번에 설치하지 않은 호스트의 값도 내린다.
+
+레포의 엔트리 문서(`AGENTS.md`·`CLAUDE.md`·`GEMINI.md`)에 넣는 관리 블록의 표식은 `<!-- fullops:start -->`와 `<!-- fullops:end -->`다(`fullops::assets::BLOCK_START`·`BLOCK_END`).
 
 ## 7. hook 입력과 출력
 
@@ -684,7 +721,19 @@ pub fn host_for(arg: &str) -> Option<Box<dyn Host>>;   // 인자만 본다
 | `Deny { rule, reason }` | `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"FullOps[<규칙>]: <사유> 다음: <탈출구>"}}` | 같은 형태 | `{"decision":"deny","reason":"<같은 글>"}` |
 | `Block { rule, reason, also }` | `{"decision":"block","reason":"FullOps[<규칙>]: <사유> 다음: <탈출구> 함께 남은 것: <also>"}` | 같은 형태 | `{"decision":"continue","reason":"<같은 글>"}` |
 
-뼈대의 hook은 어떤 입력에도 그 호스트의 통과 글을 낸다(`decode`가 비어 있다).
+묶음 B가 `decode`·`encode`와 규칙의 `check`를 채웠다. 해석 실패, 활성 표식 없음, panic, 기한 초과에서는 그 호스트의 통과 글을 낸다.
+
+묶음 B가 더한 공개 항목(시그니처가 동결된 `Rule.check`와 `Facts`는 그대로다):
+
+| 항목 | 자리 | 내용 |
+|---|---|---|
+| `Scene { root, orca_names, self_install, missing_tools }` | `fullops_core::rules` | 규칙에 넘기는 호출 문맥: 레포 루트, `ORCA_CLI_COMMAND`의 이름, S-04의 조건, PATH에 없는 도구. `rules/call.rs`의 thread-local에 둔다 |
+| `decide_in(scene, input, facts) -> Outcome` | `fullops_core::rules` | 바이너리가 부르는 진입점. 동결된 `decide(input, facts)`는 루트를 `path_exists`로 찾아 이것을 부른다 |
+| `NO_SESSION`(`"no_session"`) | `fullops_core::rules` | `Facts::session()`이 `Unknown(NO_SESSION)`이면 세션 파일이 없다는 뜻이다(읽지 못한 것과 가른다) |
+| `RECORD_PATHS`, `is_record_path`, `is_change_target`, `landing_of` | `fullops_core::derive` | 기록 경로 다섯(설계 6.6절)과 `changed()`·`landing()`의 순수한 부분 |
+| `repo_relative(path, cwd, root)` | `fullops_core::patch` | 편집 경로를 레포 루트 기준으로 맞춘다 |
+| `command_name(token)` | `fullops_core::shell` | 셸 낱말에서 명령 이름을 뽑는다 |
+| `read_trace(repo, sid) -> Vec<TraceLine>` | `fullops_store::trace` | `fullops why`가 읽는다 |
 
 규칙 표(`fullops_core::rules::RULES`. 34개. 표 순서가 평가 순서다)의 타입:
 
@@ -704,7 +753,7 @@ pub fn host_for(arg: &str) -> Option<Box<dyn Host>>;   // 인자만 본다
 | Stop | X-00 ~ X-07 |
 | StopFailure | F-01 |
 
-CLI의 거절 ID(`Refusal.rule`)는 hook 규칙 ID와 겹치지 않는다: `route`는 RT-01~RT-05, `task`는 H-01~H-04, `dispatch`는 D-01~D-13, `done`은 R-01~R-11, `merge`와 통합 명령은 M-01~M-13, 탐색은 J-01~J-04와 J-10~J-17이다.
+CLI의 거절 ID(`Refusal.rule`)는 hook 규칙 ID와 겹치지 않는다: `route`는 RT-01~RT-05, `task`는 H-01~H-04, `dispatch`는 D-01~D-13, `done`은 R-01~R-11, `merge`와 통합 명령은 M-01~M-13, 탐색은 J-01~J-04와 J-10~J-17, `review`는 RV-00~RV-10(RV-01~RV-10은 `review check`의 실패 항목 번호, RV-00은 그 밖의 거절), `resume`·`completion set-sha`는 HD-01·HD-02, `decision`은 DC-00~DC-03이다. `sync`가 반영하지 못한 역할은 M-11, `hold`의 대상 없음은 M-02로 낸다. 번호 없이 단계 이름을 쓰는 거절도 있다: `publish`·`sync`(`dispatch` 3·4단계), `wait`(열린 Run이 여럿), `LINT`(`lint`의 더러운 작업 트리), `install`(마켓플레이스 출처 충돌), `migrate`(전제 위반), `packet`(`rebuild_packet`의 거절이 아닌 실패). CLI의 거절 ID는 `fullops rules`의 표에 나오지 않는다(그 표는 hook 규칙 34개다). 정본은 설계 8절의 명령별 절이다.
 
 ## 8. CLI 공통 규약과 묶음 사이 인터페이스
 
@@ -721,7 +770,9 @@ CLI의 거절 ID(`Refusal.rule`)는 hook 규칙 ID와 겹치지 않는다: `rout
 | 그 밖의 오류 | `--json`은 `{"ok":false,"error":{"kind":"usage"\|"internal"\|"external"\|"policy"\|"inactive","message":"<글>"}}` |
 | 활성 표식 없음 | "활성 레포가 아닙니다", 종료 코드 2. `init`·`install`·`doctor`·`migrate`·`rules`는 제외 |
 | 정책 오류 | 종료 코드 2. `doctor`·`mode`·`init`·`migrate`·`upgrade`·`status`·`why`·`install`·`rules`는 받는다(T-00의 통과 목록과 같다) |
-| 미구현 명령 | 종료 코드 1과 "아직 구현되지 않았습니다"(`CliError::unimplemented`) |
+| 미구현 명령 | 종료 코드 1과 "아직 구현되지 않았습니다"(`CliError::unimplemented`). 명령 표의 명령은 모두 구현됐다 |
+| 명령별 `--json`의 예외 | `lint`는 미통과여도 `{"ok": <passed>, "result": <경로>, …result.json의 필드}`를 낸다. `doc check`는 `{ok, checked, unwritten, errors[], warnings[]}`다 |
+| 오프라인 | `FULLOPS_OFFLINE=1`이면 Jev 호출, `merge`·`settle`의 fetch, `doctor`·`install --check`의 호스트 CLI 조회를 건너뛴다. `merge`의 M-09 push는 오프라인에서도 한다 |
 | 호출자 판정 | `Ctx::caller()`. `current.json`(10분 이내)의 `sid`로 세션을 찾고 `facts::resolve_actor`(설계 7.3절)로 정한다. 세션이 없으면 브랜치만으로 좌석을 정하고 dispatch는 세션 핸들로만 묶는다 |
 | 세션 핸들 | `cli::session_handle()`: `ORCA_AGENT_SESSION_ID`, 없으면 `ORCA_TERMINAL_HANDLE`. hook(`Facts::session_handle`)과 CLI가 함께 쓴다 |
 | 플러그인 루트 | `cli::plugin_root()`: (1) 자기 실행 파일이 `<X>/bin/` 아래에 있고 `<X>/VERSION`이 있으면 X(`plugin_root_of_exe()`. hook의 추론도 이 함수다) (2) `install.json`의 `source` 폴더에 `VERSION`이 있으면 그 폴더 (3) 없음. CLI는 `--plugin-root` 인자를 받지 않는다 |
@@ -753,7 +804,7 @@ spec에 적는 실행 명령은 `fullops_core::messages::spec_command(host: Opti
 
 문구는 `fullops_core::messages`에 둔다. `messages/mod.rs`(A)는 `MsgId`, `reason(id, args)`, `refusal`, `block`, `warn`, `parallel_brief`, `spec_command`, `ULTRA_HINT`, `INACTIVE_REPO`, `UNIMPLEMENTED`를 가진다. 규칙별 사유 문구는 묶음별 파일의 `reason(id: &str, args: &[String]) -> Option<String>`에 둔다: `hook.rs`(B), `flow.rs`(C), `merge.rs`(E), `lint.rs`(D), `explore.rs`(J), `install.rs`(F). `messages::reason`이 여섯 파일을 차례로 묻고 어느 파일에도 없으면 `args`를 공백으로 이어 낸다(구현 묶음이 문구를 채우기 전에도 출력이 비지 않는다).
 
-뼈대가 둔 임시 구현(설계 10.2절 끝의 표). 구현 묶음이 끝나기 전에는 부르는 쪽이 임시 구현을 부른다.
+뼈대가 뒀던 임시 구현(설계 10.2절 끝의 표). 여덟 묶음이 합쳐진 지금은 모두 구현으로 바뀌었고, 표의 "임시 구현" 열은 뼈대 시절의 값이다.
 
 | 함수 | 자리 | 구현 | 임시 구현 |
 |---|---|---|---|
@@ -778,7 +829,7 @@ spec에 적는 실행 명령은 `fullops_core::messages::spec_command(host: Opti
 
 | 대상 | 내용 |
 |---|---|
-| `run(argv, cwd, timeout, env, stdin) -> ProcResult` | `ProcResult { status: Exited(i32) \| TimedOut \| NotFound, stdout, stderr }`. 제한 시간이 지나면 직접 띄운 프로세스만 끝낸다(프로세스 트리 종료는 D가 더한다) |
+| `run(argv, cwd, timeout, env, stdin) -> ProcResult` | `ProcResult { status: Exited(i32) \| TimedOut \| NotFound, stdout, stderr }`. 제한 시간이 지나면 프로세스 트리를 끝낸다(묶음 D): Windows는 `taskkill /T /F /PID`(직접 띄운 프로세스가 먼저 끝난 뒤 남은 손자는 찾지 못한다. 그때도 5초만 더 기다린다), POSIX는 `process_group(0)`으로 띄운 그룹에 `kill -KILL -- -<pgid>`. 출력의 EOF를 먼저 기다리고, 자손이 파이프를 쥔 채 남으면 제한 시간에 `TimedOut`이며, `TimedOut`의 stdout·stderr에는 끝내기 전까지의 출력이 남는다. `run`으로 띄우는 모든 프로세스(git·orca·curl 포함)가 자기 프로세스 그룹을 가진다 |
 | `ExtError` | `NotFound`, `TimedOut`, `Failed { code, stderr }`, `Parse(글)` |
 | `GitCli { repo_root, timeout }` | `GitCli::hook(root)`(호출당 2초), `GitCli::cli(root)`(30초. `fetch`·`push`·`merge`는 120초). 모든 호출에 `GIT_TERMINAL_PROMPT=0`, `GIT_NO_LAZY_FETCH=1`, `LC_ALL=C`, `-c core.quotepath=false`. 읽기는 실패하면 `Known::Unknown("git")`이다. 탐색용 읽기(`ls_tree`·`blob_prefixes`·`grep_files`)는 오프라인(`FULLOPS_OFFLINE=1` 또는 `FULLOPS_JEV_ENABLED=0`)이면 `GIT_ALLOW_PROTOCOL=`을 더한다 |
 | `Git`의 읽기 | `is_ancestor`, `merge_base`, `rev_parse`(`rev-parse --verify`. 커밋으로 풀려면 `<rev>^{commit}`), `diff_names`·`numstat`(`--no-renames`. 이름 변경은 삭제와 추가로 낸다), `status(pathspec)`(`--untracked-files=all`), `show_blobs(&[(rev, path)])`, `worktrees`, `ls_tree`, `blob_prefixes(oids, max)`, `grep_files(rev, literals)`, `name_status`(`NameStatus { status, path, old_path }`. 이름 변경을 찾는다), `diff_u0` |
@@ -789,10 +840,13 @@ spec에 적는 실행 명령은 `fullops_core::messages::spec_command(host: Opti
 | `Orca::check(run: Option<&RunId>, mode) -> CheckResult` | `CheckMode { Peek \| Consume \| PeekWait { types, timeout } \| AckLegacy(deliveryId) }`. `CheckResult { messages, delivery_id, timed_out }`. `cancelled`·`connectionLost`는 `Err`다. `id`가 없는 메시지는 `ExtError::Parse`다 |
 | `Orca::worker_show`, `worker_list` | `WorkerView { dispatch, state, stage, outcome, liveness(첫 낱말), terminal }`. `settled()`: `state`가 `succeeded`·`failed`이거나 `stage`가 `settled`·`released`. `failed()`: `state` 또는 `outcome`이 `failed`. `worker_list`는 `nextCursor`를 따라 이어 읽는다 |
 | `Orca::send_escalation`, `terminals_in` | `orchestration send --type escalation …`, `terminal list --worktree path:<경로>`의 `connected`인 핸들 |
-| `Judge::ask(state, questions) -> Result<Judged, JudgeError>` | `Question { id, kind: Choice { options } \| Noul, instructions }`, `Answer { Choice { id, choice, probabilities } \| Noul { id, value } }`, `Judged { answers, usage: Usage { input_tokens, output_tokens, cost }, model, cached }`, `JudgeError { Offline, NoKey, Unsafe, Request(글), Response(글) }` |
+| `Judge::ask(state, questions) -> Result<Judged, JudgeError>` | `Question { id, kind: Choice { options } \| Noul, instructions }`, `Answer { Choice { id, choice, probabilities } \| Noul { id, value } }`, `Judged { answers, usage: Usage { input_tokens, output_tokens, cost }, model, cached }`, `JudgeError { Offline, NoKey, Unsafe, Request(글), Response(글) }`. 구현은 `fullops_ext::jev`의 `JevCurl`(환경 변수, 그다음 작업 디렉터리에서 위로 찾은 `.fullops-squad/.env`에서 키를 찾는다)과 `JevCurl::at(repo_root, env_file) -> JevCurlAt`(`--env-file`과 `--repo`를 지킨다. `provider()`가 `typesafe` \| `openrouter` \| 없음을 돌려준다)다. 전송 형식은 설계 9.3절이고 `curl`은 PATH에서 찾은 전체 경로로 띄운다 |
+| `find_program(name) -> Option<PathBuf>`, `program_version(name) -> Known<String>` | `fullops_ext::hosts`. 호스트 CLI와 스킬 도구를 PATH에서 찾아 전체 경로로 실행한다(이름만으로 띄우지 않는다) |
 | `skill_roots(host) -> Vec<PathBuf>` | 사용자 스킬 폴더(설계 9.5절 표, 그 순서). `claude`: `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `skills`. `codex`: `~/.agents/skills`, `$CODEX_HOME`(없으면 `~/.codex`)의 `skills`. `grok`: `~/.agents/skills`, `$GROK_HOME`(없으면 `~/.grok`)의 `skills`. `agy`: `~/.gemini/config/skills`, `~/.gemini/antigravity-cli/skills`, `~/.gemini/skills` |
 
-설치 계획의 타입은 `fullops_core::deps`에 있다(`PLANS.md`의 `model::Plan`과 이름이 같으므로 경로로 가린다. `explore::Decision`과 `model::Decision`도 같다): `Plan { per_host: BTreeMap<HostId, Result<Vec<Step>, Refusal>>, skills: Vec<Step> }`, `Step { stage: InstallStage(Plugin \| Deps), kind: StepKind, argv, what, hosts }`, `StepKind { MarketAdd, MarketUpdate, PluginInstall, SelfInstall, SkillInstall, Assemble, HookFile }`.
+설치 계획의 타입은 `fullops_core::deps`에 있다(`PLANS.md`의 `model::Plan`과 이름이 같으므로 경로로 가린다. `explore::Decision`과 `model::Decision`도 같다): `Plan { per_host: BTreeMap<HostId, Result<Vec<Step>, Refusal>>, skills: Vec<Step> }`, `Step { stage: InstallStage(Plugin \| Deps), kind: StepKind, argv, what, hosts }`, `StepKind { MarketAdd, MarketUpdate, PluginInstall, SelfInstall, SkillInstall, Assemble, HookFile }`. 같은 모듈에 묶음 F가 더한 것: `HostCommands`와 `HOST_COMMANDS`(호스트별 명령 표), `host_commands(host)`, `ALL_HOSTS`, `HOOK_TIMEOUTS`와 `pre_tool_matcher(host)`(hook 등록 파일의 타임아웃과 매처. `xtask dist`와 `grok_hook_json`이 함께 쓴다), `package_items(host)`(조립하는 패키지의 항목), `normalize_source(source)`, 자리표시자 `PACKAGE_ROOT`·`GROK_HOOK_FILE`·`FIXED_BIN`과 그것을 실제 경로로 바꾸는 `Plan::bind(package_root, grok_hook_file, fixed_bin)`(`install_plan`은 순수 함수라 경로를 모른다).
+
+묶음이 더한 그 밖의 진입점: `fullops::cmd::runtime_stage(plugin_root: Option<&Path>) -> io::Result<Runtime>`(F. 실행본 단계. `install --only runtime`과 S-04가 같은 일을 한다), `fullops_core::explore::build_packet_from(input, template)`(J. `build_packet(input)`은 빈 템플릿으로 이것을 부르고 명령은 `assets::HANDOVER_TEMPLATE`을 넘긴다). `rebuild_packet`의 `Err(Refusal)`에서 `rule`이 `packet`이면 거절이 아니라 실패(git, 입출력)이고 `exit`가 4 또는 1이다.
 
 내장 자산의 상수는 `fullops::assets`(`crates/fullops/src/assets.rs`)에 있다. 네 상수의 이름과 파일 자리, 네 파일의 표 머리와 안내 문장은 동결 뒤 바꾸지 않는다.
 
@@ -807,7 +861,7 @@ spec에 적는 실행 명령은 `fullops_core::messages::spec_command(host: Opti
 
 ### 9.1 임시 레포와 임시 홈
 
-`Sandbox::with(&Setup)`은 임시 루트 아래에 다음을 만든다. 모든 프로세스는 격리된 환경으로 띄운다(`Sandbox::command`): `HOME`·`USERPROFILE`·`GIT_CONFIG_GLOBAL`은 임시 홈, `ORCA_CLI_COMMAND`는 fake-orca, `PATH` 맨 앞은 `bin/`, `FULLOPS_OFFLINE=1`. `ORCA_*`·`GROK_*`·`CODEX_HOME`·`CLAUDE_CONFIG_DIR`·API 키 환경 변수는 지운다. 실제 호스트 CLI, 네트워크, 사용자 홈은 건드리지 않는다.
+`Sandbox::with(&Setup)`은 임시 루트 아래에 다음을 만든다. 모든 프로세스는 격리된 환경으로 띄운다(`Sandbox::command`): `HOME`·`USERPROFILE`·`GIT_CONFIG_GLOBAL`은 임시 홈, `ORCA_CLI_COMMAND`는 fake-orca, `PATH` 맨 앞은 `bin/`이고 실제 호스트 CLI(`claude`·`codex`·`grok`·`agy`)나 `npx`가 든 폴더는 PATH에서 뺀다, `FULLOPS_OFFLINE=1`. `ORCA_*`·`GROK_*`·`CODEX_HOME`·`CLAUDE_CONFIG_DIR`·API 키 환경 변수는 지운다. 실제 호스트 CLI, 네트워크, 사용자 홈은 건드리지 않는다.
 
 | 경로 | 내용 |
 |---|---|
@@ -903,4 +957,4 @@ fake-orca의 우편함: `mail.jsonl`의 줄은 `{"run":"<Run>","message":{…}}`
 | `lead_waits` | run?, ack?, no_wait? | `fullops wait --run <R> [--ack <메시지 ID>]… [--no-wait]` |
 | `lead_merges` | key | `fullops merge <KEY>` |
 
-에이전트가 실행하는 `fullops` 명령은 실제 흐름처럼 셸 도구의 PreToolUse hook(T-12가 `current.json`을 쓴다)을 먼저 거친다. 흐름 동사(`lead_*`, `worker_*`)는 아직 하지 않은 앞 단계를 스스로 먼저 하고, 묶음 C·E의 명령이 구현된 뒤에야 끝까지 돈다.
+에이전트가 실행하는 `fullops` 명령은 실제 흐름처럼 셸 도구의 PreToolUse hook(T-12가 `current.json`을 쓴다)을 먼저 거친다. 흐름 동사(`lead_*`, `worker_*`)는 아직 하지 않은 앞 단계를 스스로 먼저 한다. `lead_dispatches`·`worker_reports`·`lead_waits`는 단계의 `env`를 넘기지 않는다(세션 핸들이 있는 lead는 `runs_fullops`와 `orca_replies`로 적는다).

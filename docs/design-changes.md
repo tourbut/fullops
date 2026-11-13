@@ -4,6 +4,7 @@
 - 반영한 것: (1) 계약 확인 결과 `docs/contracts/design-delta.md`(Claude Code 2.1.323, Codex 0.163.0, Orca 1.4.256). (2) 레포 주인의 결정(2026-11-13~14): 이름과 버전 확정, 이슈 자동 모드 미룸 확정, Jev 탐색을 v1에, 의존 플러그인·스킬 설치를 v1에, 네 호스트(Claude Code·Codex·grok·agy) 모두에 설치, 그 밖의 버리는 기능 확정. (3) 마무리 개정(같은 날): grok·agy 계약 확인 결과 `docs/contracts/hosts-delta.md`, 뼈대 담당이 보고한 설계 빈틈 48건, 모션그래픽 스킬 `fullops-motion`의 포함, 병렬 진행 방침(레포 주인의 새 요구). (4) 동결 전 점검(같은 날): 다른 모델이 동결 직전의 설계와 뼈대를 함께 점검해 낸 지적 16건과, 뼈대 담당이 `docs/formats.md`에 †로 남긴 두 번째 빈틈 20건. 설계와 뼈대를 함께 고쳤다(6절).
 - 읽는 순서: 뼈대(묶음 A) 담당은 0절과 `docs/design.md`만 보고 고치면 된다. 0절은 앞 개정과 마무리 개정을 합친 완전한 목록이다. 1절은 앞 개정의 절 번호 순 목록, 2절은 계약 확인(`design-delta.md`)이 "결정 필요"로 남긴 것을 어떻게 정했는지, 4절은 개정본을 다른 모델이 점검해 낸 지적 19건의 처리다. 5절이 마무리 개정이고 6절이 동결 전 점검 반영이다. 6절이 바꾼 타입·시그니처·형식은 0절의 표에도 넣었다(0절은 여전히 완전한 목록이다). 1~4절의 서술 가운데 마무리 개정이 뒤집은 것(agy에 hook이 없다, `host_for(arg, raw)`, `subagent_level`, `status.json`은 그대로다, `~/.fullops/package/<버전>`이 통합 패키지의 사본이다)은 0절과 5절이 정본이다.
 - 표기: "절"은 `docs/design.md`의 절 번호다.
+- 7절은 여덟 구현 묶음이 설계의 빈 곳을 정한 것을, 한 브랜치에 합친 뒤의 코드와 대조해 옮겨 적은 기록이다(문서 담당). 0~6절은 뼈대 동결 전의 개정이고 7절은 그 뒤의 것이다.
 
 ## 0. 뼈대가 따라 바꿔야 하는 것
 
@@ -558,3 +559,221 @@ hook 규칙 표(`RULES`)는 34개가 된다: 뼈대의 32개에 S-06과 T-13을 
 
 - 미정(16절): M1에 "Windows의 Claude Code에서 맨 이름 `fullops`가 풀리는가"를, M11에 "`ask` 통과에서 사람 없는 worker가 멈추지 않는가"를, M13에 "Orca가 띄운 Claude Code worker의 권한 모드와 Workflow 승인 창"을 더했다. 셋 다 실환경 점검(12.4절 1·13·14번)에서 사람이 한 번 보고 뼈대 동결을 막지 않는다. 함수 하나로 좁힌 것이 넷이 됐다(`spec_command`가 늘었다).
 - 사람 결정(17절): H12에 둘을 더했다. (1) 키가 없어 1.24.0에서 꺼진 채 돌던 레포도 `migrate`가 `on`으로 옮긴다. (2) `ultra`는 worker가 auto 모드나 bypass로 뜨는 PC에서만 사람 없이 이어진다. 둘 다 열림이다.
+
+## 7. 구현 묶음이 정한 것 (2026-11-14)
+
+여덟 묶음(B hook, C 흐름 명령, D lint·문서, E 리뷰·통합, F 설치·이행·배포·스킬, G 비교·성능, H 패널, J 탐색)이 서로 다른 워크트리에서 구현하면서 설계의 빈 곳을 정했고, 그 보고(설계 빈틈과 다른 묶음에 필요한 것)를 한 브랜치에 합친 뒤의 코드와 대조해 설계와 형식 문서에 옮겼다. 건마다 합쳐진 코드에서 구현을 확인했다. "절" 칸에 절 번호만 있으면 `docs/design.md`의 절이고, 그 절 끝의 "구현 묶음이 정한 것" 목록이나 본문의 해당 문장에 적었다. `formats`는 `docs/formats.md`다. 구현이 설계의 의도와 어긋나 보이는 건은 문서를 고치지 않고 7.4절에 코드 문제로 모았다(절 칸에 "코드 문제 n").
+
+### 7.1 건별 표
+
+| 묶음 | # | 무엇이 비어 있었나 | 어떻게 정했나 | 절 |
+|---|---|---|---|---|
+| B | 1 | `Rule.check`의 시그니처로는 호출 문맥(레포 루트, `ORCA_CLI_COMMAND`의 이름, S-04의 조건, PATH의 git·orca 유무, 규칙이 내는 효과의 값)을 넘길 수 없다 | `rules::Scene { root, orca_names, self_install, missing_tools }`과 `rules::decide_in(scene, input, facts)`. 문맥은 `rules/call.rs`의 thread-local. 동결된 `decide`는 그대로 있고 `decide_in`을 부른다 | 7.1, 10.2, formats 7 |
+| B | 2 | `Facts::session()`이 '세션 파일이 없다'와 '읽지 못했다'를 가르지 못한다 | `Unknown("no_session")`(`rules::NO_SESSION`)이 '없다'의 관례다 | 7.1, formats 7 |
+| B | 3 | SessionStart를 받지 못한 세션에 UserPromptSubmit·Stop이 오는 경우(설계는 agy만 적었다) | 세션 파일을 쓰는 효과가 있으면 어느 호스트든 S-02와 같은 내용으로 먼저 만든다 | 7.1 |
+| B | 4 | X-04의 '`handovers/logs/<KEY>.`로 시작하는 파일'을 볼 방법(`Facts`에 폴더 훑기가 없다) | `<KEY>.<역할>.r0~r9.md`의 존재로 본다. 차수가 10을 넘으면 놓친다 | 7.5(한계로 적음), 코드 문제 7 |
+| B | 5 | S-04의 효과를 실행하는 방법(10.2절 표에 묶음 사이 함수가 없다) | 플러그인 루트의 실행본을 `install --only runtime`으로 띄운다(3초, 실패는 추적에만). 프로세스 안의 진입점은 F의 `cmd::runtime_stage` | 7.5, 10.2, formats 8 |
+| B | 6 | T-11이 부르는 함수와 Run을 주지 않은 `check`의 처리 | C의 `record_message`를 그대로 부른다. Run이 없으면 lead의 열린 Run이 하나일 때만 그 Run으로 기록한다 | 7.5 |
+| B | 7 | 12.2절 J1의 둘째 경우(로컬 기본 브랜치에만 있음)의 첫 차단 | 설계대로 구현하면 첫 차단이 X-01이고 X-06은 '함께 남은 것'에 붙는다. lead의 X-01에서 병합으로 들어온 커밋을 뺄지는 정하지 않았다 | 7.5(열린 문제로 적음) |
+| B | 8 | Stop의 git 호출 상한 6이 worker와 dev 직접 작업 경로에 빠듯하다 | 시작점이 바닥과 같으면 조상 확인을 생략하고, '기록 경로만 바뀌었는가'를 lint 통과와 리뷰 증거가 함께 쓴다. 넘으면 X-02는 작업 트리의 설정으로, 그 밖은 `Unknown` | 7.5 |
+| B | 9 | T-00의 대상 '전부'와 7.8절의 '모르는 도구는 통과' | 정책 오류에서도 모르는 도구는 통과한다 | 7.5 |
+| B | 10 | 후보가 없는 호출이 읽는 파일(7.4절) | 설계 역할이 등록된 레포의 편집 호출에서만 `state.json`을 더 읽는다(좌석 판정) | 7.4 |
+| B | 11 | 세션당 한 번 알림의 '그 밖의 이벤트' | lead의 Stop으로 좁혔다. 7.7절의 그 문장도 lead에게만 낸다 | 7.7, 7.8 |
+| B | 12 | `changed()`의 코드 파일 판정이 쓰는 설정 | 작업 트리의 `[code]`와 `lint.json`의 `exclude`. 기준 시점 적용은 `lint`가 한다 | 6.6 |
+| B | 13 | `review_evidence`의 '유효한' | 형식과 `head`만 본다(해시 검증은 `review check`). 최근 기록 셋 | 7.5, formats 3.5 |
+| B | 14 | T-10의 '차수 접미사를 뗀 것', T-05 (b) | 접미사부터 끝까지 뗀다. 바뀐 뒤 글을 모르는 편집에서는 T-05 (b)를 걸지 않는다 | 7.5 |
+| B | 15 | `blocks` 기록 실패로 경고로 낮출 때 '함께 남은 것'의 계속 막기 규칙 | 그 호출은 통과한다(여는 쪽). 다음 Stop에서 다시 평가한다 | 7.6 |
+| B | 16 | 이벤트를 알기 전의 감시 스레드 기한 | 가장 긴 12초 | 7.1 |
+| B | 17 | coor 모드에서 dispatch가 묶인 기본 브랜치 세션의 역할 안내 | '역할 규칙이 적용되지 않는다' 한 줄 | 7.7 |
+| B | 18 | '상태 파일을 직접 주입하지 않는다'(12.1절)의 범위 | 인박스와 `PLANS.md`는 `file`로 준비할 수 있다. `routes/`·`state.json`·리뷰 기록은 넣지 않는다(N1의 파손만 예외) | 12.1 |
+| B | 19 | 동사로 적을 수 없는 확인(날 입력, 파일과 fake-orca 기록의 단언) | `crates/fullops/tests/hook.rs`가 실제 바이너리로 본다 | 12.1, 10.1 |
+| B | 20 | `docs/formats.md` 7절에 없는 공개 함수 | `read_trace`, `derive::{RECORD_PATHS, is_record_path, is_change_target, landing_of}`, `patch::repo_relative`, `shell::command_name` | formats 7 |
+| C | 1 | 미정-M6: Jev 요청·응답의 전송 스키마 | TypeSafe System One HTTP API 형식(요청 `{model, state, questions}`, 응답 `{model, answers, usage}`). 선택지 설명은 `criteria`의 `null`, 역할 설명은 `state.roles` | 9.3, 16 |
+| C | 2 | 응답에 `usage`의 토큰 수와 비용이 없을 수 있다 | 없거나 `null`이면 0, 있는데 정수가 아니면 실패. 비용은 없음 | 9.3 |
+| C | 3 | `record_message`에 시각 인자가 없다 | core의 `flow.rs`가 시스템 시계를 직접 읽는다 | 코드 문제 1 |
+| C | 4 | `record_message`에 조상 판정 인자가 없다 | SHA가 여럿이면 역할 브랜치 tip과 같은 것, 없으면 브랜치 tip | 8.6(지금 동작으로 적음), 코드 문제 2 |
+| C | 5 | `check_dispatch`가 git 상태를 보지 못한다 | D-05의 워크트리 없음과 D-06의 snapshot 검사는 `cmd/dispatch.rs`가 이어서 하고 같은 거절 목록에 넣는다. H-04는 `logs/<KEY>.<R>.r0.md`의 존재 | 8.5 |
+| C | 6 | `changed()`·`pass_covers`의 공용 시그니처가 뼈대에 없다 | `cmd/done.rs`에 따로 구현했다 | 10.2(남은 것으로 적음), 코드 문제 3 |
+| C | 7 | CLI용 `Facts` 구현이 없다 | `cmd/dispatch.rs`의 `CliFacts`. git이 필요한 사실은 `Unknown` | 8.5 |
+| C | 8 | `dispatch` 3·4단계와 `wait`의 'Run이 여럿' 거절에 규칙 ID가 없다 | `FullOps[publish]`, `FullOps[sync]`, `FullOps[wait]`(종료 코드 2) | 8.1, 8.5, 8.6, formats 7 |
+| C | 9 | 리뷰 배정 spec의 끝 문장(리뷰어는 R-01에 걸린다) | 8.9절의 끝맺음을 적는다. 인박스가 없는 배정은 `Handover:` 조각을 뺀다 | 8.5 |
+| C | 10 | D-03 예외의 범위와 D-10 | 글자 그대로: 같은 키의 통합 대기는 목적과 무관하게 막지 않는다. D-10은 Review에도 적용한다 | 8.5 |
+| C | 11 | 원격이 앞서 있을 때 3단계의 push가 먼저 실패해 D-11에 닿지 못한다 | 로컬이 원격의 조상이면 push를 건너뛰어 D-11이 알린다 | 8.5 |
+| C | 12 | D-07이 여는 결정의 선택지와 출력 형태 | `같은 모델로 다시 배정`·`중단`. D-07뿐이면 사람 손 형태(3), 다른 거절과 함께면 거절 형태 | 8.5 |
+| C | 13 | `done --failed`가 타는 검사 | R-01만 검사하고 R-02~R-07을 건너뛴다. `reported`를 쓰고 `[실패]` 본문을 낸다. 인박스는 남는다 | 8.7 |
+| C | 14 | `done`을 다시 실행할 때의 lint 증거 | `head` 쪽 조건만 본다. `--no-checks` 사유는 본문에 다시 나오지 않는다 | 8.7 |
+| C | 15 | R-05의 폴더와 설계 역할 본문의 '만든 인박스 경로들' | `qa-reports/<KEY>-test/report.md`. `from`이 자기 역할인 인박스 | 8.7 |
+| C | 16 | `wait --max-minutes 0`과 Orca 실행 파일이 없을 때 | 한 번의 기다림은 최소 1초이고 기다린 뒤에 만료를 본다. 실행 파일이 없으면 바로 종료 코드 4 | 8.6, 16(M3에 더함) |
+| C | 17 | `status`가 통합을 확인할 때의 `drift`와 지표의 '사건' 범위 | `drift`는 세지 않는다. '사건'에 하위 배정과 예약 기록을 넣지 않는다 | 6.7, 코드 문제 6 |
+| C | 18 | `task recover`의 호출자 검사와 WIP 커밋 | 그 역할의 브랜치를 체크아웃한 워크트리인지만 본다. `commit_only(["."])` | 8.4 |
+| C | 19 | `plan add`의 중복, `plan check`의 종료 코드, `route --role`의 미등록 역할, `dispatch --dry-run`의 출력 | 사용법 오류(1), 0, 사용법 오류(1), 대상 워크트리·tuple·spec | 8.3, 8.5, 8.13 |
+| C | 20 | 원본 체크아웃의 정의와 7단계의 '기준 test_level' | Git 공용 디렉터리가 있는 주 체크아웃. 작업 트리의 `fullops.toml` 값 | 8.5 |
+| C | 21 | 12.2절 D3의 예시가 그대로는 성립하지 않는다(H-03이 먼저 걸린다) | 다른 키를 다른 역할에 배정해 D-03을 본다 | 12.2 D3 |
+| C | 22 | `metrics`의 `at` | 0으로 돌려주고 부르는 쪽(`status`, M-13)이 시각을 넣는다 | 6.7 |
+| C | 23 | 이름만 준 `curl`이 Windows에서 PATH보다 System32에서 먼저 찾아진다(시험 중 실제 curl이 가짜 키로 나간 사고) | PATH에서 처음 찾은 `curl`의 전체 경로를 실행한다 | 9.3 |
+| C | 24 | `JevCurl`이 `--env-file`과 `--repo`를 받을 방법 | `JevCurl::at(repo_root, env_file)` → `JevCurlAt`. `provider()` | 9.3, formats 8 |
+| C | 25 | 보내기 전 본문 검사가 `jev.rs`(`unsafe_text`)와 `explore`(`sendable_text`)에 따로 있다 | 그대로 둘 다 있다 | 코드 문제 10 |
+| D | 1 | 8.11절 8번의 Job Object(안전한 API가 없다) | `taskkill /T /F /PID`. 먼저 끝난 부모의 손자는 찾지 못하고 5초만 더 기다린다 | 8.11, formats 8, 17 H17 |
+| D | 2 | POSIX의 프로세스 그룹을 lint 명령에만 줄 수 없다(시그니처 동결) | `run`으로 띄우는 모든 프로세스에 `process_group(0)`. 신호는 `kill -KILL -- -<pgid>` 명령 | 8.11, formats 8 |
+| D | 3 | `proc::run`의 기다리는 방식 | 출력 EOF를 먼저 기다린다. 자손이 파이프를 쥐면 제한 시간에 `TimedOut`. `TimedOut`에 부분 출력이 남는다 | 10.2, formats 8 |
+| D | 4 | `--from` 기본값인 '`changed()`의 시작점'을 부를 함수가 없다 | 6.6절 1~3번을 `cmd/lint.rs`의 `default_start`에 구현. 인박스도 anchor도 없으면 바닥, 바닥도 없으면 `--from` 요구(1) | 8.11, 코드 문제 3 |
+| D | 5 | lint의 거절 ID, `--json` 형태, 잠금 실패 | `FullOps[LINT]`. `{ok: <passed>, result, …}`. 잠금을 못 얻으면 종료 코드 1 | 8.1, 8.11, formats 8 |
+| D | 6 | `config_sha256`의 정의 | 기준 시점 `lint.json` blob 바이트의 sha256. 없으면 내장 템플릿 글의 sha256. `fullops.toml`은 넣지 않는다 | 8.11, formats 5.6 |
+| D | 7 | 컴파일하지 못한 정규식 규칙의 자리 | `commands[]`의 `{name: <코드>, kind: "rule", status: "unrunnable", reason}` | 8.11, formats 5.6 |
+| D | 8 | 명령의 `paths`를 맞추는 대상 | `exclude`와 무관하게 바뀐 경로 전부(이름 변경은 앞뒤). 설계대로면 게이트가 약해져 1.24.0을 따랐다 | 8.11 |
+| D | 9 | 코드 파일의 기준(1.24.0은 고정 확장자 목록) | 기준 시점 `[code].extensions`. DOC-001은 주석 문법을 아는 내장 확장자에만. 그 밖의 줄 수는 C 계열 주석 규칙 | 8.11 |
+| D | 10 | Python의 코드 줄 수(tokenize가 없다) | 줄 머리의 삼중 따옴표를 docstring으로 보는 줄 훑기 | 8.11 |
+| D | 11 | DOC-003의 제외 범위가 1.24.0과 다르다 | 설계대로. 인덱스·`project.md`·리뷰 `report.md`·QA 보고서는 바뀌면 front matter가 있어야 한다 | 8.11 |
+| D | 12 | 내장 인덱스 템플릿에 front matter가 없어 상태 칸을 고친 커밋이 DOC-003에 걸린다 | 정하지 않았다 | 코드 문제 11 |
+| D | 13 | 미정-M7: 산출물 인덱스 표의 열 문법 | 다섯 칸, 첫 칸 `D`+숫자 두 자리, 원천은 백틱 안의 첫 공백 앞까지, `/`로 끝나면 폴더, 같은 ID는 뒤 행. `summary`는 단계 칸 | 8.12, 10.2, 16, formats 3.6 |
+| D | 14 | `doc stamp`의 빈 곳 여섯(`--id`, 인덱스 상태 칸, 없는 파일, `--path` 기준, owner·summary 누락, 본문) | `--id` 없음(인덱스에서 찾는다), 인덱스는 맞추지 않음, 제목 줄과 함께 만듦, `.fullops-squad` 기준, 종료 코드 1, 본문을 바꾸지 않음 | 8.12 |
+| D | 15 | `doc check`의 종료 코드와 `--json` | 문제 있음 2, 인덱스 없음·없는 ID 1. `{ok, checked, unwritten, errors[], warnings[]}` | 8.12, formats 8 |
+| D | 16 | `updated`의 날짜(std에 로컬 시간대가 없다) | UTC 날짜를 쓴다(한국에서는 09시 전까지 어제 날짜) | 코드 문제 8 |
+| D | 17 | front matter `{…}` 값이 문자열 객체가 아닐 때 | 문법 오류, `doc check`는 'front matter 없음' | 8.12 |
+| D | 18 | `expect`에 '출력에 없어야 한다'가 없다 | 비검출은 요약 줄을 `escape`로 단언한다(rs 전용) | 12.1 |
+| D | 19 | Windows에서 확장자 없이 적은 `.cmd` 도구 | PATH와 PATHEXT로 찾는 `resolve_program` | 8.11 |
+| D | 20 | `lint/lint.json`의 전체 키와 읽는 규칙 | 키 표, 내장 템플릿 위에 덮기(`size`만 한 단계 더), glob의 `*`가 `/`도 넘음, 어긋나면 종료 코드 1 | formats 3.6 |
+| D | 21 | `result.json`의 보충(skipped의 `exit_code`, 빈 `log`, SIZE-002의 `path`) | `null`·0, 빈 글, 빈 글 | 8.11, formats 5.6 |
+| D | 22 | lint 중 Ctrl+C·SIGTERM 처리(1.24.0에는 있었다) | 넣지 않았다 | 8.11(한계로 적음) |
+| D | 23 | py와 rs의 종료 코드 차이(lint 미통과와 `doc check` 문제: 1과 2) | 비교에서 둘 다 '통과 아님'으로 옮긴다. 2분 넘는 LINT-002 검출 사례는 `--ignored`로만 돈다 | 12.1 |
+| E | 1 | `review`·`resume`·`completion set-sha`·`decision`의 거절에 규칙 ID가 없다 | `RV-00`~`RV-10`, `HD-01`·`HD-02`, `DC-00`~`DC-03`. `sync`는 `M-11`, `hold`의 대상 없음은 `M-02` | 8.1, 8.8, 8.9, 8.10, formats 7 |
+| E | 2 | M-03의 '깨끗하다'와 M-08의 '미커밋 리뷰 파일을 넣는다'가 부딪친다 | 기록 경로 밖에 변경이 없으면 깨끗한 것이다. M-07이 띄우는 `lint`는 같은 예외가 없다 | 8.8, 코드 문제 9 |
+| E | 3 | 리뷰의 base(completion에는 base가 없다) | `merge-base(refs/heads/<base>, head)`. dev 직접 작업은 통합 기준 ref, anchor 순 | 8.8, 8.9, formats 3.5 |
+| E | 4 | L4의 기대('M-04 거절')와 8.8절 표가 다르다 | 표를 따른다: 결정을 새로 열고 종료 코드 3(`review.auto`면 2) | 8.8, 12.2 L4 |
+| E | 5 | M-04 표에 없는 두 경우(결론 없는 리뷰 기록, 만료된 열린 결정) | 거절(탈출구 `review check`). `dropped`로 닫고 새 결정을 연다 | 8.8 |
+| E | 6 | check 9번의 `config_sha256` 비교(D의 계산식이 공개 함수가 아니다) | 구현하지 않았다. lint 결과의 `merge_base`가 리뷰 base의 조상인지로 대신한다 | 코드 문제 4 |
+| E | 7 | `merge` 다시 실행의 판정 규칙 | 조상이면 M-04~M-06, 병합 기록 커밋이 있으면 M-07·M-08을 건너뛴다. 병합 전 tip은 병합 커밋의 첫 부모 | 8.8 |
+| E | 8 | `Git` trait에 없는 호출 | `fullops_ext::run`으로 git을 직접 부른다(넷) | 10.2 |
+| E | 9 | lead가 coordinator 브랜치에 있는 배치의 리뷰 파일 | 병합 기록 커밋에 들어가지 않는다 | 코드 문제 5 |
+| E | 10 | 오프라인에서의 `settle`의 fetch와 M-09의 push | fetch는 건너뛴다. push는 오프라인에서도 한다 | 8.8, formats 8 |
+| E | 11 | `rule.json`의 `include`, `policy_sha256`, `accepted.json`의 해시, 건너뛴 대상의 뼈대, `abandoned.json` | `include`는 쓰지 않는다. LF로 맞춘 글의 sha256. 파일 바이트의 sha256. `review_status: "skipped"`를 채운다. `{v, key, head, reason, at}` | 8.9, formats 3.5·3.6 |
+| E | 12 | 통합 명령의 호출자 검사와 `sync`의 종료 코드 | 검사는 M-01뿐이다. 반영 못 한 역할이 있으면 2, 충돌해 되돌렸으면 3 | 8.8 |
+| E | 13 | `gc`의 '정산된 dispatch'의 범위 | 완료 보고가 있는 과제는 archive로. 그 밖에는 정산된 조사·리뷰 dispatch와 부모가 없어진 하위 dispatch만 지운다. 끝난 구현 dispatch는 남긴다 | 6.8 |
+| E | 14 | `drift`를 세는 범위 | 역할 브랜치 tip이 통째로 들어간 경우만(first-parent, 병합 커밋·기록 경로 제외). `merge`로 통합한 건은 `null` | 8.8 |
+| E | 15 | `--sha`와 `set-sha`의 짧은 값 | 40자가 아니면 `rev-parse`로 푼다 | 8.8 |
+| E | 16 | 시나리오 어휘의 한계(리뷰 폴더의 head 12자, 결정 만료, 특정 단계에서 죽이기) | `crates/fullops/tests/review_merge.rs`가 본다. 죽이는 대신 그 단계까지만 끝난 상태를 만든다 | 12.1, 10.1 |
+| E | 17 | M-07에서 `lint`의 종료 코드 1과 제한 시간 | 1도 실패로 보고 되돌린다. 3600초 | 8.8 |
+| E | 18 | check 9번의 등록 명령 누락·중복을 맞추는 기준 | 기준 시점 `lint.json`의 `commands[].name` | 8.9 |
+| F | 1 | `install_plan`(순수 함수)이 경로를 모른다 | 자리표시자 `PACKAGE_ROOT`·`GROK_HOOK_FILE`·`FIXED_BIN`과 `Plan::bind` | 10.2, formats 8 |
+| F | 2 | 설치·이행 명령의 거절에 규칙 ID가 없다 | `FullOps[install]`(출처 충돌), `FullOps[migrate]`(전제 위반) | 8.1, 10.3, 13.2, formats 7 |
+| F | 3 | `doctor`의 종료 코드 | 알림이 있어도 0. 2를 내는 것은 `install --check` | 10.6, 12.2 Q6·Q10 |
+| F | 4 | 되돌린 뒤 `fullops.toml`을 남기면 두 판의 hook이 함께 돈다 | `fullops.toml.rolled-back`으로 이름을 바꾼다 | 13.3, formats 2, 17 H18 |
+| F | 5 | 1.24.0의 빈 인박스는 0바이트 파일이다 | `migrate`가 지우고 보고서에 내며 `--rollback`이 다시 만든다 | 13.2, 13.3 |
+| F | 6 | 이슈 자동 모드의 잡 확인(Python판은 sqlite) | `fullops-issues/status.json`의 `enabled`와 `job.status`만 본다 | 13.2 |
+| F | 7 | `doctor`·`install --check`의 '네트워크 없이 본다' | `FULLOPS_OFFLINE=1`이면 호스트 CLI를 부르지 않고 '모름'으로 둔다 | 8.1, 10.3, 10.6, formats 8 |
+| F | 8 | fake-host 방식의 전제가 실제 CLI가 PATH에 있는 PC에서 깨진다 | install·doctor 단계는 PATH를 가짜 폴더 하나로 좁힌다. `Sandbox::command`가 실제 호스트 CLI·npx가 든 폴더를 PATH에서 뺀다 | 12.1, formats 9.1 |
+| F | 9 | `plugin/`의 hook 등록 파일 | 정적 파일을 두지 않고 `xtask dist`가 `deps`의 표(`HOOK_TIMEOUTS`, `pre_tool_matcher`)에서 만든다 | 10.1, 10.5 |
+| F | 10 | `xtask dist`의 인자 | `--root`, `--target`, `--prebuilt`, `--no-validate` | 10.5 |
+| F | 11 | `init` 다시 실행(주석을 보존하는 TOML 편집 크레이트가 없다) | 최상위 키 줄만 바꾸고 역할 표를 끝에 덧붙인다. `[git]`은 바꾸지 않는다 | 10.6 |
+| F | 12 | '심볼릭 링크 대상은 거부한다'의 범위 | `.fullops-squad`·`fullops.toml`이 링크면 전체 거절, 엔트리 문서나 개별 템플릿이 링크면 그 대상만 건너뛴다 | 10.6 |
+| F | 13 | dev 모드 `primary_branch`의 출처 | 실행한 체크아웃의 브랜치(detached면 `mode`는 거절) | 10.6 |
+| F | 14 | `init --local-only`의 역할 브랜치 | 만들지 않는다 | 10.6 |
+| F | 15 | 1.24.0 coor 모드의 `primary_role`과 `제품 기획 역할` | `kind = "coordinator"`로 옮기고 `primary_role`은 적지 않는다. `kind = "design"` | 13.2 |
+| F | 16 | 설치 기록의 `complete` | 건너뛴 단계가 있으면 `false`. `--only`는 이전 값을 잇는다. `deps.toml`이 바뀌면 다른 호스트의 값도 내린다 | 10.3, formats 6 |
+| F | 17 | `install --check`가 목록을 읽지 못했을 때와 grok·agy의 id | 모름이면 빠졌다고 하지 않는다. 이름(`fullops`)만 맞아도 있는 것으로 본다 | 10.3 |
+| F | 18 | 플러그인 루트 없이 고정 위치 실행본으로 실행한 실행본 단계 | 자기 자신을 복사하지 않는다 | 10.3 |
+| F | 19 | `doctor`의 Git Bash 행과 agy 패키지 행 | Git Bash 행은 넣지 않았다(등록이 exec form이다). '활성 레포이고 설치 기록에 agy가 있다' | 10.6 |
+| F | 20 | `upgrade`의 필수 적용 검사와 `--verify`의 종료 코드 | `applied_version`이 2.0.0보다 낮은 레포에서만. 통과 못 하면 2 | 10.6 |
+| F | 21 | 버린 기능의 자산 | 넷을 싣지 않았다. 내장 `lint.json`의 `.fullops-squad/board/**` exclude는 남아 있다 | 11.3, 코드 문제 12 |
+| F | 22 | 구동기에 `cargo xtask`와 동시 실행을 적을 방법이 없다 | Q9와 N2의 일부는 `crates/fullops/tests/bundle_f.rs`가 한다 | 12.1, 10.1 |
+| F | 23 | `names = ["*"]` | `--skill *`를 글자 그대로 넘긴다(미정-M12) | 9.5, 16 |
+| F | 24 | 패키지의 `INSTALL.md` 원본의 자리 | `plugin/INSTALL.md`. `xtask dist`가 패키지 루트로 복사한다 | 10.1 |
+| F | 25 | S-04가 부를 진입점 | `cmd::runtime_stage(plugin_root)` | 10.2, formats 8 |
+| F | 26 | `docs/formats.md`에 없는 것(`deps`의 표와 함수, `hosts`의 두 함수, 홈과 공용 디렉터리의 새 경로, 관리 블록 표식) | 적었다 | formats 2·6·8 |
+| F | 27 | `LICENSE`와 매니페스트의 `license`·`repository` | `LICENSE`가 없다. `license`는 넣지 않았고 `repository`는 `tourbut/fullops` | 10.5, 17 H15 |
+| F | 28 | `xtask dist`가 저장소 루트에 만드는 `dist/`와 카탈로그 둘 | 저장소에 넣지 않았다 | 10.5, 17 H16 |
+| F | 29 | POSIX 런처의 실행 비트(Windows에서 만든 커밋) | `git update-index --chmod=+x`가 필요하다. `dist`는 POSIX에서만 실행 비트를 준다 | 10.5 |
+| G | 1 | 12.4절의 '대표 입력 12개'(나열은 13개)와 '주요 명령'의 목록 | 13개. `rules --json`과 `status --json` | 12.4 |
+| G | 2 | git·orca 호출 수와 파일 쓰기 수를 세는 법(대리 실행 파일이 없다) | `GIT_TRACE2_EVENT`, fake-orca의 `calls.jsonl`, 두 `fullops/` 폴더의 바뀐 파일 수. 세는 실행은 따로 한다 | 12.4 |
+| G | 3 | 시나리오 형식에 DF를 적는 자리가 없다 | 12.2절 행의 DF, '더 나음', 1.24.0 칸의 `-`로 행 단위로 가린다 | 12.1 |
+| G | 4 | 1.24.0의 caveman 경고(DF-12)가 모든 `session_starts`에서 회귀로 잡힌다 | py가 경고이고 rs가 이어지는 `session_starts`는 DF-12로 본다 | 12.1 |
+| G | 5 | 흐름 동사의 판정 어휘가 py와 rs에서 다르다 | 흐름(이어짐·멈춤)만 견준다. hook 동사는 판정 종류를 견준다 | 12.1 |
+| G | 6 | '병합된 과제 수'와 'lead가 받은 차단 수'를 세는 법 | 통합 기준 ref의 `<KEY> 구현` 커밋의 키 수. lead 단계 가운데 차단·거부인 수 | 12.4 |
+| G | 7 | 1.24.0의 분류는 설계 역할이 있어야 돌고 오프라인이면 폴백이다 | py 구동기가 fake-curl과 가짜 키로 그 한 호출만 돌린다. 없으면 `architecture`를 등록한다 | 12.1 |
+| G | 8 | 1.24.0의 lead Stop이 `worker-list`를 묻는다 | py 구동기가 `worker-list` 규칙 하나를 유지한다 | 12.1 |
+| G | 9 | 1.24.0에는 준비 커밋·동기화·병합 명령이 없다 | `lead_dispatches`·`lead_merges`가 스킬 절차를 셸 도구 호출로 수행한다 | 12.1 |
+| G | 10 | py의 PostToolUse 알림(DF-2) | 판정에 넣지 않는다. bench의 `pre_*`는 두 hook의 합이다 | 12.1, 12.4 |
+| G | 11 | 1.24.0의 `stop_hook_active`(DF-11) | 막힌 세션에 다음 사용자 입력 전까지 참으로 싣는다 | 12.1 |
+| G | 12 | 1.24.0에 대응이 없는 단계 | '기준선 없음'으로 센다 | 12.1 |
+| G | 13 | `report.md`의 표 | 합격 점검 표와 '끝까지 간 정도' 표를 앞에 더했다 | 12.1 |
+| G | 14 | rs 구동기의 흐름 동사가 `env`를 넘기지 않는다 | 세션 핸들이 있는 lead는 `runs_fullops`로 적는다 | 12.1, formats 9.4 |
+| G | 15 | 시나리오 파일 이름과 ID | 이름의 첫 `-` 앞이 12.2절의 ID다 | 12.1 |
+| G | 16 | 비활성 레포의 목표 15ms가 프로세스 바닥값과 거의 같다 | 합친 뒤 다시 재고 정한다 | 12.4, 16(M9) |
+| G | 17 | testkit의 `bin_path`가 `target/<profile>/deps/`를 가정한다 | `xtask`가 자신을 `deps/`에 복사해 다시 실행한다(`rerun_in_deps`) | 문서에 적지 않음(구현 세부) |
+| H | 1 | 설계는 패널을 TypeScript라고 적었다 | 빌드 단계와 npm 의존이 없는 JS(`worker.mjs`)와 HTML 한 파일 | 10.1, 14 |
+| H | 2 | 계약 문서에 매니페스트의 파일 이름과 필드가 없다 | `orca-plugin.json`, `manifestVersion` 2, `contributes.panels`, `capabilities`, worker의 `activate` | contracts/orca 5 |
+| H | 3 | 패널 프레임이 두 가지다(데스크톱의 격리 게스트, 브라우저 클라이언트의 srcdoc) | 인라인만 허용하는 쪽에 맞춰 CSS와 JS를 `index.html` 하나에 넣었다 | contracts/orca 5, 10.1 |
+| H | 4 | `orca plugin check`는 components 패널만 그려 본다 | HTML 패널의 화면은 `plugin shot`이나 미리보기로 본다 | contracts/orca 5 |
+| H | 5 | 미정-M4: worker가 fs로 읽을 수 있는가 | 코드로는 제한이 없다고 보고 fs로 읽게 만들었다. 실행으로는 확인하지 못했다. `status --json` 대안은 만들지 않았다 | 16(M4) |
+| H | 6 | 패널이 어느 레포를 보여 주는가 | 워크스페이스에서 찾은 레포 가운데 활성 표식이나 `status.json`이 있는 것. 초점 워크스페이스의 레포를 먼저 | 10.1 |
+| H | 7 | 갱신 방식 | 패널이 5초마다 worker에게 묻는다 | 10.1 |
+| H | 8 | `status.json`의 `v`가 1보다 클 때 | 그리지 않고 '새 형식이다'를 보여 준다 | 10.1 |
+| H | 9 | 매니페스트의 id와 version | `fullops-panel`, `2.0.0` | 17 H14 |
+| H | 10 | Orca 밖의 미리보기 | `window.orca`가 없으면 `src/preview.js`의 표본으로 그린다 | 10.1 |
+| H | 11 | `xtask dist`의 G4 검사와 패널의 `.js`·`.mjs` | 패널을 뺀다 | 10.5 |
+| J | 1 | `PacketInput`에 인박스 템플릿 글이 없다 | `build_packet_from(input, template)`을 옆에 더했다 | 8.14, 10.2, formats 8 |
+| J | 2 | `rebuild_packet`의 반환에 거절이 아닌 실패를 실을 자리가 없다 | 규칙 이름 `packet`, `exit`가 4 또는 1인 `Refusal`. `task recover`는 알리고 계속한다 | 8.4, 8.14, formats 7·8 |
+| J | 3 | `JevCurl`이 `--env-file`을 받을 방법이 없었다 | J가 키 찾는 순서를 자기 쪽에 한 번 더 구현했고 `JevCurl::default()`를 부른다(C의 `JevCurl::at`을 쓰지 않는다) | 코드 문제 10 |
+| J | 4 | 응답 검증과 요청 본문의 글 규칙 검사가 누구의 일인가 | `find`·`context`도 자기 쪽에서 검증하고 `error = "response"`로 폴백한다 | 8.14 |
+| J | 5 | 시나리오로 적을 수 없는 확인(`input_sha256`, 파일 300개, 동시 실행) | `crates/fullops/tests/explore.rs`가 같은 레포에서 잇는다 | 12.1, 10.1 |
+| J | 6 | `context --paths`의 상대 경로 기준 | 레포 루트. 거부된 경로의 `sources` 값은 `unavailable` | 8.14 |
+| J | 7 | `context` 3번의 '34번째 줄 이후' | 35번째 줄부터 찾는다(1.24.0과 같다). 한 줄도 못 실으면 `too large` | 8.14 |
+| J | 8 | 색인 항목의 `read_error` 값 | `not utf-8`, `unreadable`. 다음 실행에서 다시 읽는다 | 8.14, formats 5.5 |
+| J | 9 | `packet build`의 사유와 근거 이름, '합쳐 64개'의 순서 | `seed definition` 등 여섯 이름. 정의 이름을 먼저 넣고 낱말을 정렬해 채운다 | 8.14 |
+| J | 10 | 필수 문서 여섯 가운데 없는 파일 | 설계 그대로 `partial`이고 J-12에 걸린다 | 8.14(알려 둘 결과) |
+| J | 11 | 65,536바이트를 넘는 파일 하나로 패킷이 `partial`이 된다 | 설계 그대로다 | 8.14(알려 둘 결과) |
+| J | 12 | 지시서 파일도 문자 검색 대상인가 | 대상이다. 지난 패킷 블록을 뺀 글을 훑는다 | 8.14 |
+| J | 13 | 패킷 블록의 '줄 <근거 줄들>'의 길이와 빈 '미확인' | 앞 12개와 `…`. 0건이면 줄을 쓰지 않는다. `## 완료 보고`가 없으면 끝에 붙인다 | 8.14 |
+| J | 14 | J-04 문구의 '달라진 머리 필드' | `role`을 더했다 | 8.14 |
+| J | 15 | `error` 값과 `usage.calls` | `unsafe`를 더했다. `context`도 같은 낱말. 실패한 호출도 센다 | 8.14, formats 3.7 |
+| J | 16 | 읽히지 않는 옛 파일의 `history/` | 덮어쓰기 표대로 옮긴다(`keep_history`는 항상 참) | 8.14, formats 3.7 |
+| J | 17 | `packet check`를 직접 실행할 때의 대상과 `--head` | 이 체크아웃. `--head`는 조상 검사의 기준 커밋만 바꾼다 | 8.14 |
+| J | 18 | 색인의 `config_sha256`에 넣을 제외 목록의 글 | J가 `lint.json`의 `exclude`를 한 번 더 읽어 해시한다 | 문서에 적지 않음(형식은 formats 5.5 그대로) |
+| J | 19 | 명시 경로의 '추적 중 변경 경로' | `git status`에서 미추적이 아닌 항목 | 8.14 |
+| J | 20 | `history/`를 커밋하지 않게 하는 줄 | 내장 `.gitignore`에 `docs/evaluations/jev/history/`가 있다 | formats 3.7 |
+
+건수는 163건이다(B 20, C 25, D 23, E 18, F 29, G 17, H 11, J 20). 그 가운데 문서에 옮긴 것이 154건이고, 코드 문제로만 넘긴 것이 7건(C3, C25, D12, D16, E6, E9, J3), 문서에 적지 않은 구현 세부가 2건(G17, J18)이다. 문서에 옮긴 것 가운데 B4, C4, C6, C17, D4, E2, F21의 7건은 지금 동작을 적으면서 코드 문제에도 올렸다.
+
+### 7.2 새 규칙 ID와 `fullops rules`
+
+| ID | 내는 명령 | 뜻 | 정본 절 | `fullops rules`의 표 |
+|---|---|---|---|---|
+| `RV-01`~`RV-10` | `review check` | 8.9절 check의 실패 항목 1~10번 | 8.9 | 없음 |
+| `RV-00` | `review`의 그 밖의 거절 | 대상 없음, 폴더가 이미 있음, `waive`·`cleanup`·`supersede`의 전제 위반 | 8.9 | 없음 |
+| `HD-01`, `HD-02` | `resume`, `completion set-sha` | 보류된 대상 없음. 모르는 메시지 ID·이미 통합된 completion·풀 수 없는 SHA | 8.8 | 없음 |
+| `DC-00`~`DC-03` | `decision` | 없는 결정 ID, SHA 불일치, 만료, 허용 밖의 답한 사람 | 8.10 | 없음 |
+| `M-11`(재사용) | `sync` | 반영하지 못한 역할 | 8.8 | 없음 |
+| `M-02`(재사용) | `hold` | 대상 completion 없음 | 8.8 | 없음 |
+| `FullOps[publish]`, `FullOps[sync]` | `dispatch` 3·4단계 | 기록 게시와 대상 동기화의 거절 | 8.5 | 없음 |
+| `FullOps[wait]` | `wait` | 열린 Run이 여럿인데 `--run`이 없다 | 8.6 | 없음 |
+| `FullOps[LINT]` | `lint` | 작업 트리가 더럽다 | 8.11 | 없음 |
+| `FullOps[install]` | `install` | 마켓플레이스 출처 충돌 | 10.3 | 없음 |
+| `FullOps[migrate]` | `migrate` | 전제 위반 | 13.2 | 없음 |
+| `FullOps[packet]` | `task recover`의 알림 글 | `rebuild_packet`의 거절이 아닌 실패 | 8.14 | 없음 |
+
+정리: `fullops rules`가 내는 표는 `fullops_core::rules::RULES`, 곧 hook 규칙 34개(S·P·T·X·F)뿐이고 설계 7.5절의 표와 같다. CLI의 거절 ID는 처음부터 그 표에 없었다(RT, H, D, R, M, J 계열도 없다). CLI 거절 ID의 정본은 설계 8절(과 10·13절)의 명령별 절이고, 위의 새 ID도 그 절에 적었다. 그래서 "규칙 표에 없는 ID가 출력에 나온다"는 뜻의 어긋남은 없다. 다만 번호가 없는 단계 이름 일곱(`publish`·`sync`·`wait`·`LINT`·`install`·`migrate`·`packet`)은 `FullOps[<규칙>]` 자리에 규칙 ID가 아닌 글이 온다. 번호를 줄지는 정하지 않았다(`docs/formats.md` 7절에 목록이 있다).
+
+### 7.3 미정과 사람 결정
+
+- 미정(16절): M6(Jev의 전송 스키마)과 M7(산출물 인덱스 표의 열 문법)을 닫아 표에서 내렸다. M4에 묶음 H가 코드로 확인한 것과 남은 확인(실행)을, M9에 첫 측정의 바닥값을 적었다. M3(`--timeout-ms`의 최솟값과 0의 뜻)과 M12(`--skill *`, `agy plugin list --json`의 형태)에 남은 확인을 더했다.
+- 사람 결정(17절): H14(패널 플러그인의 id·버전과 배포 자리), H15(`LICENSE`와 매니페스트의 `license`·`repository`), H16(`xtask dist`의 산출물과 카탈로그를 어느 브랜치에 두는가), H17(Windows의 프로세스 트리 종료를 Job Object로 할 것인가. unsafe 또는 `windows-sys`가 필요하다), H18(`migrate --rollback`이 `fullops.toml`을 `fullops.toml.rolled-back`으로 바꾸는 것)을 더했다. 모두 열림이다.
+- 설계에 열린 문제로 적은 것 하나: 12.2절 J1의 둘째 경우(B7). lead의 X-01에서 병합으로 들어온 커밋을 뺄지 정해야 한다.
+
+### 7.4 문서를 고치지 않고 코드 문제로 넘긴 것
+
+구현이 설계의 의도와 어긋나 보여 설계 쪽을 구현에 맞추지 않은 것이다. 통합 담당이 고치거나, 고치지 않기로 하면 그때 설계를 바꾼다.
+
+| # | 묶음 | 자리 | 문제 | 설계의 근거 |
+|---|---|---|---|---|
+| 1 | C | `fullops-core/src/flow.rs`의 `record_message` | core가 시스템 시계를 직접 읽는다(시그니처에 시각 인자가 없다) | core는 시계·파일·프로세스에 닿지 않는다 |
+| 2 | C | `fullops-core/src/flow.rs` 563줄 | 본문의 SHA가 여럿일 때 조상 판정 없이 브랜치 tip과 같은 것을 고른다 | 8.6절: 나머지를 모두 조상으로 가지는 하나 |
+| 3 | B·C·D | `hook/facts_real.rs`, `cmd/done.rs`, `cmd/lint.rs`의 `default_start` | `changed()`·`pass_covers`·시작점 계산이 세 곳에 따로 있다 | 6.6절: X-01과 `done`이 같은 함수를 쓴다 |
+| 4 | E | `cmd/review.rs` 562줄 | check 9번의 `config_sha256` 비교가 없다(D가 정의한 값으로 계산할 수 있다) | 8.9절 check 9번 |
+| 5 | E | `cmd/merge.rs` 309줄 | lead가 coordinator 브랜치에 있으면 리뷰 파일이 병합 기록 커밋에 들어가지 않는다 | 8.8절 M-08 |
+| 6 | C | `cmd/status.rs` 71줄 | `status`가 `landed_at`을 쓸 때 `drift`를 세지 않는다(`settle`과 같은 일을 하지 않는다) | 8.8절 끝 문단 |
+| 7 | B | `fullops-core/src/rules/stop.rs` 162줄 | X-04가 `logs/`의 r0~r9만 본다 | 7.5절 X-04 |
+| 8 | D | `cmd/doc.rs` 315줄 | `doc stamp`의 `updated`가 UTC 날짜다 | 8.12절: `updated`를 오늘로 |
+| 9 | D·E | `cmd/lint.rs` 303줄 | `lint`의 깨끗함 검사에 기록 경로 예외가 없어, 미커밋 리뷰 파일이 있는 기본 워크트리에서 M-07의 lint가 거절된다(병합 결과의 tree가 다를 때) | 8.8절 M-07·M-08 |
+| 10 | C·J | `cmd/find.rs`의 `jev_curl`, `fullops-ext/src/jev.rs`의 `unsafe_text` | `find`·`context`가 `JevCurl::default()`를 불러 `--env-file`로 준 키가 실제 호출에 닿지 않는다. 키 찾는 순서와 본문 글 검사가 두 곳에 따로 있다 | 9.3절: 키를 찾는 순서는 `--env-file`이 먼저. 구현은 `fullops-ext::jev` 하나 |
+| 11 | D·F | `crates/fullops/assets/repo/docs/deliverables/README.md` | 내장 인덱스 템플릿에 front matter가 없어, 인덱스의 상태 칸을 고친 커밋이 DOC-003에 걸린다 | 8.11절 DOC-003, 8.12절(인덱스 상태는 사람이 고친다) |
+| 12 | F | `crates/fullops/assets/repo/lint/lint.json` | 버린 기능의 `.fullops-squad/board/**` exclude가 남아 있다 | 17절 H6 |

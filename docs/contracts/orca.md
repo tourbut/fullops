@@ -252,7 +252,36 @@ orca orchestration send --from <worker 핸들> --type worker_done --subject "<sh
 - `orca plugin validate`와 `orca plugin check`가 있다(설계 묶음 H의 완료 확인에 쓰는 명령). `check`와 `test`는 플러그인 코드를 이 PC에서 샌드박스 없이 돌린다.
 - 플러그인 하나는 파일 2,000개·50MiB까지다.
 
-**추정**: worker는 Node 프로세스이므로 `node:fs`로 Git 공용 디렉터리의 `status.json`을 읽고 `node:child_process`로 `fullops status --json`을 띄울 수 있다. 문서는 "패널에 Node가 필요하면 worker를 쓰라"고만 하고 `fs`·`child_process`를 직접 말하지는 않는다. 제한이 있는지는 **미확인**이다.
+**매니페스트**(묶음 H가 2026-11-14에 Orca 1.4.256 설치 폴더에서 읽었다. 출처는 GUIDE의 `orca-plugin-authoring` `manifest`·`host-api`·`recipes` 참고서, 스키마 코드, `worker-panel` 템플릿이다. `orca plugin validate`는 실행하지 않았다):
+
+| 항목 | 값 | `panel/orca-plugin.json`이 쓴 값 |
+|---|---|---|
+| 파일 이름 | 플러그인 폴더의 `orca-plugin.json` | - |
+| `manifestVersion` | `2` | `2` |
+| `execution` | `data` \| `declarative` \| `sandboxed-ui` \| `trusted-worker` | `trusted-worker` |
+| `id`, `name`, `version`, `description` | 글. 설치 ID는 `<publisher>.<id>`다. `publisher`는 생략할 수 있다 | `fullops-panel`, `fullops`, `2.0.0`(`publisher`는 넣지 않았다) |
+| `engines.orca` | 버전 범위 | `>=1.4.256` |
+| `pluginApi` | 정수 | `1` |
+| `main` | worker의 진입점(`.mjs`를 그대로 읽는다). `trusted-worker`에 필수다 | `src/worker.mjs` |
+| `contributes.panels[]` | `{ id, title, icon, entry }`. `entry`는 `.html` 파일이고 `icon`은 Orca의 아이콘 어휘에서 고른다 | `{ "id": "status", "title": "fullops", "icon": "activity", "entry": "src/index.html" }` |
+| `capabilities[]` | `{ kind }`. worker가 부르는 호스트 API의 권한 | `[{ "kind": "workspace:read" }]` |
+| 모르는 키 | 받지 않는다 | 없음 |
+
+- worker의 진입점은 `export default function activate(orca)`다. 그 안에서 `orca.panels.handle(name, fn)`으로 패널의 `plugin.request(name, input)`에 답한다.
+- 패널 메시지 한도는 10초에 120건이다(`panel/`은 5초마다 한 번 묻는다).
+
+**패널 프레임의 두 가지 CSP**(설치 폴더 `resources/app.asar.unpacked/out/shared/plugins/frames/plugin-panel-shell.js`의 두 상수. 2026-11-14에 다시 읽어 같은 값임을 확인했다):
+
+| 프레임 | 쓰는 곳 | CSP |
+|---|---|---|
+| 격리 게스트(`PLUGIN_GUEST_CSP`) | 데스크톱 앱 | `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'` |
+| srcdoc iframe(`PLUGIN_PANEL_CSP`) | 브라우저 클라이언트(serve/web) | `default-src 'none'; connect-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'` |
+
+- 데스크톱의 격리 게스트는 자기 폴더의 파일(`'self'`)을 불러올 수 있지만, 브라우저 클라이언트의 srcdoc iframe은 인라인 스크립트와 인라인 스타일만 돈다(별도 `.js`·`.css` 파일과 `data:`가 아닌 이미지·글꼴은 불리지 않는다). 그래서 두 프레임에서 모두 도는 패널은 HTML·CSS·JS를 한 파일에 넣어야 한다(`panel/src/index.html`이 그렇게 했다). 네트워크는 두 프레임 모두 막혀 있다(격리 게스트는 CSP가 아니라 세션이 막는다).
+- `orca plugin check`는 `ui`가 `components`인 패널만 한 번 그려 본다(`resources/app.asar.unpacked/out/cli/plugin-authoring/plugin-panel-check.js`). HTML 패널은 그리지 않으므로 HTML 패널에서 `check`가 보는 것은 `validate`와 같다. 화면은 `orca plugin shot`이나 미리보기로 본다.
+- worker의 실행(묶음 H가 `app.asar`와 `out/main/plugin-host-entry.js`에서 읽었다): worker는 `fork(entry, [], { env: 허용 목록, execArgv: [] })`로 뜨는 Node 프로세스이고 Node의 권한 모델 인자가 없다. 환경 변수는 PATH·HOME·USERPROFILE 등 허용 목록만 넘어간다.
+
+**추정**: worker는 Node 프로세스이므로 `node:fs`로 Git 공용 디렉터리의 `status.json`을 읽고 `node:child_process`로 `fullops status --json`을 띄울 수 있다. 문서는 "패널에 Node가 필요하면 worker를 쓰라"고만 하고 `fs`·`child_process`를 직접 말하지는 않는다. 제한이 있는지는 **미확인**이다(위의 `fork` 인자로 보면 `node:fs`에는 제한이 없다고 본다. 실행으로는 확인하지 않았다. `panel/`은 `node:fs`로 읽고 `child_process`는 쓰지 않는다. 확인 명령은 `orca plugin dev request panel status.read --json`이다. 설계 16절 M4). `workspace.readContext`의 `displayName`·`branch`가 `workspace.list`의 `name`·`branch`와 같은 값인지도 **미확인**이다(다르면 패널이 초점 레포를 찾지 못해 첫 레포를 보여 준다).
 
 설계의 가정("`status.json` 파일을 읽는다. 안 되면 `fullops status --json`을 부른다")은 패널 혼자서는 성립하지 않고, `trusted-worker`로 만들어야 성립한다. 그러면 사용자가 설치할 때 코드 실행을 승인해야 한다(`plugin install … --approve`).
 
