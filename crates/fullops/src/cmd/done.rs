@@ -1,14 +1,15 @@
 //! `fullops done`: 완료 기록 보존, 검사, push, 보낼 본문 출력(설계 8.7절). 보내지는 않는다: 전송은 preamble의 `worker_done`이다.
 
 use super::dispatch::{packet_findings, usage, value};
-use crate::assets::{HANDOVER_TEMPLATE, LINT_JSON};
+use crate::assets::HANDOVER_TEMPLATE;
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use crate::hook::changes::{self, GitGate};
 use fullops_core::flow::refusal;
 use fullops_core::messages;
 use fullops_core::model::{
-    Completion, Config, Dispatch, Extra, Followup, HeadRef, Known, LintPass, LintResult, MessageId,
-    PacketCheck, Reported, RoleId, RoleKind, Seat, Sha, ShaSource, State, TaskKey, TestLevel,
-    WorkOutcome, path_text, same_path,
+    Completion, Config, Dispatch, Extra, Followup, HeadRef, LintResult, MessageId, PacketCheck,
+    Reported, RoleId, RoleKind, Seat, ShaSource, State, TaskKey, TestLevel, WorkOutcome, path_text,
+    same_path,
 };
 use fullops_ext::{Git, GitCli};
 use fullops_store::Repo;
@@ -27,82 +28,6 @@ pub(super) fn is_record_path(path: &str) -> bool {
     .iter()
     .any(|dir| path.starts_with(dir))
         || path == ".fullops-squad/PLANS.md"
-}
-
-/// 세션이 만든 변경(설계 6.6절 `changed()`): 시작점과 대상 파일. 시작점을 정하지 못하면 `None`이다.
-// shortcut: X-01(묶음 B)과 같은 계산을 여기서 따로 한다(뼈대에 함께 쓸 함수의 시그니처가 없다), B가 순수 함수를 내놓으면 그것으로 바꾼다
-fn changed(
-    config: &Config,
-    git: &GitCli,
-    inbox_base: Option<Sha>,
-    anchor: Option<Sha>,
-    direct: bool,
-) -> Option<(Sha, Vec<String>)> {
-    let floor = git.merge_base("HEAD", &config.base_ref()).yes();
-    let mut start = if direct {
-        anchor
-    } else {
-        inbox_base.or(anchor)
-    };
-    if let (Some(s), Some(f)) = (&start, &floor)
-        && git.is_ancestor(s.as_str(), f.as_str()) == Known::Yes(true)
-    {
-        start = floor.clone();
-    }
-    if start
-        .as_ref()
-        .is_none_or(|s| git.is_ancestor(s.as_str(), "HEAD") != Known::Yes(true))
-    {
-        start = floor.clone();
-    }
-    let start = start?;
-    let mut paths = git.diff_names(start.as_str(), "HEAD").yes()?;
-    paths.extend(git.status(None).yes()?.into_iter().map(|e| e.path));
-    paths.sort();
-    paths.dedup();
-    // 검사 기준은 merge-base 커밋의 설정이다(설계 6.1.1절)
-    let at = floor.as_ref().unwrap_or(&start).to_string();
-    let blobs = git
-        .show_blobs(&[
-            (at.clone(), ".fullops-squad/fullops.toml".to_string()),
-            (at, ".fullops-squad/lint/lint.json".to_string()),
-        ])
-        .yes()
-        .unwrap_or_default();
-    let text = |i: usize| {
-        blobs
-            .get(i)
-            .cloned()
-            .flatten()
-            .and_then(|bytes| String::from_utf8(bytes).ok())
-    };
-    let baseline = fullops_store::baseline(text(0).as_deref());
-    let exclude = fullops_core::lint_excludes(text(1).as_deref(), LINT_JSON);
-    paths.retain(|path| {
-        !is_record_path(path)
-            && if direct {
-                !exclude.is_match(path)
-            } else {
-                fullops_core::is_code(path, &baseline.code, &exclude)
-            }
-    });
-    Some((start, paths))
-}
-
-/// lint 통과 인정(설계 6.6절 `pass_covers`). `start`가 없으면 head 쪽 조건만 본다.
-fn pass_covers(repo: &Repo, git: &GitCli, head: &Sha, start: Option<&Sha>) -> Option<LintPass> {
-    let pass = fullops_store::read_lint_pass(repo).yes().flatten()?;
-    let covers_head = &pass.head == head
-        || (git.is_ancestor(pass.head.as_str(), head.as_str()) == Known::Yes(true)
-            && git
-                .diff_names(pass.head.as_str(), head.as_str())
-                .yes()
-                .is_some_and(|paths| paths.iter().all(|p| is_record_path(p))));
-    let covers_base = start.is_none_or(|start| {
-        &pass.base == start
-            || git.is_ancestor(pass.base.as_str(), start.as_str()) == Known::Yes(true)
-    });
-    (covers_head && covers_base).then_some(pass)
 }
 
 /// `## 완료 보고` 절의 줄들.
@@ -234,15 +159,29 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             refused.push(refusal("R-02", &[&dirty.to_string()], "커밋한다", 2));
         }
         let now_head = head(&git)?;
+        // X-01과 같은 함수로 변경 범위와 lint 통과 인정을 본다(설계 6.6절)
+        let mut gate = GitGate::cli(repo.root.clone());
         if already {
-            evidence = pass_covers(repo, &git, &now_head, None);
+            evidence = changes::pass_covers(&mut gate, repo, &now_head, None)
+                .yes()
+                .flatten();
         } else {
             // R-03
             let anchor = caller.session.as_ref().and_then(|s| s.anchor.clone());
-            let base = inbox.as_ref().map(|i| i.base.clone());
-            match changed(config, &git, base, anchor, direct) {
+            let candidate = changes::start_candidate(repo, config, actor, anchor);
+            let merged = if actor.is_lead() {
+                changes::merged_in(&state, &mut |sha| super::hold::landing(&git, config, sha))
+            } else {
+                Vec::new()
+            };
+            let found = changes::changed(
+                &mut gate, repo, config, actor, &now_head, candidate, &merged,
+            );
+            match found.yes().map(|found| (found.set.start, found.set.code)) {
                 Some((start, code)) => {
-                    evidence = pass_covers(repo, &git, &now_head, Some(&start));
+                    evidence = changes::pass_covers(&mut gate, repo, &now_head, Some(&start))
+                        .yes()
+                        .flatten();
                     if !code.is_empty() && evidence.is_none() && no_checks.is_none() {
                         refused.push(refusal(
                             "R-03",

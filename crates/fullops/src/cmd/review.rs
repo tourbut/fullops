@@ -178,7 +178,7 @@ fn find_lint(git: &GitCli, head: &Sha) -> Option<Vec<u8>> {
 }
 
 /// 유효한 `accepted.json`: 두 해시가 지금 파일과 같다.
-fn accepted(dir: &Path) -> Option<Accepted> {
+pub fn accepted(dir: &Path) -> Option<Accepted> {
     let record: Accepted = read(&dir.join("accepted.json"))?;
     let same =
         |name: &str, recorded: &str| file_sha256(&dir.join(name)).as_deref() == Some(recorded);

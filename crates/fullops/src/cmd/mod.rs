@@ -152,5 +152,6 @@ pub static COMMANDS: &[Command] = &[
 ];
 
 /// 실행본 단계(설계 10.3절). hook의 `SelfInstall` 효과(S-04의 자동 설치)가 `install --only runtime`과 같은 함수를 부른다.
-#[allow(unused_imports)] // 묶음 B의 효과 실행이 부르기 전까지 쓰는 곳이 없다
 pub use install::runtime_stage;
+/// 유효한 `accepted.json`(설계 8.9절). X-02의 리뷰 증거가 `review check`·`merge`와 같은 판정을 쓴다.
+pub use review::accepted;

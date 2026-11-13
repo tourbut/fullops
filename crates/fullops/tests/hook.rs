@@ -1,6 +1,6 @@
 //! 묶음 B(hook)의 통합 시험: 빌드한 바이너리를 실제 hook처럼 돌린다.
 //! 시나리오 파일(`scenarios/*.toml`)이 주력이고, 동사로 적을 수 없는 것(계약 표본 그대로의 입력, 깨진 stdin, 병렬 경합,
-//! 다른 묶음의 명령이 만드는 `state.json`에 기대는 Stop 규칙)만 여기서 직접 본다.
+//! 살아 있는 대기 표식, 무작위 이름의 리뷰 사본, 여러 경우를 한 상태에서 잇는 Stop 규칙)만 여기서 직접 본다.
 
 use fullops_core::model::*;
 use fullops_testkit::{Sandbox, Setup, orca_shapes, run_scenario, scenario};
@@ -29,6 +29,12 @@ fn owned_files() -> Vec<PathBuf> {
             let id = stem.split('-').next().unwrap();
             OWNED.contains(&id)
         })
+        // 하나만 다시 돌릴 때: FULLOPS_SCENARIO=i2,j1
+        .filter(|path| {
+            let stem = path.file_stem().unwrap().to_string_lossy().into_owned();
+            std::env::var("FULLOPS_SCENARIO")
+                .map_or(true, |only| only.split(',').any(|o| o == stem))
+        })
         .collect();
     files.sort();
     files
@@ -43,7 +49,8 @@ fn owned_scenarios_pass() {
             let stem = f.file_stem().unwrap().to_string_lossy().into_owned();
             stem.split('-').next() == Some(id)
         });
-        assert!(has, "시나리오 {id}의 파일이 없다");
+        let filtered = std::env::var_os("FULLOPS_SCENARIO").is_some();
+        assert!(has || filtered, "시나리오 {id}의 파일이 없다");
     }
     // 시나리오마다 임시 레포를 만들므로 여럿을 함께 돌린다
     let failures: Vec<String> = std::thread::scope(|scope| {
@@ -76,6 +83,8 @@ fn every_rule_has_a_hit_scenario() {
     for path in owned_files() {
         let scenario = scenario::load(&path).unwrap();
         for step in &scenario.steps {
+            // 묶음을 합친 뒤에는 건너뛰는 단계가 없다: 걸림은 실제로 실행된 단계만 센다
+            assert!(step.pending.is_none(), "{}: 보류 단계", path.display());
             expected.extend(step.expect.as_ref().and_then(|e| e.rule.clone()));
         }
     }
@@ -738,17 +747,26 @@ fn lead_stop_rules_follow_state() {
         .flatten()
         .unwrap();
     assert_eq!(status.pending[0].landing, Some(Landing::MergeLeft));
-    // 로컬 기본 브랜치에만 있으면 push가 남았다. 날것 git merge로 로컬에만 병합한 세션에서는
-    // 병합된 코드가 lint 통과 없는 변경(X-01)으로도 잡히고 X-06이 함께 남는다
+    // 로컬 기본 브랜치에만 있으면 push가 남았다. 날것 git merge로 들어온 커밋은 lead 세션이 만든 변경이
+    // 아니므로 X-01에 걸리지 않고 X-06이 알린다
     h.sb.git_ok(
         &h.sb.path("lead"),
         &["merge", "-q", "--no-edit", "fullops/dev"],
     );
     let out = h.stop("lead", "owner", &handle);
     assert!(
-        reason(&out).starts_with("FullOps[X-01]: ") && reason(&out).contains("X-06"),
+        reason(&out).starts_with("FullOps[X-06]: ") && reason(&out).contains("push 남음"),
         "{out}"
     );
+    // 병합 뒤에 lead가 직접 고친 코드는 여전히 X-01이 본다
+    h.sb.write(&h.sb.path("lead").join("src/lead.py"), "print(3)\n");
+    let out = h.stop("lead", "owner", &handle);
+    assert!(
+        reason(&out).starts_with("FullOps[X-01]: ") && reason(&out).contains("src/lead.py"),
+        "{out}"
+    );
+    assert!(!reason(&out).contains("src/a.py"), "{out}");
+    std::fs::remove_file(h.sb.path("lead").join("src/lead.py")).unwrap();
     h.claude(
         "lead",
         "late",
@@ -1032,7 +1050,7 @@ fn direct_dev_needs_review_evidence() {
     let waiver = Waiver {
         v: 1,
         key: key.clone(),
-        base,
+        base: base.clone(),
         head: head.clone(),
         reason: "긴급".into(),
         decision: DecisionId::from_number(1),
@@ -1044,6 +1062,35 @@ fn direct_dev_needs_review_evidence() {
     fullops_store::write_json(&dir.join("waiver.json"), &waiver).unwrap();
     h.sb.git_ok(&h.sb.path("lead"), &["add", "-A"]);
     h.sb.git_ok(&h.sb.path("lead"), &["commit", "-q", "-m", "면제 기록"]);
+    assert_eq!(h.stop("lead", "s", &[]), json!({}));
+
+    // 코드를 더 바꾸면 앞의 면제는 그 HEAD의 증거가 아니다. 수락 리뷰는 두 해시가 지금 파일과 같아야 유효하다
+    let head = Sha::new(h.commit("lead", "src/big.py", &"print(2)\n".repeat(400))).unwrap();
+    let pass = LintPass {
+        head: head.clone(),
+        tree: head.clone(),
+        ..pass
+    };
+    fullops_store::write_json(&h.repo("lead").lint_dir().join("pass.json"), &pass).unwrap();
+    assert!(reason(&h.stop("lead", "s", &[])).starts_with("FullOps[X-02]: "));
+    let dir = h.repo("lead").review_dir(&key, &head);
+    h.sb.write(&dir.join("result.json"), "{}");
+    h.sb.write(&dir.join("lint.json"), "{}");
+    let accepted = |result_sha256: String| Accepted {
+        v: 1,
+        key: key.clone(),
+        base: base.clone(),
+        head: head.clone(),
+        result_sha256,
+        lint_sha256: sha256_hex(b"{}"),
+        reviewer_session: "rv".into(),
+        implementer_session: Some("s".into()),
+        at: 3,
+    };
+    let path = dir.join("accepted.json");
+    fullops_store::write_json(&path, &accepted("0".repeat(64))).unwrap();
+    assert!(reason(&h.stop("lead", "s", &[])).starts_with("FullOps[X-02]: "));
+    fullops_store::write_json(&path, &accepted(sha256_hex(b"{}"))).unwrap();
     assert_eq!(h.stop("lead", "s", &[]), json!({}));
 }
 
@@ -1205,7 +1252,7 @@ fn self_install_follows_the_plugin_root() {
     let root = h.sb.root.join("plugin");
     let exe = format!("fullops{}", std::env::consts::EXE_SUFFIX);
     std::fs::create_dir_all(root.join("bin")).unwrap();
-    std::fs::copy(fullops_testkit::bin("fullops"), root.join("bin").join(exe)).unwrap();
+    std::fs::copy(fullops_testkit::bin("fullops"), root.join("bin").join(&exe)).unwrap();
     h.sb.write(
         &root.join("VERSION"),
         "2.0.0
@@ -1225,6 +1272,15 @@ fn self_install_follows_the_plugin_root() {
     };
     let root = root.to_string_lossy().into_owned();
     assert!(installs("a", &["claude", "--plugin-root", &root]));
+    // 효과가 실행본 단계를 실제로 했다: 고정 위치의 실행본과 install.json
+    let fixed = h.sb.home.join(".fullops");
+    assert!(fixed.join("bin").join(&exe).is_file());
+    let record: Value =
+        serde_json::from_str(&std::fs::read_to_string(fixed.join("install.json")).unwrap())
+            .unwrap();
+    assert_eq!(record["version"], "2.0.0");
+    // 같은 버전이 설치된 뒤에는 다시 걸리지 않는다
+    assert!(!installs("a2", &["claude", "--plugin-root", &root]));
     assert!(!installs(
         "b",
         &["claude", "--plugin-root", &root, "--in-place"]
@@ -1235,6 +1291,45 @@ fn self_install_follows_the_plugin_root() {
         &["claude", "--plugin-root", "${CLAUDE_PLUGIN_ROOT}"]
     ));
     assert!(!installs("d", &["claude"]));
+}
+
+/// B4·S-03: 실제 `review snapshot`이 만든 사본 안의 세션은 `Reviewer`이고(사본 폴더 이름이 무작위라 시나리오로 적지 못한다),
+/// 사본이 사라지면 lead의 SessionStart가 그 기록을 닫는다.
+#[test]
+fn snapshot_session_is_a_reviewer() {
+    let h = Hooks::new(&Setup::default());
+    let lead = h.sb.path("lead");
+    let sha = h.commit("dev", "src/a.py", "print(1)\n");
+    h.set_state(
+        json!({"v": 1, "completions": [{"id": "msg_1", "dispatch": null, "key": "A-1",
+        "role": "dev", "branch": "fullops/dev", "sha": sha, "sha_source": "done",
+        "outcome": "succeeded", "received_at": 20}]}),
+    );
+    let made = h.sb.cli(&lead, &["review", "snapshot", "A-1"]);
+    assert_eq!(made.code, Some(0), "{}", made.stderr);
+    let snapshot = h.state().snapshots[0].clone();
+    assert_eq!(snapshot.state, SnapshotState::Active);
+
+    let event = |name: &str| json!({"hook_event_name": name, "session_id": "rv", "cwd": snapshot.path, "source": "startup"});
+    let out = h.call(&["claude"], &[], &event("SessionStart"));
+    let text = out["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(text.contains("읽기 전용 리뷰 사본"), "{text}");
+    // 리뷰어는 lead의 규칙(미통합 완료 보고 X-06)에 걸리지 않는다
+    assert_eq!(h.call(&["claude"], &[], &event("Stop")), json!({}));
+    assert!(reason(&h.stop("lead", "l", &[])).starts_with("FullOps[X-06]: "));
+
+    std::fs::remove_dir_all(&snapshot.path).unwrap();
+    h.sb.git_ok(&lead, &["worktree", "prune"]);
+    h.claude(
+        "lead",
+        "l2",
+        "SessionStart",
+        json!({"source": "startup"}),
+        &[],
+    );
+    assert_eq!(h.state().snapshots[0].state, SnapshotState::Missing);
 }
 
 /// 감시 스레드: stdin이 끝나지 않으면 내부 기한 뒤에 그 호스트의 통과 글을 내고 종료 코드 0으로 끝난다.
@@ -1281,5 +1376,44 @@ impl KeepStdin for std::process::Child {
             stdout,
             stderr: Vec::new(),
         }
+    }
+}
+
+/// 벽시계 측정(설계 2.2절). 기본 실행에서는 돌지 않는다:
+/// `FULLOPS_PERF_BIN=target/release/fullops.exe cargo test -p fullops --test hook wall_clock -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn wall_clock_report() {
+    let h = Hooks::new(&Setup::default());
+    let lead = h.sb.path("lead");
+    let bin = std::env::var_os("FULLOPS_PERF_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| fullops_testkit::bin("fullops"));
+    let input = json!({"hook_event_name": "PreToolUse", "session_id": "perf", "cwd": lead,
+        "tool_name": "Bash", "tool_input": {"command": "ls -la"}})
+    .to_string();
+    // 같은 조건의 기준값으로 git의 프로세스 시작 시간을 함께 잰다
+    let git = PathBuf::from("git");
+    let cases: [(&str, &PathBuf, &[&str], &str); 3] = [
+        ("git --version", &git, &["--version"], ""),
+        ("fullops --version", &bin, &["--version"], ""),
+        ("무관한 PreToolUse", &bin, &["hook", "claude"], &input),
+    ];
+    for (name, program, args, stdin) in cases {
+        let mut ms: Vec<u128> = (0..31)
+            .map(|_| {
+                let mut cmd = h.sb.command(program, &lead);
+                cmd.args(args);
+                let run = h.sb.run(cmd, stdin.as_bytes());
+                assert_eq!(run.code, Some(0), "{}", run.stderr);
+                run.ms
+            })
+            .skip(1) // 첫 실행은 파일 캐시를 데운다
+            .collect();
+        ms.sort();
+        println!(
+            "{name}: 30회 p50 {}ms, p95 {}ms, 최소 {}ms, 최대 {}ms",
+            ms[15], ms[28], ms[0], ms[29]
+        );
     }
 }

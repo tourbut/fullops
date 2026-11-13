@@ -16,27 +16,50 @@ content = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시�
 
 [[step]]
 act = "session_starts"
+env = { ORCA_AGENT_SESSION_ID = "term_lead" }
 expect = { verdict = "context", flow = "continues" }
 
 [[step]]
 act = "stops"
 expect = { verdict = "pass", flow = "continues" }
 
+# 다섯째 조건(자기 키가 Assigned 이상): 세션 핸들이 있는 lead가 B-6을 배정한다
 [[step]]
-act = "lead_dispatches"
+act = "lead_routes"
 key = "B-6"
 role = "art"
-pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "B-6"
+role = "art"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "run-create"]
+times = 1
+stdout = { ok = true, result = { runId = "run_1", objective = "fullops" } }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-start"]
+times = 1
+stdout = { ok = true, result = { dispatchId = "ctx_1", taskId = "task_1", runId = "run_1", state = "ready", agent = "claude", terminal = "term_1" } }
+
+[[step]]
+act = "runs_fullops"
+env = { ORCA_AGENT_SESSION_ID = "term_lead" }
+args = ["dispatch", "B-6", "--role", "art"]
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "lead_plans"
 key = "B-6"
 role = "art"
-pending = "C"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
-pending = "C"
 expect = { verdict = "pass", flow = "continues" }

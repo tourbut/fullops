@@ -16,5 +16,4 @@ expect = { verdict = "context", flow = "continues", escape = "(`Agent`)" }
 [[step]]
 act = "runs_fullops"
 args = ["status"]
-pending = "C"
 expect = { verdict = "pass", flow = "continues", escape = "(`Agent`)" }

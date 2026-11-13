@@ -22,7 +22,7 @@ fn kind(error: &StoreError) -> &'static str {
     match error {
         StoreError::LockBusy => "lock_busy",
         StoreError::Missing => "no_session",
-        StoreError::Corrupt(why) => *why,
+        StoreError::Corrupt(why) => why,
         StoreError::Io(_) => "io",
     }
 }
@@ -223,17 +223,14 @@ fn apply(facts: &RealFacts, state: &mut State, write: &Write, now: i64) {
             let Some(run) = run else {
                 return;
             };
+            // `done` 기록이 있는 보고는 아래 둘을 부르지 않는다. 브랜치 tip은 ref 파일에서 읽는다
             let git = fullops_ext::GitCli::hook(facts.repo.root.clone());
             let mut resolve =
                 |hex: &str| -> Option<Sha> { git.rev_parse(&format!("{hex}^{{commit}}")).yes() };
-            let branches: Vec<(String, String)> = facts
-                .branches()
-                .into_iter()
-                .map(|(role, branch)| (role, format!("refs/heads/{branch}")))
-                .collect();
+            let branches = facts.branches();
             let mut tip = |role: &fullops_core::model::RoleId| -> Option<Sha> {
-                let (_, name) = branches.iter().find(|(id, _)| id == role.as_str())?;
-                git.rev_parse(name).yes()
+                let (_, branch) = branches.iter().find(|(id, _)| id == role.as_str())?;
+                facts.ref_sha(&format!("refs/heads/{branch}"))
             };
             let mut is_ancestor = |older: &Sha, newer: &Sha| {
                 git.is_ancestor(older.as_str(), newer.as_str()).yes() == Some(true)
@@ -342,19 +339,11 @@ pub fn after_output(facts: &mut RealFacts, effects: &[Effect], errors: &mut Vec<
             },
             Effect::GcSessions => gc_sessions(facts, now),
             Effect::SelfInstall => {
-                // 실행본 단계(`install --only runtime`과 같은 일)는 플러그인 루트의 실행본에 맡긴다
-                if let Some(root) = facts.plugin_root.clone() {
-                    let name = if cfg!(windows) {
-                        "fullops.exe"
-                    } else {
-                        "fullops"
-                    };
-                    let exe = root.join("bin").join(name).to_string_lossy().into_owned();
-                    let argv = [exe, "install".into(), "--only".into(), "runtime".into()];
-                    let out = fullops_ext::run(&argv, &root, Duration::from_secs(3), &[], None);
-                    if !out.ok() {
-                        errors.push("self_install");
-                    }
+                // 실행본 단계(`install --only runtime`과 같은 함수). 플러그인 등록과 의존 설치는 하지 않는다
+                if let Some(root) = facts.plugin_root.clone()
+                    && crate::cmd::runtime_stage(Some(&root)).is_err()
+                {
+                    errors.push("self_install");
                 }
             }
             Effect::PeekCompletions { run } => {

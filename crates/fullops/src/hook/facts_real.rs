@@ -1,15 +1,15 @@
 //! 실제 파일과 프로세스에서 사실을 읽는 `Facts`(설계 10.2절). 모든 사실은 지연 계산이고 한 번 읽은 것은 다시 읽지 않는다.
 //! git·Orca 호출은 이벤트별 상한(설계 7.1절)을 넘으면 `Unknown`을 돌려준다.
 
+use super::changes::{self, Criteria, GitGate};
 use crate::assets;
 use fullops_core::config::{PolicyError, mode_changed};
-use fullops_core::derive::{is_change_target, is_record_path, landing_of};
+use fullops_core::derive::landing_of;
 use fullops_core::facts::{ActorInput, Facts, resolve_actor};
 use fullops_core::model::{
-    Accepted, Actor, Caps, ChangeSet, Config, Derived, DispatchId, EventKind, HeadRef, HookInput,
-    HostId, Inbox, Known, Landing, Mode, Need, Plan, ReviewEvidence, RoleId, Route, RunId, Seat,
-    Session, SessionId, Sha, SkillText, State, TaskKey, Waiter, Waiver, WorkOutcome, caps_of,
-    path_text,
+    Actor, Caps, ChangeSet, Config, Derived, DispatchId, EventKind, HeadRef, HookInput, HostId,
+    Inbox, Known, Landing, Need, Plan, ReviewEvidence, RoleId, Route, RunId, Session, SessionId,
+    Sha, SkillText, State, TaskKey, Waiter, Waiver, WorkOutcome, caps_of, path_text,
 };
 use fullops_core::rules::NO_SESSION;
 use fullops_ext::{Git, GitCli, Orca, OrcaCli};
@@ -40,8 +40,7 @@ pub struct RealFacts {
     pub plugin_root: Option<PathBuf>,
     host: HostId,
     event: EventKind,
-    git: GitCli,
-    git_used: u32,
+    gate: GitGate,
     orca_used: u32,
     config: Option<Result<Config, PolicyError>>,
     session: Option<Known<Option<Session>>>,
@@ -51,26 +50,25 @@ pub struct RealFacts {
     head: Option<Known<Sha>>,
     actor: Option<Known<Actor>>,
     changed: Option<Known<ChangeSet>>,
+    /// `changed()`가 읽은 기준 시점의 검사 기준. X-02의 `review_need`가 다시 읽지 않는다.
+    criteria: Option<Criteria>,
     /// 터미널 핸들로 묶인 dispatch(7.3절 2번). 효과 실행이 세션 파일에 쓴다.
     pub bind: Option<(DispatchId, Option<String>)>,
     /// 이 호출이 계산한 통합 위치(SHA → 위치). `status.json`의 유도값으로 넘긴다.
     landings: BTreeMap<String, Landing>,
     /// X-03의 Orca 조회가 본 결과가 실패였는가.
     pub settled_failed: bool,
-    /// 커밋 → "그 커밋부터 HEAD까지 기록 경로만 바뀌었는가". lint 통과와 리뷰 증거가 같은 답을 쓴다.
-    records_since: BTreeMap<String, Known<bool>>,
 }
 
 impl RealFacts {
     pub fn new(repo: Repo, host: HostId, input: &HookInput, plugin_root: Option<PathBuf>) -> Self {
         Self {
-            git: GitCli::hook(repo.root.clone()),
+            gate: GitGate::hook(repo.root.clone()),
             repo,
             sid: input.sid.clone(),
             plugin_root,
             host,
             event: input.event,
-            git_used: 0,
             orca_used: 0,
             config: None,
             session: None,
@@ -80,10 +78,10 @@ impl RealFacts {
             head: None,
             actor: None,
             changed: None,
+            criteria: None,
             bind: None,
             landings: BTreeMap::new(),
             settled_failed: false,
-            records_since: BTreeMap::new(),
         }
     }
 
@@ -101,7 +99,7 @@ impl RealFacts {
 
     /// 띄운 git·Orca 프로세스 수.
     pub fn calls(&self) -> (u32, u32) {
-        (self.git_used, self.orca_used)
+        (self.gate.used, self.orca_used)
     }
 
     /// 역할 ID와 그 브랜치. 설정을 읽지 못했으면 비어 있다.
@@ -143,13 +141,15 @@ impl RealFacts {
         }
     }
 
+    /// git 호출 창구. 상한은 `state.json`의 통합 대기 건수에 따라 달라지므로 쓸 때마다 다시 넣는다.
+    fn gate(&mut self) -> &mut GitGate {
+        self.gate.cap = self.git_cap();
+        &mut self.gate
+    }
+
     /// git을 한 번 부른다. 상한을 넘는 요청은 `Unknown`이다.
     pub fn git<T>(&mut self, call: impl FnOnce(&GitCli) -> Known<T>) -> Known<T> {
-        if self.git_used >= self.git_cap() {
-            return Known::Unknown("git_cap");
-        }
-        self.git_used += 1;
-        call(&self.git)
+        self.gate().ask(call)
     }
 
     /// Orca를 한 번 부를 수 있는가. 이벤트마다 한 번이다(SessionStart와 UserPromptSubmit은 0).
@@ -165,24 +165,8 @@ impl RealFacts {
         Some(OrcaCli::new(self.repo.root.clone(), timeout))
     }
 
-    /// `from`이 `head`의 조상이고 그 사이에 기록 경로만 바뀌었는가(설계 6.6절).
-    fn only_records_since(&mut self, from: &Sha, head: &Sha) -> Known<bool> {
-        if let Some(known) = self.records_since.get(from.as_str()) {
-            return *known;
-        }
-        let known = (|| {
-            if !know!(self.git(|g| g.is_ancestor(from.as_str(), head.as_str()))) {
-                return Known::Yes(false);
-            }
-            let names = know!(self.git(|g| g.diff_names(from.as_str(), head.as_str())));
-            Known::Yes(names.iter().all(|path| is_record_path(path)))
-        })();
-        self.records_since.insert(from.to_string(), known);
-        known
-    }
-
     /// 브랜치 ref의 SHA를 파일에서 읽는다(느슨한 ref, 없으면 packed-refs). git 프로세스를 띄우지 않는다.
-    fn ref_sha(&self, name: &str) -> Option<Sha> {
+    pub fn ref_sha(&self, name: &str) -> Option<Sha> {
         let read = |file: &str| std::fs::read_to_string(self.repo.common_dir.join(file)).ok();
         let loose = read(name).and_then(|text| Sha::new(text.trim()).ok());
         loose.or_else(|| {
@@ -191,19 +175,6 @@ impl RealFacts {
                 (packed == name).then(|| Sha::new(sha).ok()).flatten()
             })
         })
-    }
-
-    /// 이 체크아웃의 역할: 역할 좌석이면 그 역할, dev 모드의 주 담당 좌석이면 `primary_role`.
-    fn own_role(&mut self, actor: &Actor) -> Option<RoleId> {
-        match &actor.seat {
-            Seat::Role { id, .. } => Some(id.clone()),
-            Seat::Lead => self
-                .config()
-                .ok()
-                .filter(|c| c.mode == Mode::Dev)
-                .and_then(|c| c.primary_role.clone()),
-            _ => None,
-        }
     }
 
     fn lint_excludes(&self) -> globset::GlobSet {
@@ -215,65 +186,31 @@ impl RealFacts {
     fn compute_changed(&mut self) -> Known<ChangeSet> {
         let actor = know!(self.actor());
         let head = know!(self.head());
-        let (code, base_ref) = match self.config() {
-            Ok(config) => (config.code.clone(), config.base_ref()),
-            Err(_) => return Known::Unknown("policy"),
-        };
-        // 1. 시작점: 역할 인박스의 base, 없으면 세션의 anchor. dev 직접 작업은 항상 anchor다
-        let inbox_base = match self.own_role(&actor).filter(|_| !actor.direct_dev) {
-            Some(role) => self.inbox(&role).yes().flatten().map(|inbox| inbox.base),
-            None => None,
+        let Ok(config) = self.config().cloned() else {
+            return Known::Unknown("policy");
         };
         let anchor = self.session().yes().and_then(|s| s.anchor.clone());
-        let Some(mut start) = inbox_base.or(anchor) else {
+        // 시작점 후보가 없는 세션(세션 파일 없이 온 Stop)은 판정하지 않는다
+        let Some(candidate) = changes::start_candidate(&self.repo, &config, &actor, anchor) else {
             return Known::Unknown("no_start");
         };
-        if start != head {
-            // 2. 바닥: merge-base(HEAD, 통합 기준 ref). 시작점이 바닥의 조상이면 바닥으로 바꾼다
-            let floor = self.git(|g| g.merge_base(head.as_str(), &base_ref)).yes();
-            let lowered = match &floor {
-                Some(floor) if *floor == start => true,
-                Some(floor) => {
-                    let below = self.git(|g| g.is_ancestor(start.as_str(), floor.as_str()));
-                    if below == Known::Yes(true) {
-                        start = floor.clone();
-                    }
-                    below == Known::Yes(true)
-                }
-                None => false,
-            };
-            // 3. 시작점이 HEAD의 조상이 아니면(amend·rebase) 바닥을 쓴다
-            if !lowered && !know!(self.git(|g| g.is_ancestor(start.as_str(), head.as_str()))) {
-                match floor {
-                    Some(floor) => start = floor,
-                    None => return Known::Unknown("no_floor"),
-                }
-            }
-        }
-        // 4. 대상: 커밋된 변경과 미커밋 변경의 합집합 가운데 대상 파일
-        let exclude = self.lint_excludes();
-        let target = |path: &str| is_change_target(path, &code, &exclude, actor.direct_dev);
-        let mut files: BTreeSet<String> = BTreeSet::new();
-        if start != head {
-            let names = know!(self.git(|g| g.diff_names(start.as_str(), head.as_str())));
-            files.extend(names.into_iter().filter(|p| target(p)));
-        }
-        let status = know!(self.git(|g| g.status(None)));
-        let mut dirty = Vec::new();
-        for entry in status.iter().filter(|e| target(&e.path)) {
-            let modified = std::fs::metadata(self.repo.root.join(&entry.path))
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_secs() as i64);
-            dirty.push((entry.path.clone(), modified));
-            files.insert(entry.path.clone());
-        }
-        Known::Yes(ChangeSet {
-            start,
-            code: files.into_iter().collect(),
-            dirty,
-        })
+        // lead: 병합으로 들어온 완료 보고의 변경은 뺀다. 통합 위치는 X-06과 같은 답을 쓴다
+        let merged = match self.state().yes().cloned().filter(|_| actor.is_lead()) {
+            Some(state) => changes::merged_in(&state, &mut |sha| self.landing(sha)),
+            None => Vec::new(),
+        };
+        let repo = self.repo.clone();
+        let found = know!(changes::changed(
+            self.gate(),
+            &repo,
+            &config,
+            &actor,
+            &head,
+            Some(candidate),
+            &merged,
+        ));
+        self.criteria = found.criteria;
+        Known::Yes(found.set)
     }
 
     /// `status.json`에 넘길 유도값: 이 호출이 계산한 통합 위치와, lead가 계산할 수 있으면 준비된 행.
@@ -412,17 +349,8 @@ impl Facts for RealFacts {
         self.changed.clone().unwrap_or(Known::Unknown("changed"))
     }
     fn pass_covers(&mut self, head: &Sha, start: &Sha) -> Known<bool> {
-        let Some(pass) = know!(fullops_store::read_lint_pass(&self.repo)) else {
-            return Known::Yes(false);
-        };
-        // 통과 뒤에 쌓인 커밋이 기록 경로만 바꿨으면 그 통과를 인정한다
-        if pass.head != *head && !know!(self.only_records_since(&pass.head, head)) {
-            return Known::Yes(false);
-        }
-        if pass.base == *start {
-            return Known::Yes(true);
-        }
-        self.git(|g| g.is_ancestor(pass.base.as_str(), start.as_str()))
+        let repo = self.repo.clone();
+        changes::pass_covers(self.gate(), &repo, head, Some(start)).map(|pass| pass.is_some())
     }
     fn head(&mut self) -> Known<Sha> {
         if self.head.is_none() {
@@ -440,37 +368,37 @@ impl Facts for RealFacts {
     }
     fn review_need(&mut self, base: &Sha, head: &Sha) -> Known<Need> {
         let numstat = know!(self.git(|g| g.numstat(base.as_str(), head.as_str())));
-        // 기준 시점 정책: 시작점 커밋의 fullops.toml. 읽지 못하면 작업 트리의 설정을 쓴다
-        let at_base = (base.to_string(), ".fullops-squad/fullops.toml".to_string());
-        let (review, code) = match self.git(|g| g.show_blobs(&[at_base])) {
-            Known::Yes(blobs) => {
-                let text = blobs.into_iter().next().flatten();
-                let text = text.and_then(|bytes| String::from_utf8(bytes).ok());
-                let baseline = fullops_store::baseline(text.as_deref());
-                (baseline.review, baseline.code)
-            }
-            Known::Unknown(_) => match self.config() {
-                Ok(config) => (config.review.clone(), config.code.clone()),
+        // 기준 시점 정책은 `changed()`가 시작점 커밋에서 읽어 둔 것이다. 없으면 작업 트리의 설정을 쓴다
+        let criteria = match self.criteria.take() {
+            Some(criteria) => criteria,
+            None => match self.config() {
+                Ok(config) => Criteria {
+                    review: config.review.clone(),
+                    code: config.code.clone(),
+                    exclude: self.lint_excludes(),
+                },
                 Err(_) => return Known::Unknown("policy"),
             },
         };
-        Known::Yes(fullops_core::review_need(
-            &review,
+        let need = fullops_core::review_need(
+            &criteria.review,
             &numstat,
-            &code,
-            &self.lint_excludes(),
+            &criteria.code,
+            &criteria.exclude,
             base.clone(),
             head.clone(),
             base.clone(),
-        ))
+        );
+        self.criteria = Some(criteria);
+        Known::Yes(need)
     }
     fn review_evidence(&mut self, head: &Sha) -> Known<ReviewEvidence> {
         // reviews/<KEY>/<head 12자>/의 accepted.json과 waiver.json
         let mut found: Vec<(i64, Sha, ReviewEvidence)> = Vec::new();
         let dirs = |dir: PathBuf| std::fs::read_dir(dir).into_iter().flatten().flatten();
         for dir in dirs(self.repo.squad().join("reviews")).flat_map(|key| dirs(key.path())) {
-            let accepted = fullops_store::read_json::<Accepted>(&dir.path().join("accepted.json"));
-            if let Known::Yes(Some(a)) = accepted {
+            // 유효한 수락 기록만 센다: 두 해시가 지금의 result.json·lint.json과 같다
+            if let Some(a) = crate::cmd::accepted(&dir.path()) {
                 found.push((a.at, a.head, ReviewEvidence::Accepted));
             }
             let waiver = fullops_store::read_json::<Waiver>(&dir.path().join("waiver.json"));
@@ -481,7 +409,9 @@ impl Facts for RealFacts {
         found.sort_by_key(|(at, _, _)| std::cmp::Reverse(*at));
         // HEAD이거나 HEAD와 기록 경로만 다른 조상의 리뷰를 인정한다. 최근 것부터 셋만 본다
         for (_, reviewed, kind) in found.into_iter().take(3) {
-            if reviewed == *head || self.only_records_since(&reviewed, head) == Known::Yes(true) {
+            if reviewed == *head
+                || self.gate().only_records_since(&reviewed, head) == Known::Yes(true)
+            {
                 return Known::Yes(kind);
             }
         }

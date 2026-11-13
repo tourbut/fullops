@@ -1,6 +1,7 @@
 //! hook 진입(설계 7.1절). 종료 코드는 항상 0이고 판정은 stdout JSON으로만 낸다. 죽거나 시간이 넘으면 통과가 된다.
 //! `fullops hook`은 프로세스의 작업 디렉터리를 쓰지 않는다. 레포를 찾는 기준은 입력의 `cwd`다.
 
+pub mod changes;
 mod effects;
 mod facts_real;
 mod host_agy;

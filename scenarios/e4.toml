@@ -45,12 +45,10 @@ act = "lead_routes"
 key = "D-1"
 role = "architecture"
 class = "design"
-pending = "C"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "lead_writes_task"
 key = "D-1"
 role = "dev"
-pending = "C"
 expect = { verdict = "deny", rule = "H-02", flow = "stopped" }

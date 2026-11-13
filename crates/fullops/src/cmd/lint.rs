@@ -6,8 +6,8 @@ use fullops_core::config::is_code;
 use fullops_core::lint_rules::{self as rules, FileChange, LintCommand, LintConfig};
 use fullops_core::messages::lint as msg;
 use fullops_core::model::{
-    Known, LintCommandResult, LintPass, LintResult, LintStatus, Refusal, Seat, Severity, Sha,
-    TestLevel, path_text,
+    Known, LintCommandResult, LintPass, LintResult, LintStatus, Refusal, Severity, Sha, TestLevel,
+    path_text,
 };
 use fullops_ext::{Git, GitCli, ProcStatus};
 use fullops_store::StoreError;
@@ -34,29 +34,16 @@ fn tenths(elapsed: Duration) -> f64 {
     (elapsed.as_secs_f64() * 10.0).round() / 10.0
 }
 
-/// `--from`이 없을 때의 시작점: `changed()`의 시작점과 같은 규칙이다(설계 6.6절 1~3번).
-fn default_start(ctx: &Ctx, git: &GitCli, head: &Sha) -> Result<Sha, CliError> {
+/// `--from`이 없을 때의 시작점: `changed()`의 시작점과 같은 함수다(설계 6.6절 1~3번).
+fn default_start(ctx: &Ctx, head: &Sha) -> Result<Sha, CliError> {
+    use crate::hook::changes::{GitGate, start_candidate, start_point};
     let (repo, config) = (ctx.repo()?, ctx.config()?);
     let caller = ctx.caller()?;
-    let inbox = match &caller.actor.seat {
-        Seat::Role { id, .. } => fullops_store::read_inbox(repo, id)
-            .yes()
-            .flatten()
-            .map(|inbox| inbox.base),
-        _ => None,
-    };
-    let start = inbox.or_else(|| caller.session.and_then(|s| s.anchor));
-    let base_ref = match &config.remote {
-        Some(remote) => format!("refs/remotes/{remote}/{}", config.base),
-        None => format!("refs/heads/{}", config.base),
-    };
-    let floor = git.merge_base(head.as_str(), &base_ref).yes();
-    let under = |older: &Sha, newer: &Sha| {
-        git.is_ancestor(older.as_str(), newer.as_str()).yes() == Some(true)
-    };
-    start
-        .filter(|start| under(start, head) && !floor.as_ref().is_some_and(|f| under(start, f)))
-        .or(floor)
+    let anchor = caller.session.and_then(|s| s.anchor);
+    let candidate = start_candidate(repo, config, &caller.actor, anchor);
+    let mut gate = GitGate::cli(repo.root.clone());
+    start_point(&mut gate, head, &config.base_ref(), candidate)
+        .yes()
         .ok_or_else(|| {
             CliError::Usage("lint의 기준을 정할 수 없습니다. `--from <ref>`를 줍니다.".into())
         })
@@ -318,7 +305,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             .rev_parse(&format!("{from}^{{commit}}"))
             .yes()
             .ok_or_else(|| CliError::Usage(format!("--from {from}을 커밋으로 풀 수 없습니다.")))?,
-        None => default_start(ctx, &git, &head)?,
+        None => default_start(ctx, &head)?,
     };
 
     // 2. 잠금과 이전 결과 지우기

@@ -19,13 +19,11 @@ who = "dev"
 [[step]]
 act = "worker_lints"
 role = "dev"
-pending = "D"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
 who = "dev"
-pending = "D"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
@@ -42,7 +40,6 @@ message = "fullops: 완료 기록 A-1 (dev)"
 [[step]]
 act = "stops"
 who = "dev"
-pending = "D"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
@@ -58,5 +55,4 @@ who = "dev"
 [[step]]
 act = "stops"
 who = "dev"
-pending = "D"
 expect = { verdict = "block", rule = "X-01", flow = "stopped" }

@@ -16,5 +16,4 @@ expect = { verdict = "context", flow = "continues", escape = "쓰지 않고 직�
 [[step]]
 act = "runs_fullops"
 args = ["status"]
-pending = "C"
 expect = { verdict = "pass", flow = "continues", escape = "쓰지 않고 직접 처리한다" }

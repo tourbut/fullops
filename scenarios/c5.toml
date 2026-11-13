@@ -31,11 +31,9 @@ expect = { verdict = "pass", flow = "continues" }
 act = "lead_routes"
 key = "A-1"
 role = "dev"
-pending = "C"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "runs_shell"
 command = "orca orchestration task-create --spec \"Task key: A-1; Purpose: implementation\""
-pending = "C"
 expect = { verdict = "pass", flow = "continues" }

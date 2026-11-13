@@ -188,8 +188,8 @@ pub(super) fn x04(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
 struct RunView {
     id: RunId,
     coordinator: Option<String>,
-    /// `fullops merge`가 처리 표시까지 하는 완료 보고: `KEY(메시지 ID)`.
-    merge: Vec<String>,
+    /// `fullops merge`가 처리 표시까지 하는 완료 보고: `KEY(메시지 ID)`와 그 SHA.
+    merge: Vec<(String, Option<Sha>)>,
     /// 처리한 뒤 `wait --ack`로 표시할 메시지 ID.
     ack: Vec<MessageId>,
     unsettled: Vec<DispatchId>,
@@ -203,7 +203,7 @@ pub(super) fn x05(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
         None => RunOwner::Lead,
     };
     let state = known!(facts.state());
-    let runs: Vec<RunView> = state
+    let mut runs: Vec<RunView> = state
         .runs
         .iter()
         .filter(|r| r.closed_at.is_none() && r.owner == owner)
@@ -217,7 +217,7 @@ pub(super) fn x05(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
                     let done = state.completions.iter().find(|c| c.id == m.id);
                     let key = done.and_then(|c| c.key.as_ref());
                     let key = key.map_or("키 없음".to_string(), |k| k.to_string());
-                    merge.push(format!("{key}({})", m.id));
+                    merge.push((format!("{key}({})", m.id), done.and_then(|c| c.sha.clone())));
                 } else {
                     ack.push(m.id.clone());
                 }
@@ -235,6 +235,15 @@ pub(super) fn x05(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
             }
         })
         .collect();
+    // 이미 통합된 보고(날것 git merge·push)는 미처리로 세지 않는다: 같은 호출의 X-06 효과가 처리 표시를 한다
+    if owner == RunOwner::Lead {
+        for run in &mut runs {
+            run.merge.retain(|(_, sha)| {
+                !sha.as_ref()
+                    .is_some_and(|sha| facts.landing(sha) == Known::Yes(Landing::Landed))
+            });
+        }
+    }
     let terminal = match facts.session() {
         Known::Yes(session) => session.terminal.clone(),
         Known::Unknown(_) => facts.session_handle(),
@@ -247,17 +256,18 @@ pub(super) fn x05(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
             // (a) 미처리 메시지
             case = "a";
             let ack: Vec<&str> = run.ack.iter().map(|id| id.as_str()).collect();
+            let merge: Vec<&str> = run.merge.iter().map(|(text, _)| text.as_str()).collect();
             fp.push(format!(
                 "{}:a:{}:{}",
                 run.id,
-                run.merge.join(","),
+                merge.join(","),
                 ack.join(",")
             ));
             let mut text = format!("Run {}에 처리하지 않은 메시지가 있다.", run.id);
-            if !run.merge.is_empty() {
+            if !merge.is_empty() {
                 text.push_str(&format!(
                     " `fullops merge <KEY>`로 처리할 완료 보고: {}.",
-                    run.merge.join(", ")
+                    merge.join(", ")
                 ));
             }
             if !ack.is_empty() {

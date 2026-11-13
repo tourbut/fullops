@@ -16,5 +16,4 @@ expect = { verdict = "context", flow = "continues", escape = "병렬 진행을 �
 [[step]]
 act = "runs_fullops"
 args = ["status"]
-pending = "C"
 expect = { verdict = "pass", flow = "continues", escape = "병렬 진행을 요청한다" }

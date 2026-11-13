@@ -16,5 +16,4 @@ expect = { verdict = "context", flow = "continues", escape = "울트라코드가
 [[step]]
 act = "runs_fullops"
 args = ["status"]
-pending = "C"
 expect = { verdict = "pass", flow = "continues", escape = "울트라코드가 켜져 있으면" }

@@ -12,5 +12,4 @@ expect = { verdict = "warn", flow = "continues", escape = "fullops status" }
 [[step]]
 act = "runs_fullops"
 args = ["status"]
-pending = "C"
 expect = { verdict = "pass", flow = "continues", escape = "병렬 진행을 요청한다" }

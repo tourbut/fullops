@@ -36,13 +36,11 @@ expect = { verdict = "block", rule = "X-01", flow = "stopped" }
 [[step]]
 act = "worker_lints"
 role = "dev"
-pending = "D"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "worker_finishes"
 role = "dev"
-pending = "C"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]

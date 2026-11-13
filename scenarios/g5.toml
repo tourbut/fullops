@@ -24,21 +24,33 @@ expect = { verdict = "block", rule = "X-01", flow = "stopped" }
 [[step]]
 act = "runs_fullops"
 args = ["lint"]
-pending = "D"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
-pending = "D"
 expect = { verdict = "block", rule = "X-02", flow = "stopped", escape = "fullops review snapshot" }
+
+# 면제는 그 HEAD에 대한 사용자 결정이 있어야 받는다
+[[step]]
+act = "runs_fullops"
+args = ["review", "waive", "DIRECT", "--decision", "D001", "--reason", "긴급 수정"]
+expect = { verdict = "deny", rule = "RV-00", flow = "stopped" }
 
 [[step]]
 act = "runs_fullops"
-args = ["review", "waive", "DIRECT", "--reason", "긴급 수정"]
-pending = "E"
-expect = { verdict = "human", flow = "stopped" }
+args = ["decision", "add", "--question", "리뷰를 면제할까?", "--key", "DIRECT", "--sha", "HEAD"]
+expect = { verdict = "pass", flow = "continues", escape = "D001" }
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D001", "--answer", "면제한다", "--sha", "HEAD"]
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "waive", "DIRECT", "--decision", "D001", "--reason", "긴급 수정"]
+expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
-pending = "E"
 expect = { verdict = "pass", flow = "continues" }
