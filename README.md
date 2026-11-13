@@ -6,9 +6,15 @@ Orca 안에서 개발이 사람 없이 이어지게 하는 하네스의 **Rust �
 
 ## 재구축 방식
 
-문서만 보고 전체를 새로 쓰지 않습니다. 기존 코드·시험·hook 입출력에서 동작을 뽑아 [fullops-spec](https://github.com/tourbut/fullops-spec)에 언어 무관 명세로 두고, Rust판이 영역별로 그 명세를 통과하면 교체합니다.
+기존 Python 코드를 줄 단위로 옮기지 않습니다. 제품의 컨셉과 현재 버전(v1.24.0)의 기능을 기준으로 설계를 먼저 정하고, 그 설계대로 Rust로 다시 만듭니다. 설계는 [docs/design.md](docs/design.md)가 정본입니다.
 
-그동안 **jevpet은 기존 플러그인 1.24.0을 계속 사용**합니다. 명세를 모두 통과한 뒤에만 전환하며, 전환은 사람 승인을 받습니다.
+- 완전히 Rust 기반입니다. hook과 CLI는 실행 중에 Python·Node에 기대지 않습니다. 다시 만드는 이유는 성능입니다(hook은 도구 호출마다 실행됩니다).
+- 합격 기준은 결과 비교입니다. 다 만든 Rust 플러그인을 기존 플러그인과 같은 상황에 놓고, 같은 목적을 이루는지(또는 더 잘 이루는지)와 속도를 비교합니다. 출력 글자나 상태 파일 바이트가 같은지는 기준이 아닙니다.
+- Python판과 상태 파일을 번갈아 쓰지 않습니다. Rust판은 자기 형식을 씁니다.
+- 처음 컨셉에서 나중에 바뀐 것은 바뀐 뒤가 기준입니다(예: Jev의 모델 선택은 1.10.0에서 없앴습니다).
+- 구현은 빠르게 하고 검증은 통합 시험에서 합니다. 단위 시험은 최소로 둡니다.
+
+그동안 **jevpet은 기존 플러그인 1.24.0을 계속 사용**합니다. 합격 기준을 통과한 뒤에만 전환하며, 전환은 사람 승인을 받습니다.
 
 ## 기존 Python판의 실제 구조 (v1.24.0)
 
@@ -46,14 +52,9 @@ Orca 안에서 개발이 사람 없이 이어지게 하는 하네스의 **Rust �
 
 `work.py`, `review.py`, `jev_route.py`, `jev_packet.py`, `issue_mode.py` 본체, `lint.py`, `setup.py`, `update.py`, `board.py` 현황판, 기타 `plugins/fullops-squad/scripts/`의 나머지 스크립트. 시험은 `tests/`에 스크립트별로 있습니다. 과제 흐름 노드·게이트 표는 `docs/flow-graph.md`와 `tests/flow-graph.py`입니다.
 
-## 이식 순서
+## 구현 순서
 
-1. [fullops-spec](https://github.com/tourbut/fullops-spec)의 사례 형식과 실행기
-2. hook 영역 명세 추출 후 Rust 이식 — 호출이 잦은 `flow_gate.py` Stop(대기 행 확인), 사람 턴 기록, StopFailure, `done_gate.py`, `hook_runtime.py`
-3. HARNESS-AUTONOMY에서 최신화된 게이트 — `flow_gate.py`의 준비된 대기 행, `integration.py settle`, 패킷 선택, 이슈 모드 off 시 보류 fencing 해제
-4. `work.py`·`review.py`·`jev_route.py`·`issue_mode.py` 등 배정·완료·리뷰 흐름
-5. Windows·macOS(필요하면 Linux) 바이너리를 포함한 `dist/native`, `dist/directory` 배포본
-6. 명세 전부 통과 후 jevpet 전환(사람 승인)
+[docs/design.md](docs/design.md) 18절의 구현 계획을 따릅니다. 공용 뼈대(타입·인터페이스·저장·시험 도구)를 먼저 깔고, hook, 흐름 명령, lint·문서, 리뷰·통합, 설치·배포, 비교·성능 묶음을 서로 다른 워크트리에서 동시에 진행합니다.
 
 ## 유지할 결정 (1.24.0 / HARNESS-AUTONOMY)
 
