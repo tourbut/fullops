@@ -1,0 +1,39 @@
+name = "기본 브랜치를 안 받은 역할 워크트리에 배정한다"
+origin = "12.2 D4"
+
+[setup]
+roles = { dev = "worker", art = "worker" }
+
+[[step]]
+act = "file"
+path = "docs/new.md"
+content = "기본 브랜치에만 있는 문서\n"
+
+[[step]]
+act = "commits"
+message = "기본 브랜치가 앞서 간다"
+
+# dispatch가 대상 워크트리에 기본 브랜치를 반영한 뒤 배정한다
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "git"
+who = "dev"
+args = ["cat-file", "-e", "HEAD:docs/new.md"]
+
+# 대상이 더러우면 예약만 남기고 멈춘다
+[[step]]
+act = "file"
+who = "art"
+path = "scratch.txt"
+content = "커밋하지 않은 파일\n"
+
+[[step]]
+act = "lead_dispatches"
+key = "B-2"
+role = "art"
+expect = { verdict = "deny", exit = 2, flow = "stopped", escape = "fullops sync --role art" }

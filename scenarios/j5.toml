@@ -1,0 +1,33 @@
+name = "완료 보고 본문에 SHA가 없다"
+origin = "12.2 J5"
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+
+# fullops done 없이 날것 worker_done만 왔다: 역할 브랜치의 tip으로 채운다
+[[step]]
+act = "orca_sends"
+body = "끝났습니다"
+
+[[step]]
+act = "lead_waits"
+expect = { verdict = "pass", escape = "브랜치 tip" }
+
+[[step]]
+act = "runs_fullops"
+args = ["status"]
+expect = { verdict = "pass", escape = "병합 전" }
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+pending = "E"
+expect = { verdict = "pass" }

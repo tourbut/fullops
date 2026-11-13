@@ -1,0 +1,31 @@
+name = "리뷰 배정의 SHA와 snapshot"
+origin = "12.2 D5. 통과와 같은 터미널의 거절은 SHA가 실행 중에 정해져 crates/fullops/tests/flow.rs에 있다"
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "runs_fullops"
+args = ["route", "A-1", "--tuple-only", "--role", "reviewer", "--agent", "codex", "--model", "review-model", "--effort", "high"]
+expect = { verdict = "pass" }
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+purpose = "review"
+sha = "abc1234"
+bare = true
+expect = { verdict = "deny", rule = "D-06", escape = "fullops review snapshot A-1" }
+
+# 40자여도 그 SHA의 리뷰 snapshot이 없으면 배정하지 않는다
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+purpose = "review"
+sha = "4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b"
+bare = true
+expect = { verdict = "deny", rule = "D-06", escape = "fullops review snapshot A-1" }

@@ -1,0 +1,49 @@
+name = "새 lead 세션이 열린 Run을 이어받는다"
+origin = "12.2 I5, DF-15"
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "stops"
+session = "new"
+env = { ORCA_TERMINAL_HANDLE = "term_lead2" }
+pending = "B"
+expect = { verdict = "block", rule = "X-05" }
+
+# wait가 Run을 이 세션에 다시 묶고, Orca가 깨우는 세션이므로 기다리지 않고 돌아온다
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "run-use"]
+times = 1
+stdout = { ok = true, result = { runId = "run_1" } }
+
+[[step]]
+act = "runs_fullops"
+session = "new"
+args = ["wait", "--run", "run_1"]
+env = { ORCA_TERMINAL_HANDLE = "term_lead2" }
+expect = { verdict = "pass", escape = "Orca가 깨운다" }
+
+[[step]]
+act = "stops"
+session = "new"
+env = { ORCA_TERMINAL_HANDLE = "term_lead2" }
+pending = "B"
+expect = { verdict = "pass" }
+
+# run-use가 실패하면 Orca가 이 세션을 깨우지 못하므로 대기 표식을 쓰고 기다린다
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-list"]
+stdout = { ok = true, result = { workers = [] } }
+
+[[step]]
+act = "runs_fullops"
+session = "third"
+args = ["wait", "--run", "run_1", "--max-minutes", "0"]
+env = { ORCA_TERMINAL_HANDLE = "term_lead3" }
+expect = { verdict = "pass", escape = "이어 기다린다" }

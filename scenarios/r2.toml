@@ -1,0 +1,61 @@
+name = "dispatch의 spec이 병렬 진행을 요청한다(on)"
+origin = "12.2 R2. fake-orca가 받은 stdin과 인자는 crates/fullops/tests/flow.rs에서 본다"
+
+[setup]
+parallel = "on"
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "lead_writes_task"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run"]
+expect = { verdict = "pass", escape = "Parallel: on" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run"]
+expect = { verdict = "pass", escape = "하위 에이전트(`Agent`)로 동시에 진행한다" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run"]
+expect = { verdict = "pass", escape = "`fullops dispatch A-1 --brief" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run"]
+expect = { verdict = "pass", escape = "끝나면 fullops done을 실행하고" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run", "--agent", "codex", "--model", "m", "--effort", "high"]
+expect = { verdict = "pass", escape = "하위 에이전트(`spawn_agent`)" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run", "--agent", "codex", "--model", "m", "--effort", "high"]
+expect = { verdict = "pass", escape = ".fullops/bin/fullops" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run", "--agent", "antigravity", "--model", "m", "--effort", "high"]
+expect = { verdict = "pass", escape = "하위 에이전트(`invoke_subagent`)" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run", "--agent", "mystery", "--model", "m", "--effort", "high"]
+expect = { verdict = "pass", escape = "하위 에이전트(`하위 에이전트 도구`)" }
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }

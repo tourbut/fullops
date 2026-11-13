@@ -1,0 +1,37 @@
+name = "dispatch의 spec이 병렬 진행을 요청한다(ultra)"
+origin = "12.2 R2. fake-orca가 받은 stdin과 인자는 crates/fullops/tests/flow.rs에서 본다"
+
+[setup]
+parallel = "ultra"
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "lead_writes_task"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run"]
+expect = { verdict = "pass", escape = "Parallel: ultra" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run"]
+expect = { verdict = "pass", escape = "울트라코드가 켜져 있으면" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run", "--agent", "codex", "--model", "m", "--effort", "high"]
+expect = { verdict = "pass", escape = "agent/model/effort: codex/m/high" }
+
+# 새 터미널의 Claude Code worker만 울트라코드로 띄운다
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass", escape = "울트라코드로 띄웠다" }

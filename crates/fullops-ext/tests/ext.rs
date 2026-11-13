@@ -835,11 +835,8 @@ fn judge_stub_and_script_judge() {
         },
         instructions: "분류".into(),
     }];
-    assert_eq!(
-        JevCurl.ask("{}", &questions),
-        Err(JudgeError::Offline),
-        "뼈대의 임시 구현은 오프라인이다"
-    );
+    // `JevCurl`은 묶음 C의 구현으로 바뀌어 여기서 부르지 않는다(환경의 실제 키로 나가지 않게 한다).
+    // fake-curl을 타는 시험은 `crates/fullops/tests/flow.rs`에 있다.
 
     let judge = ScriptJudge::new(vec![
         json!({"answers": [{"id": "scope", "choice": "direct", "probabilities": {"direct": 0.9, "design": 0.1}}, {"id": "relevant", "value": 0.8}],

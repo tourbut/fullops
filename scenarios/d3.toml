@@ -1,0 +1,71 @@
+name = "미통합 결과를 두고 다른 과제를 배정한다"
+origin = "12.2 D3, flow-graph E4"
+
+[setup]
+roles = { dev = "worker", art = "worker" }
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
+
+# lint는 묶음 D의 것이라 여기서는 검사 없이 끝낸다
+[[step]]
+act = "worker_finishes"
+role = "dev"
+no_checks = "시나리오: lint 명령 없음"
+expect = { verdict = "pass", escape = "[완료] A-1" }
+
+[[step]]
+act = "orca_sends"
+dispatch = "ctx_1"
+task = "task_1"
+body = "보고 본문에 SHA가 없다"
+
+[[step]]
+act = "lead_waits"
+expect = { verdict = "pass", escape = "fullops merge A-1" }
+
+[[step]]
+act = "lead_dispatches"
+key = "B-2"
+role = "art"
+expect = { verdict = "deny", rule = "D-03", flow = "stopped", escape = "fullops merge A-1" }
+
+# 같은 키의 수정 배정은 통과한다
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+purpose = "fix"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+pending = "E"
+
+[[step]]
+act = "lead_dispatches"
+key = "B-2"
+role = "art"
+pending = "E"
+expect = { verdict = "pass", flow = "continues" }

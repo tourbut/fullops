@@ -463,7 +463,7 @@ expect = { verdict = "pass", exit = 0, flow = "continues" }
 act = "lead_dispatches"
 key = "B-2"
 role = "dev"
-expect = { verdict = "error", exit = 1, flow = "stopped" }
+expect = { verdict = "pass", exit = 0, flow = "continues" }
 
 [[step]]
 act = "lead_merges"

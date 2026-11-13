@@ -1,0 +1,43 @@
+name = "하위 배정은 인박스와 커밋을 만들지 않는다"
+origin = "12.2 R3"
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_subdispatches"
+role = "dev"
+key = "A-1"
+brief = "src/b.py를 맡는다. 끝나면 바꾼 파일을 보고한다"
+expect = { verdict = "pass", flow = "continues" }
+
+# 다른 키
+[[step]]
+act = "runs_fullops"
+who = "dev"
+args = ["dispatch", "B-9", "--brief", "다른 과제"]
+expect = { verdict = "deny", rule = "D-13", escape = "fullops done --followup" }
+
+# --brief 없음
+[[step]]
+act = "runs_fullops"
+who = "dev"
+args = ["dispatch", "A-1"]
+expect = { verdict = "deny", rule = "D-13", escape = "<맡길 파일 묶음과 완료 조건>" }
+
+# 하위 worker가 다시 하위 배정
+[[step]]
+act = "runs_fullops"
+who = "dev"
+args = ["dispatch", "A-1", "--brief", "한 단계 더"]
+env = { ORCA_TERMINAL_HANDLE = "term_2" }
+expect = { verdict = "deny", rule = "D-13", escape = "호스트 서브에이전트를 쓴다" }
+
+# lead의 지시는 인박스에 있다
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--brief", "lead가 준 글"]
+expect = { verdict = "error", exit = 1 }

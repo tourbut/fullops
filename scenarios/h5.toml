@@ -1,0 +1,126 @@
+name = "hook이 돌지 않은 세션의 worker가 fullops done을 한다"
+origin = "12.2 H5. 세션 파일과 current.json이 없다(raw = true). 셋째 경우의 본문 SHA 확인은 crates/fullops/tests/flow.rs에 있다"
+
+[setup]
+roles = { dev = "worker", art = "worker", qa = "worker" }
+
+# 1. 세션 핸들이 dispatch의 터미널과 같다
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = "src/a.py"
+content = "print(1)\n"
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
+
+[[step]]
+act = "runs_fullops"
+who = "dev"
+raw = true
+args = ["done", "--no-checks", "시나리오"]
+expect = { verdict = "pass", escape = "[완료] A-1" }
+
+# 2. 핸들이 없고(채팅 방식 worker) 이 워크트리에 그 과제의 dispatch가 하나 있다
+[[step]]
+act = "lead_dispatches"
+key = "B-2"
+role = "art"
+chat = true
+expect = { verdict = "pass" }
+
+[[step]]
+act = "file"
+who = "art"
+path = "src/b.py"
+content = "print(2)\n"
+
+[[step]]
+act = "edits_file"
+who = "art"
+path = ".fullops-squad/handovers/to_art.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/art. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "art"
+message = "완료 보고 작성"
+
+[[step]]
+act = "runs_fullops"
+who = "art"
+raw = true
+args = ["done", "--no-checks", "시나리오"]
+expect = { verdict = "pass", escape = "[완료] B-2" }
+
+# 3. dispatch 기록이 없다: 본문은 내고 state에는 남기지 않는다
+[[step]]
+act = "lead_routes"
+key = "C-3"
+role = "qa"
+
+[[step]]
+act = "lead_writes_task"
+key = "C-3"
+role = "qa"
+
+[[step]]
+act = "commits"
+message = "C-3 지시서"
+
+[[step]]
+act = "git"
+who = "qa"
+args = ["merge", "-q", "main"]
+
+[[step]]
+act = "edits_file"
+who = "qa"
+path = ".fullops-squad/handovers/to_qa.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/qa. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "qa"
+message = "완료 보고 작성"
+
+[[step]]
+act = "runs_fullops"
+who = "qa"
+raw = true
+args = ["done"]
+expect = { verdict = "pass", escape = "dispatch를 찾지 못해" }
+
+# lead의 wait가 앞의 두 보고를 done 기록의 SHA로 받는다
+[[step]]
+act = "orca_sends"
+dispatch = "ctx_1"
+task = "task_1"
+id = "msg_a"
+
+[[step]]
+act = "orca_sends"
+dispatch = "ctx_2"
+task = "task_2"
+id = "msg_b"
+
+[[step]]
+act = "lead_waits"
+expect = { verdict = "pass", escape = "fullops merge B-2" }
