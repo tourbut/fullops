@@ -1,0 +1,95 @@
+name = "Python 레포에서 migrate → 판정 확인 → --rollback"
+origin = "12.2 N3"
+
+[setup]
+roles = { dev = "worker", architecture = "design" }
+
+# Python판(1.24.0)을 쓰던 레포로 만든다: 새 표식을 지우고 fullops.json과 라우팅 기준을 둔다
+[[step]]
+act = "git"
+args = ["rm", "-q", ".fullops-squad/fullops.toml"]
+[[step]]
+act = "file"
+path = ".fullops-squad/fullops.json"
+content = "{\n  \"schema_version\": 1,\n  \"roles\": {\n    \"dev\": \"fullops/dev\",\n    \"architecture\": \"fullops/architecture\"\n  },\n  \"mode\": \"coor\",\n  \"test_level\": \"lite\",\n  \"plugin_version\": \"1.24.0\",\n  \"git\": {\n    \"remote\": \"origin\",\n    \"base\": \"main\"\n  },\n  \"subagent_level\": \"lite\",\n  \"review_policy\": {\n    \"min_code_lines\": 300,\n    \"min_code_files\": 10,\n    \"always\": [\n      \"db/**\"\n    ],\n    \"auto\": false\n  }\n}\n"
+[[step]]
+act = "file"
+path = ".fullops-squad/orca-agents.md"
+content = "# Orca 역할 배정\n\n## 라우팅 기준\n\n- 설계 역할: `architecture`\n- `dev`: 서버 코드 구현과 테스트\n- 형식이 다른 줄\n\n## 다른 절\n\n- 이 줄은 라우팅 기준이 아니다\n"
+[[step]]
+act = "file"
+path = ".fullops-squad/handovers/to_dev.md"
+content = ""
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/delegation.md"
+content = "# 선택형 위임\n\n이 레포가 고쳐 쓴 규칙이다.\n"
+[[step]]
+act = "file"
+path = ".fullops-squad/PLANS.md"
+content = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n| B-2 | 영수증 화면 | DEV | 대기 선행: A-1 | 사용자 지시 2026-11-01 |\n\n## 위임 범위\n\n"
+[[step]]
+act = "file"
+path = "AGENTS.md"
+content = "# 안내\n\n<!-- fullops-squad:start -->\n## FullOps Squad\n\n이 레포는 `.fullops-squad/fullops.json`이 있을 때만 FullOps 하네스를 사용한다.\n<!-- fullops-squad:end -->\n"
+# Python판이 Git 공용 디렉터리에 남긴 상태: 열린 결정, 보류한 완료 보고, 완료 보고까지 간 선행 과제
+[[step]]
+act = "file"
+path = ".git/fullops-decisions/D001.json"
+content = "{\"version\": 1, \"id\": \"D001\", \"status\": \"open\", \"key\": \"B-2\", \"question\": \"영수증에 세금을 따로 적는가\", \"options\": [\"적는다\", \"안 적는다\"], \"blocks\": \"B-2\", \"asked_at\": \"2026-11-01T03:00:00+00:00\", \"origin\": \"user\"}"
+[[step]]
+act = "file"
+path = ".git/fullops-decisions/D002.json"
+content = "{\"version\": 1, \"id\": \"D002\", \"status\": \"answered\", \"key\": null, \"question\": \"닫힌 결정\", \"options\": [], \"blocks\": null, \"asked_at\": \"2026-10-01T03:00:00+00:00\", \"origin\": \"user\", \"answer\": \"예\"}"
+[[step]]
+act = "file"
+path = ".git/fullops-integration/held.json"
+content = "{\"message\": \"msg_held_1\", \"key\": \"C-3\", \"sha\": null, \"hold\": {\"reason\": \"검수 대기\", \"owner\": \"사용자\", \"resume\": \"검수가 끝나면\"}}"
+[[step]]
+act = "file"
+path = ".git/fullops-flow/A-1.json"
+content = "{\"key\": \"A-1\", \"node\": \"merge\", \"gates\": [\"route\", \"dispatch\", \"worker_done\"]}"
+[[step]]
+act = "commits"
+message = "Python판 레포"
+# 보고서만 낸다
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["migrate", "--from-python", "--dry-run"]
+expect = { verdict = "pass", exit = 0, escape = "아무것도 바꾸지 않았다" }
+# 전환: fullops.toml을 만들고 fullops.json의 이름을 바꾼다. 커밋은 사람이 한다
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["migrate", "--from-python"]
+expect = { verdict = "pass", exit = 0, escape = "읽지 못한 표식 줄" }
+[[step]]
+act = "commits"
+message = "fullops로 전환"
+# 판정 확인: 전환한 레포에서는 새 판의 hook이 판정한다(T-01은 묶음 B의 규칙이다)
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --spec \"A-1 구현\""
+pending = "B"
+expect = { verdict = "deny", rule = "T-01" }
+# 이미 전환한 레포에서 다시 실행하면 거절한다
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["migrate", "--from-python"]
+expect = { verdict = "deny", exit = 2, escape = "Python판 표식" }
+# 되돌리기: 전환 뒤 열려 있는 결정과 보류를 화면에 낸다
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["migrate", "--rollback"]
+expect = { verdict = "pass", exit = 0, escape = "D001" }
+[[step]]
+act = "commits"
+message = "Python판으로 되돌림"
+# 되돌린 레포에서는 새 판의 hook이 판정하지 않는다. Python판의 판정은 py 구동기가 같은 레포에서 확인한다(묶음 G)
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --spec \"A-1 구현\""
+expect = { verdict = "pass", flow = "continues" }

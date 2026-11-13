@@ -14,6 +14,109 @@ pub const LINT_JSON: &str = include_str!("../assets/repo/lint/lint.json");
 /// 산출물 인덱스 `docs/deliverables/README.md`의 내장 템플릿. 인덱스 표의 기준이다.
 pub const DELIVERABLES_README: &str = include_str!("../assets/repo/docs/deliverables/README.md");
 
+/// 의존 목록의 내장 사본(설계 10.7절). `plugin/deps.toml`을 빌드할 때 읽은 글이고 `load_deps`의 `builtin` 인자다.
+pub const DEPS_TOML: &str = include_str!("../../../plugin/deps.toml");
+
+/// `rules/delegation.md`의 내장 템플릿(병렬 방침의 정본. 설계 8.15절).
+pub const DELEGATION_MD: &str = include_str!("../assets/repo/rules/delegation.md");
+
+/// 1.24.0 템플릿의 `rules/delegation.md`(LF로 맞춘 글)의 sha256. `migrate`가 사람이 고친 흔적이 있는지 가린다.
+pub const DELEGATION_1_24_SHA256: &str =
+    "b34ad71bceb0c81a90e53a2e900bc323095e5abf599dc4fe4059ee46367d2d4b";
+
+/// `init`이 `.fullops-squad/` 아래에 없을 때만 만드는 파일 `(상대 경로, 내용)`.
+pub const REPO_FILES: &[(&str, &str)] = &[
+    ("FULLOPS.md", include_str!("../assets/repo/FULLOPS.md")),
+    ("project.md", include_str!("../assets/repo/project.md")),
+    (
+        "orca-agents.md",
+        include_str!("../assets/repo/orca-agents.md"),
+    ),
+    ("PLANS.md", PLANS_MD),
+    (".gitignore", include_str!("../assets/repo/.gitignore")),
+    (".env.example", include_str!("../assets/repo/.env.example")),
+    ("handovers/_TEMPLATE.md", HANDOVER_TEMPLATE),
+    ("lint/lint.json", LINT_JSON),
+    (
+        "lint/README.md",
+        include_str!("../assets/repo/lint/README.md"),
+    ),
+    (
+        "review/rule.json",
+        include_str!("../assets/repo/review/rule.json"),
+    ),
+    (
+        "review/_REPORT.md",
+        include_str!("../assets/repo/review/_REPORT.md"),
+    ),
+    ("rules/delegation.md", DELEGATION_MD),
+    (
+        "rules/common/README.md",
+        include_str!("../assets/repo/rules/common/README.md"),
+    ),
+    (
+        "rules/common/coding-style.md",
+        include_str!("../assets/repo/rules/common/coding-style.md"),
+    ),
+    (
+        "rules/common/security.md",
+        include_str!("../assets/repo/rules/common/security.md"),
+    ),
+    (
+        "rules/common/testing.md",
+        include_str!("../assets/repo/rules/common/testing.md"),
+    ),
+    (
+        "rules/common/ECC-LICENSE.txt",
+        include_str!("../assets/repo/rules/common/ECC-LICENSE.txt"),
+    ),
+    ("docs/deliverables/README.md", DELIVERABLES_README),
+    (
+        "docs/agents/document-writing.md",
+        include_str!("../assets/repo/docs/agents/document-writing.md"),
+    ),
+    (
+        "docs/agents/domain.md",
+        include_str!("../assets/repo/docs/agents/domain.md"),
+    ),
+    (
+        "docs/agents/issue-tracker.md",
+        include_str!("../assets/repo/docs/agents/issue-tracker.md"),
+    ),
+    (
+        "docs/agents/triage-labels.md",
+        include_str!("../assets/repo/docs/agents/triage-labels.md"),
+    ),
+    (
+        "docs/planning/intents/_TEMPLATE.md",
+        include_str!("../assets/repo/docs/planning/intents/_TEMPLATE.md"),
+    ),
+];
+
+/// 빈 채로 두는 폴더. `init`이 `.gitkeep`을 둔다.
+pub const REPO_DIRS: &[&str] = &[
+    "handovers/logs",
+    "docs/design-docs/adr",
+    "docs/design-docs/mockups",
+    "docs/evaluations/qa-reports",
+    "docs/exec-plans/phases",
+    "docs/generated",
+    "docs/operations",
+    "docs/planning/product-specs",
+];
+
+/// `.fullops-squad/.gitignore`에 있어야 하는 줄. `init`의 템플릿에 있고 `migrate`가 없으면 더한다.
+pub const GITIGNORE_LINES: &[&str] = &["docs/evaluations/jev/history/"];
+
+/// 엔트리 문서(`AGENTS.md`·`CLAUDE.md`·`GEMINI.md`)의 관리 블록. 셋 다 같은 글이다(설계 10.6절).
+pub const MANAGED_BLOCK: &str = include_str!("../assets/managed-block.md");
+pub const BLOCK_START: &str = "<!-- fullops:start -->";
+pub const BLOCK_END: &str = "<!-- fullops:end -->";
+pub const ENTRY_DOCS: [&str; 3] = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"];
+
+/// 내장 릴리스 노트 `(버전, 글)`. 오래된 것부터다. `upgrade`가 `applied_version` 이후의 것을 낸다.
+pub const RELEASES: &[(&str, &str)] = &[("2.0.0", include_str!("../assets/releases/2.0.0.md"))];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -59,6 +162,29 @@ mod tests {
         let lint: serde_json::Value = serde_json::from_str(LINT_JSON).expect("lint.json");
         assert!(
             lint["exclude"].as_array().is_some_and(|e| !e.is_empty()) && lint["rules"].is_array()
+        );
+
+        // 그 밖의 템플릿에도 1.24.0의 스크립트 표기와 CR이 없고 .gitignore에 필요한 줄이 있다
+        for (path, text) in REPO_FILES.iter().chain(&[("관리 블록", MANAGED_BLOCK)]) {
+            assert!(!text.contains(char::from(13)), "{path}: CR");
+            for banned in ["python3", "fullops.json", "subagent_level", "jev_"] {
+                assert!(!text.contains(banned), "{path}: {banned}");
+            }
+        }
+        let ignore = REPO_FILES
+            .iter()
+            .find(|(p, _)| *p == ".gitignore")
+            .unwrap()
+            .1;
+        assert!(
+            GITIGNORE_LINES
+                .iter()
+                .all(|l| ignore.lines().any(|i| i == *l))
+        );
+        assert!(DELEGATION_MD.contains("fullops dispatch <자기 KEY> --brief"));
+        assert_ne!(
+            fullops_core::model::sha256_hex(DELEGATION_MD.as_bytes()),
+            DELEGATION_1_24_SHA256
         );
 
         // 산출물 인덱스: 표 머리와 D01~D13 행

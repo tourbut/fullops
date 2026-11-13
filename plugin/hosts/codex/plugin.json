@@ -1,0 +1,19 @@
+{
+  "skills": "./skills/",
+  "hooks": "./hooks/codex.json",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "FullOps",
+    "shortDescription": "Orca 배정 · 완료 보고 · 리뷰 · 병합",
+    "longDescription": "선택한 레포에서 setup 뒤 역할별 worker의 배정, 완료 보고, lint, 리뷰, 병합을 fullops 명령과 hook으로 잇습니다.",
+    "developerName": "tourbut",
+    "category": "Productivity",
+    "capabilities": [
+      "Instructions",
+      "Lifecycle hooks"
+    ],
+    "defaultPrompt": [
+      "현재 레포에 FullOps 하네스를 setup해줘."
+    ]
+  }
+}

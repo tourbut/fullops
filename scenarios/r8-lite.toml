@@ -1,0 +1,27 @@
+name = "migrate: subagent_level이 lite"
+origin = "12.2 R8"
+
+[setup]
+roles = { dev = "worker", architecture = "design" }
+
+# Python판(1.24.0)을 쓰던 레포로 만든다: 새 표식을 지우고 fullops.json과 라우팅 기준을 둔다
+[[step]]
+act = "git"
+args = ["rm", "-q", ".fullops-squad/fullops.toml"]
+[[step]]
+act = "file"
+path = ".fullops-squad/fullops.json"
+content = "{\n  \"schema_version\": 1,\n  \"roles\": {\n    \"dev\": \"fullops/dev\",\n    \"architecture\": \"fullops/architecture\"\n  },\n  \"mode\": \"coor\",\n  \"test_level\": \"lite\",\n  \"plugin_version\": \"1.24.0\",\n  \"git\": {\n    \"remote\": \"origin\",\n    \"base\": \"main\"\n  },\n  \"subagent_level\": \"lite\"\n}\n"
+[[step]]
+act = "file"
+path = ".fullops-squad/orca-agents.md"
+content = "# Orca 역할 배정\n\n## 라우팅 기준\n\n- 설계 역할: `architecture`\n- `dev`: 서버 코드 구현과 테스트\n- 형식이 다른 줄\n\n## 다른 절\n\n- 이 줄은 라우팅 기준이 아니다\n"
+[[step]]
+act = "commits"
+message = "Python판 레포"
+# 옮긴 값이 보고서에 나온다. fullops.toml의 parallel은 시험이 읽어 확인한다
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["migrate", "--from-python"]
+expect = { verdict = "pass", exit = 0, escape = "subagent_level lite" }

@@ -150,3 +150,7 @@ pub static COMMANDS: &[Command] = &[
     )),
     anywhere(command("doctor", "설치와 레포 상태 점검", doctor::run)),
 ];
+
+/// 실행본 단계(설계 10.3절). hook의 `SelfInstall` 효과(S-04의 자동 설치)가 `install --only runtime`과 같은 함수를 부른다.
+#[allow(unused_imports)] // 묶음 B의 효과 실행이 부르기 전까지 쓰는 곳이 없다
+pub use install::runtime_stage;
