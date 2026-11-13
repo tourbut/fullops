@@ -122,11 +122,21 @@ fn record(
     received: &mut Received,
 ) -> Result<(), CliError> {
     let config = ctx.config()?;
+    // git은 잠금 밖에서 미리 부른다: 본문의 hex 풀기와, 한 본문에 SHA가 여럿일 때의 조상 관계
     let mut resolved: BTreeMap<String, Option<Sha>> = BTreeMap::new();
+    let mut ancestry: BTreeMap<(Sha, Sha), bool> = BTreeMap::new();
     for msg in messages.iter().filter(|m| m.kind == "worker_done") {
+        let mut named = Vec::new();
         for hex in body_shas(msg.body.as_deref().unwrap_or_default()) {
             let sha = git.rev_parse(&format!("{hex}^{{commit}}")).yes();
+            named.extend(sha.clone());
             resolved.insert(hex, sha);
+        }
+        for (older, newer) in named.iter().flat_map(|a| named.iter().map(move |b| (a, b))) {
+            if older != newer {
+                let is = git.is_ancestor(older.as_str(), newer.as_str()).yes() == Some(true);
+                ancestry.insert((older.clone(), newer.clone()), is);
+            }
         }
     }
     let tips: BTreeMap<&RoleId, Option<Sha>> = config
@@ -147,8 +157,12 @@ fn record(
                     s,
                     run,
                     msg,
+                    fullops_store::now(),
                     &mut |hex| resolved.get(hex).cloned().flatten(),
                     &mut |role| tips.get(role).cloned().flatten(),
+                    &mut |older, newer| {
+                        ancestry.get(&(older.clone(), newer.clone())) == Some(&true)
+                    },
                 )
             })
             .collect::<Vec<_>>()

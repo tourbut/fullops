@@ -44,19 +44,27 @@ who = "dev"
 path = "src/b.py"
 content = "print(2)\n"
 
-# 코드 변경이 미커밋이고 세션 핸들이 없다: X-05 (b) 하나만 걸린다
+# 코드 변경이 미커밋이고 세션 핸들이 없다: X-05 (b) 하나만 걸린다.
+# 깨움 보장은 세션 파일의 terminal(세션을 만들 때의 핸들)로 본다. 핸들 없이 시작해 preamble로 같은 dispatch에 묶인 부모 세션으로 적는다
+[[step]]
+act = "preamble_arrives"
+who = "dev"
+session = "nohandle"
+dispatch = "ctx_1"
+task = "task_1"
+env = { ORCA_TERMINAL_HANDLE = "" }
+
 [[step]]
 act = "stops"
 who = "dev"
+session = "nohandle"
 env = { ORCA_TERMINAL_HANDLE = "" }
-pending = "B"
-expect = { verdict = "block", rule = "X-05" }
+expect = { verdict = "block", rule = "X-05", escape = "fullops wait --run run_2" }
 
 # 세션 핸들이 하위 Run의 coordinator다
 [[step]]
 act = "stops"
 who = "dev"
-pending = "B"
 expect = { verdict = "pass" }
 
 [[step]]
@@ -83,7 +91,6 @@ expect = { verdict = "deny", rule = "R-11" }
 [[step]]
 act = "stops"
 who = "dev"
-pending = "B"
 expect = { verdict = "block", rule = "X-05" }
 
 [[step]]
@@ -95,7 +102,6 @@ expect = { verdict = "pass" }
 [[step]]
 act = "stops"
 who = "dev"
-pending = "B"
 expect = { verdict = "block", rule = "X-01" }
 
 [[step]]
@@ -106,12 +112,11 @@ message = "하위 worker의 변경을 확인해 커밋"
 [[step]]
 act = "worker_lints"
 role = "dev"
-pending = "D"
+expect = { verdict = "pass" }
 
 [[step]]
 act = "worker_finishes"
 role = "dev"
-no_checks = "시나리오"
 expect = { verdict = "pass", escape = "[완료] A-1" }
 
 # lead가 받는 보고는 부모의 것 하나다
@@ -125,7 +130,11 @@ id = "msg_parent"
 act = "lead_waits"
 expect = { verdict = "pass", escape = "fullops merge A-1" }
 
+# 미처리 메시지(X-05 (a))가 표 순서로 먼저다. 걸린 보고는 부모의 것 하나다
 [[step]]
 act = "stops"
-pending = "B"
-expect = { verdict = "block", rule = "X-06" }
+expect = { verdict = "block", rule = "X-05", escape = "완료 보고: A-1(msg_parent). 다음" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-06", escape = "fullops merge" }

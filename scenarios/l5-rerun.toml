@@ -7,49 +7,40 @@ origin = "설계 18.2절 E의 끝났다는 확인. 같은 단계: review_merge.r
 act = "worker_reports"
 role = "dev"
 key = "A-1"
-pending = "C"
 
 [[step]]
 act = "git"
 args = ["merge", "-q", "--no-edit", "fullops/dev"]
-pending = "C"
 
 [[step]]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "pass", exit = 0, escape = "already" }
-pending = "C"
 
 [[step]]
 act = "worker_reports"
 role = "dev"
 key = "B-2"
-pending = "C"
 
 [[step]]
 act = "runs_fullops"
 args = ["merge", "B-2", "--no-push"]
 expect = { verdict = "pass", escape = "push_left" }
-pending = "C"
 
 [[step]]
 act = "stops"
-expect = { verdict = "block", rule = "X-06" }
-pending = "C"
+expect = { verdict = "block", rule = "X-05", escape = "X-06 미통합 완료 보고" }
 
 [[step]]
 act = "git"
 args = ["push", "-q", "origin", "main"]
-pending = "C"
 
 # 날것 push로 통합된 보고는 Stop의 통합 확인(X-06의 효과)이 처리 표시한다. 다시 실행한 merge는 기록만 맞춘다
 [[step]]
 act = "lead_merges"
 key = "B-2"
 expect = { verdict = "pass", exit = 0 }
-pending = "C"
 
 [[step]]
 act = "stops"
 expect = { verdict = "pass" }
-pending = "C"

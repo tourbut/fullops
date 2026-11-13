@@ -7,7 +7,7 @@ use fullops_core::lint_rules::{self as rules, FileChange, LintCommand, LintConfi
 use fullops_core::messages::lint as msg;
 use fullops_core::model::{
     Known, LintCommandResult, LintPass, LintResult, LintStatus, Refusal, Seat, Severity, Sha,
-    TestLevel, path_text, sha256_hex,
+    TestLevel, path_text,
 };
 use fullops_ext::{Git, GitCli, ProcStatus};
 use fullops_store::StoreError;
@@ -300,7 +300,9 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     let git = GitCli::cli(repo.root.clone());
 
     // 1. 깨끗한 작업 트리와 기준
-    let dirty = known(git.status(None))?;
+    // 기록 경로(6.6절)의 미커밋 변경은 검사 대상이 아니다. 리뷰 뒤 lead 체크아웃에는 미커밋 리뷰 파일이 있다(M-07)
+    let mut dirty = known(git.status(None))?;
+    dirty.retain(|e| !fullops_core::derive::is_record_path(&e.path));
     if !dirty.is_empty() {
         let files: Vec<&str> = dirty.iter().take(3).map(|e| e.path.as_str()).collect();
         return Err(CliError::Refused(vec![Refusal {
@@ -359,7 +361,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         ctx.note("기준 시점 설정을 읽지 못해 기본값을 썼다.");
     }
     let exclude = rules::lint_excludes(lint_json.as_deref(), assets::LINT_JSON);
-    let config_sha256 = sha256_hex(bytes(0).unwrap_or(assets::LINT_JSON.as_bytes()));
+    let config_sha256 = rules::config_sha256(bytes(0), assets::LINT_JSON);
     let level = raise.map_or(baseline.test_level, |l| l.max(baseline.test_level));
     let index = rules::parse_deliverable_index(&text(3).unwrap_or_default());
     let mut findings = Vec::new();

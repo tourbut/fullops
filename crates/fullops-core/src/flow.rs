@@ -378,13 +378,6 @@ pub fn check_task_new(req: &TaskNewRequest, facts: &mut dyn Facts) -> Vec<Refusa
     out
 }
 
-// 시그니처에 시각 인자가 없어 여기서 읽는다(설계 10.2절). 기록 시각이 0이면 `stage_of`의 앞뒤 비교가 틀어진다
-fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs() as i64)
-}
-
 /// 본문에서 `SHA`·`commit`·`커밋` 뒤(사이에 `:`·`=`·공백 허용)의 7~40자 hex를 모은다.
 pub fn body_shas(body: &str) -> Vec<String> {
     let lower = body.to_ascii_lowercase();
@@ -415,14 +408,17 @@ fn body_key(body: &str) -> Option<TaskKey> {
 }
 
 /// 메시지 한 건의 종류별 처리와 completion 기록 규칙(설계 8.6절 6단계). 모든 종류의 메시지를 받는다.
-/// `run`은 호출할 때 준 `--run`이다(메시지에는 Run이 없다). `resolve`는 짧은 hex를 커밋으로 풀고
-/// `branch_tip`은 역할 브랜치의 로컬 ref를 읽는다. 이미 기록한 메시지는 다시 기록하지 않는다.
+/// `run`은 호출할 때 준 `--run`이다(메시지에는 Run이 없다). `at`은 받은 시각이다(core는 시계를 읽지 않는다).
+/// `resolve`는 짧은 hex를 커밋으로 풀고 `branch_tip`은 역할 브랜치의 로컬 ref를 읽고
+/// `is_ancestor(older, newer)`는 조상 관계를 답한다. 이미 기록한 메시지는 다시 기록하지 않는다.
 pub fn record_message(
     state: &mut State,
     run: &RunId,
     msg: &OrcaMessage,
+    at: i64,
     resolve: &mut dyn FnMut(&str) -> Option<Sha>,
     branch_tip: &mut dyn FnMut(&RoleId) -> Option<Sha>,
+    is_ancestor: &mut dyn FnMut(&Sha, &Sha) -> bool,
 ) -> MessageNote {
     let mut note = MessageNote::default();
     if matches!(msg.kind.as_str(), "heartbeat" | "status") {
@@ -432,7 +428,6 @@ pub fn record_message(
     if state.messages.iter().any(|m| m.id == msg.id) {
         return note;
     }
-    let at = now();
     let found = state
         .dispatches
         .iter()
@@ -491,7 +486,15 @@ pub fn record_message(
                 msg.id
             ));
         }
-        let (sha, sha_source) = sha_of(None, body, None, resolve, branch_tip, &mut note.notes);
+        let (sha, sha_source) = sha_of(
+            None,
+            body,
+            None,
+            resolve,
+            branch_tip,
+            is_ancestor,
+            &mut note.notes,
+        );
         return complete(
             state, msg, None, key, None, sha, sha_source, outcome, at, note,
         );
@@ -523,6 +526,7 @@ pub fn record_message(
         Some(&dispatch.role),
         resolve,
         branch_tip,
+        is_ancestor,
         &mut note.notes,
     );
     complete(
@@ -546,6 +550,7 @@ fn sha_of(
     role: Option<&RoleId>,
     resolve: &mut dyn FnMut(&str) -> Option<Sha>,
     branch_tip: &mut dyn FnMut(&RoleId) -> Option<Sha>,
+    is_ancestor: &mut dyn FnMut(&Sha, &Sha) -> bool,
     notes: &mut Vec<String>,
 ) -> (Option<Sha>, Option<ShaSource>) {
     if let Some(sha) = reported {
@@ -558,13 +563,14 @@ fn sha_of(
         }
     }
     let tip = role.and_then(branch_tip);
-    match named.as_slice() {
-        [only] => return (Some(only.clone()), Some(ShaSource::Body)),
-        // shortcut: 여럿이면 브랜치 tip과 같은 것만 고른다(시그니처에 조상 판정이 없다), 조상 판정을 받게 되면 "나머지를 모두 조상으로 가지는 하나"로 바꾼다
-        [_, ..] if tip.as_ref().is_some_and(|t| named.contains(t)) => {
-            return (tip, Some(ShaSource::Body));
-        }
-        _ => {}
+    // 하나면 그것, 여럿이면 나머지를 모두 조상으로 가지는 하나다
+    let newest = named.iter().find(|&sha| {
+        named
+            .iter()
+            .all(|other| other == sha || is_ancestor(other, sha))
+    });
+    if let Some(sha) = newest {
+        return (Some(sha.clone()), Some(ShaSource::Body));
     }
     if tip.is_some() {
         notes.push("보고에 SHA가 없어 브랜치 tip을 썼다".into());
@@ -841,6 +847,27 @@ mod tests {
             ["abc1234", "def5678"]
         );
         assert_eq!(body_key("[실패] PAY-12 | 사유: x"), None);
+    }
+
+    #[test]
+    fn body_with_several_shas_takes_the_one_that_contains_the_rest() {
+        let sha = |c: char| Sha::new(c.to_string().repeat(40)).unwrap();
+        let (old, new) = (sha('a'), sha('b'));
+        let body = format!("커밋 {old}, SHA {new}");
+        let pick = |linear: bool| {
+            sha_of(
+                None,
+                &body,
+                None,
+                &mut |hex| Sha::new(hex).ok(),
+                &mut |_| None,
+                &mut |older, newer| linear && older == &old && newer == &new,
+                &mut Vec::new(),
+            )
+        };
+        assert_eq!(pick(true), (Some(new.clone()), Some(ShaSource::Body)));
+        // 서로 조상이 아니면 본문에서 고르지 않는다(역할이 없어 tip도 없다)
+        assert_eq!(pick(false), (None, None));
     }
 
     #[test]

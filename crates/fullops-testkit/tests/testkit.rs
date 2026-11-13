@@ -419,8 +419,8 @@ fn host_shapes_follow_the_fixtures() {
 }
 
 const SCENARIO: &str = r#"
-name = "뼈대: 빈 규칙 표는 무엇이든 통과시킨다"
-origin = "설계 18.1절"
+name = "구동기: hook과 CLI를 실제로 돈다"
+origin = "설계 12.1절"
 
 [setup]
 mode = "coor"
@@ -430,12 +430,12 @@ parallel = "on"
 
 [[step]]
 act = "session_starts"
-expect = { verdict = "pass", flow = "continues" }
+expect = { flow = "continues" }
 
 [[step]]
 act = "runs_shell"
 command = "orca orchestration worker-start --spec x"
-expect = { verdict = "pass" }
+expect = { verdict = "deny", rule = "T-01", escape = "fullops dispatch" }
 
 [[step]]
 act = "writes_file"
@@ -474,7 +474,7 @@ expect = { verdict = "pass" }
 [[step]]
 act = "stops"
 who = "dev"
-expect = { verdict = "pass" }
+expect = { verdict = "block", rule = "X-01", flow = "stopped" }
 "#;
 
 #[test]
@@ -501,12 +501,17 @@ fn scenario_runs_through_the_rs_driver() {
     }
 
     // 기대와 다르면 어느 단계가 왜 다른지 알려 준다
-    let wrong = parse(&SCENARIO.replace("expect = { verdict = \"pass\" }\n\n[[step]]\nact = \"writes_file\"", "expect = { verdict = \"deny\", rule = \"T-01\", escape = \"fullops dispatch\" }\n\n[[step]]\nact = \"writes_file\"")).unwrap();
+    let wrong = parse(&SCENARIO.replace(
+        "expect = { verdict = \"deny\", rule = \"T-01\", escape = \"fullops dispatch\" }",
+        "expect = { verdict = \"pass\", rule = \"T-99\", escape = \"없는 탈출구\" }",
+    ))
+    .unwrap();
     let error = run_scenario(&wrong).unwrap_err();
     assert!(
         error.contains("2단계(runs_shell)")
-            && error.contains("T-01")
-            && error.contains("fullops dispatch"),
+            && error.contains("판정이 pass가 아니라 deny")
+            && error.contains("T-99")
+            && error.contains("없는 탈출구"),
         "{error}"
     );
 

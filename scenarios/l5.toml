@@ -7,27 +7,22 @@ origin = "설계 12.2절 L5(fast-forward). B의 I4 가운데 merge 뒤 Stop"
 act = "worker_reports"
 role = "dev"
 key = "A-1"
-pending = "C"
 
 [[step]]
 act = "stops"
 expect = { verdict = "block", rule = "X-05", escape = "fullops merge" }
-pending = "C"
 
 [[step]]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "pass", exit = 0, flow = "continues", escape = "ff, lint reused" }
-pending = "C"
 
 # M-10이 그 보고를 처리했다고 표시했으므로 Stop이 통과한다
 [[step]]
 act = "stops"
 expect = { verdict = "pass" }
-pending = "C"
 
 [[step]]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "deny", rule = "M-02" }
-pending = "C"

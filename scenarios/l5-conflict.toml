@@ -5,7 +5,6 @@ origin = "설계 12.2절 L5(충돌). 같은 단계와 --continue: review_merge.r
 act = "worker_reports"
 role = "dev"
 key = "A-1"
-pending = "C"
 
 # worker가 만든 파일(src/a-1.py)을 기본 브랜치도 다르게 만들었다
 [[step]]
@@ -25,22 +24,18 @@ args = ["push", "-q", "origin", "main"]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "human", exit = 3, rule = "M-06", flow = "stopped", escape = "--continue" }
-pending = "C"
 
 [[step]]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "deny", rule = "M-03" }
-pending = "C"
 
 [[step]]
 act = "runs_fullops"
 args = ["merge", "A-1", "--abort"]
 expect = { verdict = "pass" }
-pending = "C"
 
 [[step]]
 act = "runs_fullops"
 args = ["hold", "A-1", "--reason", "배포 창을 기다린다", "--owner", "lead", "--resume", "금요일 배포 뒤"]
 expect = { verdict = "pass" }
-pending = "C"

@@ -28,10 +28,11 @@ who = "dev"
 args = ["dispatch", "A-1"]
 expect = { verdict = "deny", rule = "D-13", escape = "<맡길 파일 묶음과 완료 조건>" }
 
-# 하위 worker가 다시 하위 배정
+# 하위 worker가 다시 하위 배정. 하위 worker는 같은 워크트리의 다른 호스트 세션이다
 [[step]]
 act = "runs_fullops"
 who = "dev"
+session = "sub"
 args = ["dispatch", "A-1", "--brief", "한 단계 더"]
 env = { ORCA_TERMINAL_HANDLE = "term_2" }
 expect = { verdict = "deny", rule = "D-13", escape = "호스트 서브에이전트를 쓴다" }

@@ -187,6 +187,12 @@ fn inside_repo(cwd: &str) -> bool {
     !cwd.starts_with(['/', '\\']) && !cwd.contains(':')
 }
 
+/// 결과 파일의 `config_sha256`(설계 8.11절 10번): 기준 시점 `lint.json` blob 바이트의 sha256이고, 없으면 내장 템플릿 글의 sha256이다.
+/// `fullops lint`와 리뷰 check 9번이 같은 값을 쓴다.
+pub fn config_sha256(lint_json: Option<&[u8]>, template_lint_json: &str) -> String {
+    crate::model::sha256_hex(lint_json.unwrap_or(template_lint_json.as_bytes()))
+}
+
 /// 기준 시점의 `lint.json` 글을 읽는다. 없으면(`None`) 내장 템플릿이고, 있으면 템플릿 위에 최상위 키를 덮는다(1.24.0과 같다).
 /// 오류 글은 사람에게 보여 줄 사유다.
 pub fn parse_lint_config(lint_json: Option<&str>, template: &str) -> Result<LintConfig, String> {

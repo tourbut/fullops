@@ -93,13 +93,22 @@ impl Setup {
 /// 시험이 쓰는 최소 `PLANS.md`. 열과 절 제목은 1.24.0 템플릿과 같다.
 pub const PLANS: &str = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n\n## 위임 범위\n\n";
 
+/// 바이너리 폴더. `FULLOPS_TESTKIT_BIN_DIR`이 있으면 그 폴더이고, 없으면 실행 파일의 폴더(`deps/` 아래면 그 위)다.
 fn bin_path(name: &str) -> PathBuf {
-    let exe = std::env::current_exe().expect("시험 실행 파일 경로");
-    let profile = exe
-        .parent()
-        .and_then(Path::parent)
-        .expect("target/<profile>/deps 아래에서 실행");
-    profile.join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+    let dir = match std::env::var_os("FULLOPS_TESTKIT_BIN_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => {
+            let exe = std::env::current_exe().expect("시험 실행 파일 경로");
+            let dir = exe.parent().expect("실행 파일의 폴더");
+            let in_deps = dir.file_name().is_some_and(|name| name == "deps");
+            in_deps
+                .then(|| dir.parent())
+                .flatten()
+                .unwrap_or(dir)
+                .to_path_buf()
+        }
+    };
+    dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
 }
 
 /// 시험 실행 파일 옆(`target/<profile>/`)의 바이너리(`fullops`, `fake-orca`, `fake-host`, `fake-curl`).
@@ -295,11 +304,13 @@ impl Sandbox {
         let mut cmd = Command::new(program);
         // 실제 호스트 CLI·npx가 든 폴더는 뺀다. 시험이 FULLOPS_OFFLINE을 풀어도 이 PC의 호스트 설정에 닿지 않는다
         let real_host = |dir: &PathBuf| {
-            ["claude", "codex", "grok", "agy", "npx"].iter().any(|name| {
-                ["", ".exe", ".cmd"]
-                    .iter()
-                    .any(|ext| dir.join(format!("{name}{ext}")).exists())
-            })
+            ["claude", "codex", "grok", "agy", "npx"]
+                .iter()
+                .any(|name| {
+                    ["", ".exe", ".cmd"]
+                        .iter()
+                        .any(|ext| dir.join(format!("{name}{ext}")).exists())
+                })
         };
         let path = std::env::join_paths(
             std::iter::once(self.bin_dir.clone()).chain(
@@ -342,12 +353,21 @@ impl Sandbox {
     /// stdin을 주고 끝까지 기다린다.
     pub fn run(&self, mut cmd: Command, stdin: &[u8]) -> Run {
         let started = Instant::now();
-        let mut child = cmd
-            .stdin(Stdio::piped())
+        cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap_or_else(|e| panic!("프로세스를 띄우지 못했습니다: {e} ({cmd:?})"));
+            .stderr(Stdio::piped());
+        // 부하가 큰 Windows에서 방금 만든 exe의 spawn이 드물게 '액세스 거부'(os error 5)로 실패한다. 잠깐 뒤 다시 띄운다
+        let mut tries = 0;
+        let mut child = loop {
+            match cmd.spawn() {
+                Ok(child) => break child,
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && tries < 5 => {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                Err(e) => panic!("프로세스를 띄우지 못했습니다: {e} ({cmd:?})"),
+            }
+        };
         if let Some(mut pipe) = child.stdin.take() {
             // 읽지 않고 끝나는 프로세스도 있으므로 쓰기 실패는 버린다
             let _ = pipe.write_all(stdin);

@@ -235,8 +235,19 @@ fn apply(facts: &RealFacts, state: &mut State, write: &Write, now: i64) {
                 let (_, name) = branches.iter().find(|(id, _)| id == role.as_str())?;
                 git.rev_parse(name).yes()
             };
+            let mut is_ancestor = |older: &Sha, newer: &Sha| {
+                git.is_ancestor(older.as_str(), newer.as_str()).yes() == Some(true)
+            };
             for message in messages {
-                fullops_core::record_message(state, &run, message, &mut resolve, &mut tip);
+                fullops_core::record_message(
+                    state,
+                    &run,
+                    message,
+                    now,
+                    &mut resolve,
+                    &mut tip,
+                    &mut is_ancestor,
+                );
             }
         }
     }

@@ -5,7 +5,6 @@ origin = "설계 12.2절 L5(병합 커밋, 트리 다름, lint 통과)"
 act = "worker_reports"
 role = "dev"
 key = "A-1"
-pending = "C"
 
 # 기본 브랜치가 따로 나아갔다
 [[step]]
@@ -25,4 +24,3 @@ args = ["push", "-q", "origin", "main"]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "pass", exit = 0, escape = "merge, lint ran" }
-pending = "D"

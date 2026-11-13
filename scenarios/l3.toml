@@ -5,12 +5,11 @@ origin = "설계 12.2절 L3. 1.24.0: 실패"
 # crates/fullops/tests/review_merge.rs의 accepted_review_lets_large_change_merge가 본다(RV-04, RV-07).
 # 여기서는 채우지 않은 리뷰 기록이 검사와 병합을 통과하지 못하는 것까지 본다.
 
-# 400줄 변경의 완료 보고: 배정 → 작업 → lint → done → worker_done → wait
+# 400줄 변경의 완료 보고: 배정 → 작업 → 완료 보고 작성 → lint → done → worker_done → wait
 [[step]]
 act = "lead_dispatches"
 key = "A-1"
 role = "dev"
-pending = "C"
 
 [[step]]
 act = "worker_works"
@@ -18,41 +17,47 @@ role = "dev"
 key = "A-1"
 path = "src/big.py"
 lines = 400
-pending = "C"
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
 
 [[step]]
 act = "worker_lints"
 role = "dev"
-pending = "D"
+expect = { verdict = "pass" }
 
 [[step]]
 act = "worker_finishes"
 role = "dev"
-pending = "C"
+expect = { verdict = "pass", escape = "[완료] A-1" }
 
 [[step]]
 act = "orca_sends"
 subject = "A-1 완료"
-pending = "C"
 
 [[step]]
 act = "lead_waits"
-pending = "C"
 
 [[step]]
 act = "runs_fullops"
 args = ["review", "snapshot", "A-1"]
 expect = { verdict = "pass" }
-pending = "C"
 
 [[step]]
 act = "runs_fullops"
 args = ["review", "check", "A-1"]
 expect = { verdict = "deny", rule = "RV-04", flow = "stopped" }
-pending = "C"
 
 [[step]]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "deny", rule = "M-04", escape = "fullops review check" }
-pending = "C"

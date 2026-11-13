@@ -11,7 +11,6 @@ expect = { verdict = "pass" }
 act = "stops"
 session = "new"
 env = { ORCA_TERMINAL_HANDLE = "term_lead2" }
-pending = "B"
 expect = { verdict = "block", rule = "X-05" }
 
 # wait가 Run을 이 세션에 다시 묶고, Orca가 깨우는 세션이므로 기다리지 않고 돌아온다
@@ -32,7 +31,6 @@ expect = { verdict = "pass", escape = "Orca가 깨운다" }
 act = "stops"
 session = "new"
 env = { ORCA_TERMINAL_HANDLE = "term_lead2" }
-pending = "B"
 expect = { verdict = "pass" }
 
 # run-use가 실패하면 Orca가 이 세션을 깨우지 못하므로 대기 표식을 쓰고 기다린다

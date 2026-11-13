@@ -15,7 +15,9 @@ fn scenario(id: &str) {
         .join("../../scenarios")
         .join(format!("{id}.toml"));
     let scenario = load(&path).unwrap_or_else(|e| panic!("{e}"));
-    run_scenario(&scenario).unwrap_or_else(|e| panic!("{id}: {e}"));
+    let results = run_scenario(&scenario).unwrap_or_else(|e| panic!("{id}: {e}"));
+    // 다른 묶음에 기대던 단계까지 실제로 돈다
+    assert!(results.iter().all(|r| r.verdict != "pending"), "{id}");
 }
 
 macro_rules! scenarios {
@@ -1450,14 +1452,15 @@ fn status_reports_metrics_landing_and_the_first_lines() {
             && human.contains("열린 Run: run_1"),
         "{human}"
     );
-    let worker = sb
-        .fullops(
-            &dev,
-            &["status"],
-            &[("ORCA_TERMINAL_HANDLE", "term_2")],
-            b"",
-        )
-        .stdout;
+    // 하위 worker는 같은 워크트리의 다른 호스트 세션이다. 그 세션의 hook이 지나간 뒤의 CLI가 하위 worker로 읽힌다
+    let worker = steps(
+        &mut d,
+        "[[step]]\nact = \"runs_fullops\"\nwho = \"dev\"\nsession = \"sub\"\nargs = [\"status\"]\n\
+         env = { ORCA_TERMINAL_HANDLE = \"term_2\" }\nexpect = { verdict = \"pass\" }\n",
+    )
+    .remove(0)
+    .output;
+    let sb = &d.sb;
     assert!(
         worker.starts_with("역할: dev(worker)")
             && worker.contains("하위 worker다")
@@ -1711,4 +1714,49 @@ fn dispatch_stops_when_the_target_conflicts_with_the_base() {
     );
     assert_eq!(state(sb)["sync_pending"]["dev"], head(sb, "lead"));
     assert_eq!(calls(sb, "worker-start").len(), 1);
+}
+
+/// K4: 과제 3개가 route → task → dispatch → 작업 → lint → done → wait → merge로 실제로 이어진다.
+/// 시나리오 파일의 기대에 더해 끝난 뒤의 저장소와 상태를 본다.
+#[test]
+fn k4_three_tasks_run_end_to_end() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/k4.toml");
+    let k4 = load(&path).unwrap_or_else(|e| panic!("{e}"));
+    let mut d = Driver::new(&k4.setup);
+    for (index, step) in k4.steps.iter().enumerate() {
+        assert!(step.pending.is_none(), "{}단계가 보류다", index + 1);
+        let result = d.step(step).unwrap();
+        let diff = step.expect.as_ref().map(|e| mismatches(e, &result));
+        assert!(
+            diff.as_ref().is_none_or(Vec::is_empty),
+            "{}단계({}): {diff:?}\n{}",
+            index + 1,
+            step.act,
+            result.output
+        );
+    }
+    let sb = &d.sb;
+    let lead = sb.path("lead");
+    // 두 과제의 코드가 기본 브랜치와 원격에 있다
+    let files = sb.git_ok(&lead, &["ls-tree", "-r", "--name-only", "origin/main"]);
+    assert!(
+        files.contains("src/a-1.py") && files.contains("src/b-2.py"),
+        "{files}"
+    );
+    assert_eq!(
+        sb.git_ok(&lead, &["rev-parse", "main"]),
+        sb.git_ok(&lead, &["rev-parse", "origin/main"])
+    );
+    assert_eq!(sb.git_ok(&lead, &["status", "--porcelain"]), "");
+    // 배정은 과제마다 한 번, 사람 결정은 없다
+    assert_eq!(calls(sb, "worker-start").len(), 2);
+    let st = state(sb);
+    assert_eq!(st["decisions"].as_array().map_or(0, Vec::len), 0, "{st}");
+    let status = out(&sb.cli(&lead, &["status", "--json"]));
+    assert_eq!(status["pending"], json!([]), "{status}");
+    let plans = std::fs::read_to_string(lead.join(".fullops-squad/PLANS.md")).unwrap();
+    assert!(
+        plans.contains("| C-3 |") && plans.contains("대기(사람: 배포)"),
+        "{plans}"
+    );
 }

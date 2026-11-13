@@ -50,6 +50,8 @@ fn failed(status: ProcStatus) -> ProcResult {
 const KILL_WAIT: Duration = Duration::from_secs(5);
 /// 출력이 제한 시간 끝에 맞춰 끝났을 때 프로세스의 종료를 마저 기다리는 최소 시간.
 const EXIT_GRACE: Duration = Duration::from_millis(200);
+/// 출력이 끝나기를 기다리는 동안 종료 상태를 보는 간격. 출력이 끝나면 이 간격을 기다리지 않고 바로 깬다.
+const EXIT_POLL: Duration = Duration::from_millis(50);
 
 type Shared = Arc<Mutex<Vec<u8>>>;
 
@@ -169,22 +171,36 @@ pub fn run(
 
     let deadline = Instant::now() + timeout;
     // 출력이 끝나는 것으로 종료를 안다(종료 상태를 폴링하는 것보다 빨리 깬다).
-    // 직접 띄운 프로세스가 끝나도 자손이 파이프를 쥐고 있으면 출력이 끝나지 않는다. 그것도 제한 시간 안에 끝나야 한다
-    if drained(timeout) {
-        // 파이프를 닫고도 계속 도는 프로세스는 남은 시간 동안 기다린다. 막 끝나는 프로세스에는 짧은 여유를 준다
-        let until = deadline.max(Instant::now() + EXIT_GRACE);
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    return ProcResult {
-                        status: ProcStatus::Exited(status.code().unwrap_or(-1)),
-                        stdout: take(&out),
-                        stderr: take(&err),
-                    };
-                }
-                Ok(None) if Instant::now() < until => std::thread::sleep(Duration::from_millis(1)),
-                _ => break,
+    // 직접 띄운 프로세스가 끝났는데 자손(백그라운드로 남는 데몬)이 파이프를 쥐고 있으면 출력이 끝나지 않는다.
+    // 그래서 출력을 기다리는 사이사이 종료 상태도 본다. git·orca 호출이 남의 데몬 때문에 제한 시간까지 매달리지 않는다
+    let (mut closed, mut until) = (false, deadline);
+    loop {
+        if !closed {
+            let left = until.saturating_duration_since(Instant::now());
+            closed = drained(left.min(EXIT_POLL));
+            if closed {
+                // 파이프를 닫고도 계속 도는 프로세스는 남은 시간 동안 기다린다. 막 끝나는 프로세스에는 짧은 여유를 준다
+                until = deadline.max(Instant::now() + EXIT_GRACE);
             }
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !closed {
+                    // 직접 띄운 프로세스가 쓴 마지막 출력을 마저 읽는다. 자손의 출력은 기다리지 않는다
+                    drained(EXIT_GRACE);
+                }
+                return ProcResult {
+                    status: ProcStatus::Exited(status.code().unwrap_or(-1)),
+                    stdout: take(&out),
+                    stderr: take(&err),
+                };
+            }
+            Ok(None) if Instant::now() < until => {
+                if closed {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+            _ => break,
         }
     }
     kill_tree(child.id());

@@ -216,7 +216,11 @@ impl World {
             base: base.clone(),
             merge_base: base,
             head: sha.clone(),
-            config_sha256: "0".repeat(64),
+            // 기준 시점에 lint.json이 없는 레포다: 내장 템플릿의 해시
+            config_sha256: fullops_core::lint_rules::config_sha256(
+                None,
+                include_str!("../assets/repo/lint/lint.json"),
+            ),
             test_level: TestLevel::Lite,
             started_at: fullops_store::now(),
             seconds: 0.1,
@@ -1274,27 +1278,51 @@ fn gc_sweeps_closed_records() {
     assert_eq!(out(&w.cli(&["gc", "--json"]))["reservations"], 0);
 }
 
-/// 맡은 시나리오 파일(J4, L1~L5와 결정 검증·다시 실행)이 `rs` 구동기에서 돈다. 다른 묶음에 기대는 단계는 보류로 적힌다.
-#[test]
-fn scenario_files_run() {
+/// 맡은 시나리오 파일(J4, L1~L5와 결정 검증·다시 실행)이 `rs` 구동기에서 보류 단계 없이 끝까지 돈다.
+fn scenario_file(name: &str) {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
-    let names = [
-        "j4",
-        "l1",
-        "l2",
-        "l2-decision",
-        "l3",
-        "l4",
-        "l5",
-        "l5-merge-commit",
-        "l5-lint-fail",
-        "l5-conflict",
-        "l5-push-fail",
-        "l5-rerun",
-    ];
-    for name in names {
-        let scenario = scenario::load(&dir.join(format!("{name}.toml"))).unwrap();
-        let results = run_scenario(&scenario).unwrap_or_else(|e| panic!("{name}: {e}"));
-        assert_eq!(results.len(), scenario.steps.len(), "{name}");
+    let scenario = scenario::load(&dir.join(format!("{name}.toml"))).unwrap();
+    let results = run_scenario(&scenario).unwrap_or_else(|e| panic!("{name}: {e}"));
+    assert_eq!(results.len(), scenario.steps.len(), "{name}");
+    assert!(results.iter().all(|r| r.verdict != "pending"), "{name}");
+}
+
+macro_rules! scenarios {
+    ($($name:ident => $id:literal),+ $(,)?) => {
+        $(#[test] fn $name() { scenario_file($id) })+
+    };
+}
+
+scenarios! {
+    scenario_j4 => "j4", scenario_l1 => "l1", scenario_l2 => "l2",
+    scenario_l2_decision => "l2-decision", scenario_l3 => "l3", scenario_l4 => "l4",
+    scenario_l5 => "l5", scenario_l5_merge_commit => "l5-merge-commit",
+    scenario_l5_lint_fail => "l5-lint-fail", scenario_l5_conflict => "l5-conflict",
+    scenario_l5_push_fail => "l5-push-fail", scenario_l5_rerun => "l5-rerun",
+}
+
+/// 리뷰 뒤의 lead 체크아웃에는 기록 경로의 미커밋 파일이 있다. M-03도 M-07이 돌리는 lint도 그것을 더러운 것으로 세지 않고,
+/// 병합 기록 커밋이 그 파일을 담는다.
+#[test]
+fn merge_commit_runs_lint_with_uncommitted_review_files() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+    let scenario = scenario::load(&dir.join("l5-merge-commit.toml")).unwrap();
+    let mut driver = fullops_testkit::Driver::new(&scenario.setup);
+    let (merge, before) = scenario.steps.split_last().unwrap();
+    for step in before {
+        driver.step(step).unwrap();
     }
+    let lead = driver.sb.path("lead");
+    let memo = ".fullops-squad/reviews/A-1/memo.json";
+    driver.sb.write(&lead.join(memo), "{}\n");
+    let merged = driver.step(merge).unwrap();
+    assert_eq!(merged.exit, Some(0), "{}", merged.output);
+    assert!(
+        merged.output.contains("merge, lint ran"),
+        "{}",
+        merged.output
+    );
+    assert_eq!(driver.sb.git_ok(&lead, &["status", "--porcelain"]), "");
+    let tracked = driver.sb.git_ok(&lead, &["ls-files", memo]);
+    assert_eq!(tracked, memo);
 }

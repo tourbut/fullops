@@ -5,7 +5,7 @@ use crate::assets::PLANS_MD;
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::messages::{self, flow::METRICS_CAVEAT};
 use fullops_core::model::{
-    BriefAt, Derived, Known, Landing, MessageId, Mode, Parallel, RoleId, Seat, Status, TaskKey,
+    BriefAt, Derived, Landing, MessageId, Mode, Parallel, RoleId, Seat, Status, TaskKey,
 };
 use fullops_ext::{Git, GitCli};
 use lexopt::prelude::*;
@@ -28,26 +28,21 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     }
     let state = fullops_store::read_state(repo).yes().unwrap_or_default();
 
-    // 통합 위치(설계 6.6절)
+    // 통합 위치(설계 6.6절). `settle`과 같은 계산을 쓴다. 직접 작업의 기록은 통합 대기가 아니라 뺀다
     let mut derived = Derived::default();
-    let mut landed: Vec<MessageId> = Vec::new();
+    let mut landed: Vec<(MessageId, Option<u32>)> = Vec::new();
     if let Some(config) = config {
-        let within = |sha: &str, rev: &str| git.is_ancestor(sha, rev) == Known::Yes(true);
-        for c in state.completions.iter().filter(|c| {
-            !c.direct
-                && c.landed_at.is_none()
-                && c.outcome == fullops_core::model::WorkOutcome::Succeeded
-        }) {
-            let Some(sha) = &c.sha else { continue };
-            let local = format!("refs/heads/{}", config.base);
-            if within(sha.as_str(), &config.base_ref()) {
-                landed.push(c.id.clone());
-            } else if config.remote.is_some() && within(sha.as_str(), &local) {
-                derived.landing.insert(c.id.to_string(), Landing::PushLeft);
-            } else {
-                derived.landing.insert(c.id.to_string(), Landing::MergeLeft);
-            }
-        }
+        let direct = |id: &str| {
+            let same = |c: &&fullops_core::model::Completion| c.id.as_str() == id;
+            state
+                .completions
+                .iter()
+                .find(same)
+                .is_some_and(|c| c.direct)
+        };
+        (landed, derived) = super::hold::recompute(repo, &git, config, &state);
+        landed.retain(|(id, _)| !direct(id.as_str()));
+        derived.landing.retain(|id, _| !direct(id));
     }
     // 지표는 잠금 밖에서 계산한다(두 파일이 영구히 자란다)
     let turns = fullops_store::read_turns(repo).yes().unwrap_or_default();
@@ -67,18 +62,11 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             repo.inbox_path(role).exists()
         }));
     }
-    // 통합이 확인된 보고를 닫는다: landed_at을 쓰고, 보류를 풀고, 그 보고의 메시지에 처리 표시를 한다
-    // shortcut: drift(보고 SHA 뒤에 함께 담긴 커밋 수)는 여기서 세지 않는다, 그 값은 `settle`·`merge`(묶음 E)가 쓴다
+    // 통합이 확인된 보고를 닫는다: landed_at과 drift를 쓰고, 보류를 풀고, 그 보고의 메시지에 처리 표시를 한다
     ctx.update_state(Some(&derived), |s| {
         let now = fullops_store::now();
-        for c in s.completions.iter_mut().filter(|c| landed.contains(&c.id)) {
-            c.landed_at = c.landed_at.or(Some(now));
-            if let Some(hold) = c.hold.take() {
-                c.released_hold = Some(hold);
-            }
-        }
-        for m in s.messages.iter_mut().filter(|m| landed.contains(&m.id)) {
-            m.acked_at = m.acked_at.or(Some(now));
+        for (id, drift) in &landed {
+            super::hold::mark_landed(s, id, *drift, now);
         }
     })?;
     let Some(status) = fullops_store::read_json::<Status>(&repo.status_path())

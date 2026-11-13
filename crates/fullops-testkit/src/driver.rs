@@ -58,7 +58,7 @@ pub static VERBS: &[Verb] = &[
     verb("worker_works", "role, key, path?, lines?", "배정받은 세션을 시작하고(SessionStart, preamble) 코드 파일을 고쳐 커밋한다"),
     verb("worker_lints", "role", "`fullops lint`"),
     verb("worker_finishes", "role, failed?, followup?, no_checks?", "`fullops done`"),
-    verb("worker_reports", "role, key", "배정(아직이면) → worker_works → worker_lints → worker_finishes → fake-orca의 우편함에 worker_done → lead_waits"),
+    verb("worker_reports", "role, key", "배정(아직이면) → worker_works → 인박스의 완료 보고 절 채우기 → worker_lints → worker_finishes → fake-orca의 우편함에 worker_done → lead_waits. env는 lead 쪽 호출(배정과 wait)에 준다"),
     verb("lead_waits", "run?, ack?, no_wait?", "`fullops wait --run <R> [--ack <메시지 ID>]… [--no-wait]`"),
     verb("lead_merges", "key", "`fullops merge <KEY>`"),
 ];
@@ -378,7 +378,14 @@ impl Driver {
         Ok(result)
     }
 
-    fn lead_routes(&mut self, act: &str, key: &str, role: Option<&str>, class: &str) -> StepResult {
+    fn lead_routes(
+        &mut self,
+        act: &str,
+        key: &str,
+        role: Option<&str>,
+        class: &str,
+        env: &[(String, String)],
+    ) -> StepResult {
         let request = format!("{key} 요청");
         let mut args = strings(&["route", key, "--request", &request, "--class", class]);
         if let Some(role) = role {
@@ -393,7 +400,7 @@ impl Driver {
                 "medium",
             ]));
         }
-        let result = self.agent_cli(act, "lead", None, &args, &[]);
+        let result = self.agent_cli(act, "lead", None, &args, env);
         if result.flow() == "continues" {
             self.routed.insert(key.to_string());
         }
@@ -406,6 +413,7 @@ impl Driver {
         key: &str,
         role: &str,
         goal: Option<&str>,
+        env: &[(String, String)],
     ) -> StepResult {
         let goal = goal
             .map(str::to_string)
@@ -415,7 +423,7 @@ impl Driver {
             "lead",
             None,
             &strings(&["task", "new", "--role", role, "--key", key, "--goal", &goal]),
-            &[],
+            env,
         );
         if result.flow() == "continues" {
             self.tasked.insert(format!("{key}/{role}"));
@@ -433,12 +441,25 @@ impl Driver {
         args: Vec<String>,
         run: Option<&str>,
         chat: bool,
+        env: &[(String, String)],
     ) -> StepResult {
         self.seq += 1;
         let n = self.seq;
+        // 기억한 Run이 닫혔으면(Stop의 X-05) 다음 배정이 새 Run을 만든다
+        let state: Value =
+            std::fs::read_to_string(self.dir("lead").join(".git/fullops/state.json"))
+                .ok()
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .unwrap_or_default();
+        let open = |run: &String| {
+            state["runs"].as_array().is_some_and(|runs| {
+                runs.iter()
+                    .any(|r| r["id"] == **run && r["closed_at"].is_null())
+            })
+        };
         let known = run
             .map(str::to_string)
-            .or_else(|| self.runs.get(who).cloned());
+            .or_else(|| self.runs.get(who).filter(|run| open(run)).cloned());
         let run = known.clone().unwrap_or_else(|| format!("run_{n}"));
         if known.is_none() {
             self.sb.orca_rule(json!({ "when": ["orchestration", "run-create"], "times": 1, "stdout": orca_shapes::run_created(&run) }));
@@ -455,7 +476,7 @@ impl Driver {
         );
 
         let calls_before = self.sb.orca_calls().len();
-        let result = self.agent_cli(act, who, None, &args, &[]);
+        let result = self.agent_cli(act, who, None, &args, env);
         // fake-orca가 실제로 낸 응답에서 ID를 읽는다(쓰이지 않은 각본 규칙은 다음 배정이 쓴다)
         let reply = self
             .sb
@@ -488,18 +509,19 @@ impl Driver {
 
     fn lead_dispatches(&mut self, step: &Step, key: &str, role: &str) -> StepResult {
         let act = step.act.as_str();
+        let env = env_of_step(step);
         let purpose = step.str("purpose").unwrap_or("build");
         let flag = |name: &str| step.args.get(name).and_then(|v| v.as_bool()) == Some(true);
         if !flag("bare") {
             if !self.routed.contains(key) {
-                let routed = self.lead_routes(act, key, Some(role), "direct");
+                let routed = self.lead_routes(act, key, Some(role), "direct", &env);
                 if routed.flow() == "stopped" {
                     return routed;
                 }
             }
             if matches!(purpose, "build" | "fix") && !self.tasked.contains(&format!("{key}/{role}"))
             {
-                let tasked = self.lead_writes_task(act, key, role, None);
+                let tasked = self.lead_writes_task(act, key, role, None, &env);
                 if tasked.flow() == "stopped" {
                     return tasked;
                 }
@@ -513,7 +535,16 @@ impl Driver {
                 args.extend([format!("--{name}"), value.to_string()]);
             }
         }
-        self.dispatch(act, "lead", key, role, args, step.str("run"), flag("chat"))
+        self.dispatch(
+            act,
+            "lead",
+            key,
+            role,
+            args,
+            step.str("run"),
+            flag("chat"),
+            &env,
+        )
     }
 
     fn worker_works(
@@ -564,6 +595,7 @@ impl Driver {
         run: Option<&str>,
         acks: &[String],
         no_wait: bool,
+        env: &[(String, String)],
     ) -> StepResult {
         let mut args = strings(&["wait"]);
         if let Some(run) = run.or(self.runs.get("lead").map(String::as_str)) {
@@ -575,7 +607,7 @@ impl Driver {
         if no_wait {
             args.push("--no-wait".into());
         }
-        self.agent_cli(act, "lead", None, &args, &[])
+        self.agent_cli(act, "lead", None, &args, env)
     }
 
     fn worker_reports(&mut self, step: &Step, role: &str, key: &str) -> StepResult {
@@ -590,6 +622,23 @@ impl Driver {
             }
         }
         self.worker_works(role, key, None, 3);
+        // 완료 보고 절이 템플릿 그대로면 done이 거절한다(R-04). worker가 채워 커밋한다
+        let inbox = self
+            .dir(role)
+            .join(format!(".fullops-squad/handovers/to_{role}.md"));
+        if let Ok(text) = std::fs::read_to_string(&inbox) {
+            let filled = text.replacen(
+                "## 완료 보고\n",
+                &format!("## 완료 보고\n\n{key} 구현과 확인을 마쳤다.\n"),
+                1,
+            );
+            self.sb.write(&inbox, &filled);
+            self.sb.git_ok(&self.dir(role), &["add", "-A"]);
+            self.sb.git_ok(
+                &self.dir(role),
+                &["commit", "-q", "-m", &format!("{key} 완료 보고")],
+            );
+        }
         for args in [strings(&["lint"]), strings(&["done"])] {
             let result = self.agent_cli(&step.act, role, None, &args, &[]);
             if result.flow() == "stopped" {
@@ -617,7 +666,7 @@ impl Driver {
                 self.sb.orca_mail(&d.run, message);
             }
         }
-        self.lead_waits(&step.act, None, &[], false)
+        self.lead_waits(&step.act, None, &[], false, &env_of_step(step))
     }
 
     /// 단계 하나를 실행한다. `Err`는 시나리오 자체의 오류(모르는 동사, 빠진 인자)다.
@@ -764,6 +813,7 @@ impl Driver {
                 step.req("key")?,
                 step.str("role"),
                 step.str("class").unwrap_or("direct"),
+                &env,
             ),
             "lead_plans" => {
                 let key = step.req("key")?;
@@ -791,9 +841,13 @@ impl Driver {
                 }
                 self.agent_cli(act, "lead", None, &args, &env)
             }
-            "lead_writes_task" => {
-                self.lead_writes_task(act, step.req("key")?, step.req("role")?, step.str("goal"))
-            }
+            "lead_writes_task" => self.lead_writes_task(
+                act,
+                step.req("key")?,
+                step.req("role")?,
+                step.str("goal"),
+                &env,
+            ),
             "lead_dispatches" => self.lead_dispatches(step, step.req("key")?, step.req("role")?),
             "worker_subdispatches" => {
                 let (role, key) = (step.req("role")?, step.req("key")?);
@@ -803,7 +857,7 @@ impl Driver {
                         args.extend([format!("--{name}"), value.to_string()]);
                     }
                 }
-                self.dispatch(act, role, key, role, args, None, false)
+                self.dispatch(act, role, key, role, args, None, false, &env)
             }
             "worker_works" => {
                 let lines = step
@@ -830,9 +884,13 @@ impl Driver {
                 self.agent_cli(act, step.req("role")?, None, &args, &env)
             }
             "worker_reports" => self.worker_reports(step, step.req("role")?, step.req("key")?),
-            "lead_waits" => {
-                self.lead_waits(act, step.str("run"), &step.list("ack"), flag("no_wait"))
-            }
+            "lead_waits" => self.lead_waits(
+                act,
+                step.str("run"),
+                &step.list("ack"),
+                flag("no_wait"),
+                &env,
+            ),
             "lead_merges" => self.agent_cli(
                 act,
                 "lead",

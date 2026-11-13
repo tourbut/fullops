@@ -32,15 +32,17 @@ fn tree_role() {
     ) else {
         return;
     };
-    if role == "parent" {
-        // 손자는 출력 파이프를 물려받는다. 부모는 끝내질 때까지 기다린다
+    if role == "parent" || role == "launcher" {
+        // 손자는 출력 파이프를 물려받는다. 부모는 끝내질 때까지 기다리고, launcher는 손자를 남기고 바로 끝난다
         let argv = self_argv();
         let mut child = Command::new(&argv[0])
             .args(&argv[1..])
             .env(ROLE, "child")
             .spawn()
             .expect("손자 띄우기");
-        let _ = child.wait();
+        if role == "parent" {
+            let _ = child.wait();
+        }
     } else {
         std::fs::write(dir.join("started"), "").expect("표식 쓰기");
         std::thread::sleep(GRANDCHILD_LIVES);
@@ -75,5 +77,35 @@ fn timeout_kills_the_whole_tree() {
         !dir.join("survived").exists(),
         "제한 시간이 지났는데 손자 프로세스가 살아남았다"
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 직접 띄운 프로세스가 끝났으면, 파이프를 쥔 채 남은 자손(백그라운드 데몬)을 기다리지 않는다.
+#[test]
+fn exit_is_reported_while_a_daemon_still_holds_the_pipes() {
+    let dir = std::env::temp_dir().join(format!("fullops-proc-daemon-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("임시 폴더");
+    let dir_text = dir.to_string_lossy().into_owned();
+
+    let done = run(
+        &self_argv(),
+        &dir,
+        Duration::from_secs(120),
+        &[(ROLE, "launcher"), (DIR, &dir_text)],
+        None,
+    );
+    let daemon_alive = !dir.join("survived").exists();
+    assert_eq!(done.status, ProcStatus::Exited(0), "{done:?}");
+    assert!(done.stdout_text().contains("running 1 test"), "{done:?}");
+    assert!(daemon_alive, "손자 프로세스가 끝날 때까지 기다렸다");
+    // 손자가 끝난 뒤에 임시 폴더를 지운다(Windows는 살아 있는 프로세스의 작업 폴더를 지우지 못한다)
+    for _ in 0..600 {
+        if dir.join("survived").exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    std::thread::sleep(Duration::from_millis(300));
     let _ = std::fs::remove_dir_all(&dir);
 }

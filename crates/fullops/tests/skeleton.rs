@@ -389,7 +389,11 @@ fn cli_follows_common_contract() {
         &sb.home,
         &["plan", "list", &format!("--repo={}", lead.display())],
     );
-    assert!(!run.stderr.contains("활성 레포가 아닙니다"), "{}", run.stderr);
+    assert!(
+        !run.stderr.contains("활성 레포가 아닙니다"),
+        "{}",
+        run.stderr
+    );
     // 명령 표의 모든 명령이 등록돼 있다(설계 8.2절). --json은 명령 이름 뒤 어디에나 올 수 있다
     for command in [
         "route",

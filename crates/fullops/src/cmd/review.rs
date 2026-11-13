@@ -4,6 +4,7 @@
 use super::hold::{commit, is_record, known, load_state, refused, task_key, value};
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use fullops_core::lint_rules::config_sha256;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
     Accepted, Completion, HeadRef, Known, LintResult, Need, NeedAction, PacketCheck, Refusal,
@@ -559,20 +560,14 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         Some(lint) if !covers(&git, &lint.head, &subject.head) => {
             fail(9, "lint.json의 head가 리뷰 head를 덮지 못합니다.")
         }
-        // shortcut: config_sha256의 계산식은 lint(묶음 D)의 것이라 다시 계산하지 못한다, D가 공개 함수를 주면 해시 비교로 바꾼다
-        Some(lint)
-            if git
-                .is_ancestor(lint.merge_base.as_str(), targets.base.as_str())
-                .yes()
-                != Some(true) =>
-        {
-            fail(
-                9,
-                "lint가 기준 시점 설정으로 돌지 않았습니다(lint의 merge-base가 리뷰 base의 조상이 아니다).",
-            )
-        }
         Some(lint) => {
             let at = blobs(&git, &targets.base, &[LINT_JSON.to_string()]);
+            if lint.config_sha256 != config_sha256(at[0].as_deref(), assets::LINT_JSON) {
+                fail(
+                    9,
+                    "lint가 기준 시점 설정으로 돌지 않았습니다(lint.json의 config_sha256이 리뷰 base의 설정과 다르다).",
+                );
+            }
             let config = text(&at[0]).unwrap_or_else(|| assets::LINT_JSON.to_string());
             let config: serde_json::Value = serde_json::from_str(&config).unwrap_or_default();
             let registered: Vec<String> = config["commands"]

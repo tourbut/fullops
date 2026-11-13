@@ -5,7 +5,6 @@ origin = "설계 12.2절 L5(push 실패), 8.8절 M-09. 같은 단계: review_mer
 act = "worker_reports"
 role = "dev"
 key = "A-1"
-pending = "C"
 
 # 원격이 없어졌다(임시 bare 원격의 주소를 없는 경로로 바꾼다)
 [[step]]
@@ -16,13 +15,11 @@ args = ["remote", "set-url", "origin", "../missing.git"]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "external", exit = 4, flow = "stopped" }
-pending = "C"
 
 # 완료 보고는 통합 대기로 남는다
 [[step]]
 act = "stops"
-expect = { verdict = "block", rule = "X-06" }
-pending = "C"
+expect = { verdict = "block", rule = "X-05", escape = "X-06 미통합 완료 보고" }
 
 [[step]]
 act = "git"
@@ -32,9 +29,7 @@ args = ["remote", "set-url", "origin", "../origin.git"]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "pass", exit = 0, escape = "already" }
-pending = "C"
 
 [[step]]
 act = "stops"
 expect = { verdict = "pass" }
-pending = "C"

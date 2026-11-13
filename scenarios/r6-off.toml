@@ -7,7 +7,6 @@ parallel = "off"
 [[step]]
 act = "spawns_subagent"
 prompt = "src/b.py를 구현한다"
-pending = "B"
 expect = { verdict = "deny", rule = "T-08" }
 
 [[step]]

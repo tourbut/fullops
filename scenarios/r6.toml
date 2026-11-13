@@ -4,21 +4,17 @@ origin = "12.2 R6"
 [[step]]
 act = "spawns_subagent"
 prompt = "Purpose: research. src/a.py를 읽고 요약한다"
-pending = "B"
 
 [[step]]
 act = "spawns_subagent"
 prompt = "src/b.py를 구현한다"
-pending = "B"
 
 [[step]]
 act = "spawns_subagent"
 prompt = "src/c.py를 구현한다"
-pending = "B"
 
 [[step]]
 act = "runs_workflow"
-pending = "B"
 
 [[step]]
 act = "lead_dispatches"
@@ -41,11 +37,9 @@ expect = { verdict = "pass", escape = "\"sub_dispatches\":1" }
 [[step]]
 act = "runs_fullops"
 args = ["status", "--json"]
-pending = "B"
 expect = { verdict = "pass", escape = "\"subagent_calls\":3" }
 
 [[step]]
 act = "runs_fullops"
 args = ["status", "--json"]
-pending = "B"
 expect = { verdict = "pass", escape = "\"workflow_runs\":1" }

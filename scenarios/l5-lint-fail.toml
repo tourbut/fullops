@@ -25,7 +25,6 @@ args = ["push", "-q", "origin", "main"]
 act = "worker_reports"
 role = "dev"
 key = "A-1"
-pending = "C"
 
 [[step]]
 act = "git"
@@ -43,16 +42,13 @@ args = ["push", "-q", "origin", "main"]
 act = "lead_merges"
 key = "A-1"
 expect = { verdict = "deny", exit = 2, rule = "M-07", flow = "stopped", escape = "fullops hold" }
-pending = "C"
 
 # 탈출구: 보류하면 lead의 Stop이 통과한다
 [[step]]
 act = "runs_fullops"
 args = ["hold", "A-1", "--reason", "배포 창을 기다린다", "--owner", "lead", "--resume", "금요일 배포 뒤"]
 expect = { verdict = "pass" }
-pending = "C"
 
 [[step]]
 act = "stops"
 expect = { verdict = "pass" }
-pending = "C"

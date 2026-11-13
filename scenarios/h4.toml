@@ -40,13 +40,11 @@ message = "완료 보고 작성"
 [[step]]
 act = "worker_lints"
 role = "dev"
-pending = "D"
 expect = { verdict = "pass" }
 
 [[step]]
 act = "worker_finishes"
 role = "dev"
-pending = "D"
 expect = { verdict = "pass", escape = "[완료] A-1 | 브랜치 fullops/dev | SHA " }
 
 # lint 명령이 없는 레포는 사유를 남기고 끝낸다. 이미 끝낸 뒤 다시 실행하면 본문만 다시 낸다
