@@ -1,0 +1,89 @@
+# K4(설계 12.2절): 과제 3개(선행 1개, 사람 대기 1개)를 가짜 Orca로 끝까지 돌린다.
+# 합격(12.4절): 사람 입력 없이 병합된 과제 수가 1.24.0 이상이고 lead가 받은 차단 수가 1.24.0 이하다.
+# 두 수는 `cargo xtask compare`가 센다. 사람 입력은 2단계 한 번뿐이다.
+# expect는 새 판의 기대다. pending은 그 단계가 기대는 묶음이고 전부 합친 뒤 지운다.
+name = "과제 3개(선행 1개, 사람 대기 1개)를 가짜 Orca로 끝까지"
+origin = "12.2 K4"
+
+[setup]
+mode = "coor"
+remote = true
+roles = { dev = "worker", architecture = "design" }
+
+[[step]]
+act = "session_starts"
+pending = "B"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+text = "A-1, B-2, C-3을 진행해 주세요. C-3은 배포 승인 뒤에 합니다."
+expect = { flow = "continues" }
+
+[[step]]
+act = "lead_plans"
+key = "A-1"
+role = "dev"
+pending = "C"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "lead_plans"
+key = "B-2"
+role = "dev"
+after = "A-1"
+pending = "C"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "lead_plans"
+key = "C-3"
+role = "dev"
+status = "대기(사람: 배포)"
+pending = "C"
+expect = { verdict = "pass" }
+
+# 첫 과제: 분류 → 지시서 → 배정 → 작업 → lint → done → worker_done → lead의 wait
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+pending = "E"
+expect = { verdict = "pass", flow = "continues" }
+
+# 선행(A-1)이 끝나 B-2가 준비된 행이 됐다. lead가 턴을 끝내려 하면 묻지 않고 배정하게 한 번 막는다.
+[[step]]
+act = "stops"
+pending = "B"
+expect = { verdict = "block", rule = "X-07", escape = "fullops dispatch" }
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "B-2"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_merges"
+key = "B-2"
+pending = "E"
+expect = { verdict = "pass", flow = "continues" }
+
+# 남은 C-3은 사람(배포)을 기다린다. 준비된 행이 없으므로 lead의 턴이 끝난다.
+[[step]]
+act = "stops"
+pending = "B"
+expect = { verdict = "pass" }
+
+# 같은 턴에 한 번 더 끝낸다. 1.24.0이 앞 단계에서 막았어도(현황판 확인) 여기서는 두 판 모두 통과다.
+[[step]]
+act = "stops"
+pending = "B"
+expect = { verdict = "pass" }
