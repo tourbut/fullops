@@ -1,0 +1,11 @@
+{
+  "session_id": "019a0000-0000-7000-8000-000000000001",
+  "transcript_path": null,
+  "cwd": "/home/dev/repo",
+  "model": "gpt-example-codex",
+  "permission_mode": "default",
+  "turn_id": "turn_0001",
+  "hook_event_name": "Stop",
+  "stop_hook_active": true,
+  "last_assistant_message": null
+}

@@ -1,0 +1,18 @@
+{
+  "id": "<요청 ID>",
+  "ok": true,
+  "result": {
+    "terminals": [
+      {
+        "handle": "term_00000000-0000-4000-8000-000000000002",
+        "title": "claude",
+        "connected": true,
+        "worktreePath": "/home/dev/repo-dev",
+        "preview": ""
+      }
+    ]
+  },
+  "_meta": {
+    "runtimeId": "<런타임 ID>"
+  }
+}

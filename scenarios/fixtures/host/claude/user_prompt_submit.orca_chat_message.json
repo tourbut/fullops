@@ -1,0 +1,9 @@
+{
+  "session_id": "11111111-2222-4333-8444-555555555555",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-repo/11111111-2222-4333-8444-555555555555.jsonl",
+  "cwd": "/home/dev/repo",
+  "permission_mode": "default",
+  "prompt_id": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "──── From: DISPATCH:CTX_2A3B4C5D6E7F (dispatch:ctx_2a3b4c5d6e7f) (worker_done) ────\nSubject: PAY-12 완료\n[완료] PAY-12 구현을 끝냈다. 브랜치 fullops/dev, SHA 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b. 남은 일은 없다.\n[Payload: {\"taskId\":\"task_1a2b3c4d5e6f\",\"dispatchId\":\"ctx_2a3b4c5d6e7f\",\"outcome\":\"succeeded\"}]\n[Reply: orca orchestration reply --id msg_3a4b5c6d7e8f --body \"...\"]\n────────────────────────────────────────────────────────────"
+}

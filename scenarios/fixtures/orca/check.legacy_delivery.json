@@ -1,0 +1,1 @@
+{"ok":true,"result":{"messages":[{"id":"msg_3a4b5c6d7e8f","type":"worker_done","from":"ctx_2a3b4c5d6e7f","subject":"PAY-12 완료","body":"[완료] PAY-12 구현을 끝냈다. 브랜치 fullops/dev, SHA 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b. 남은 일은 없다.","payload":{"taskId":"task_1a2b3c4d5e6f","dispatchId":"ctx_2a3b4c5d6e7f","outcome":"succeeded"}}],"deliveryId":"delivery_4a5b6c7d8e9f"}}
