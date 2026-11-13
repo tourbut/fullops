@@ -1,0 +1,10 @@
+[package]
+name = "fullops-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+fancy-regex.workspace = true
+globset.workspace = true

@@ -1,0 +1,331 @@
+//! hook 규칙과 CLI 검사가 바깥을 보는 유일한 통로(설계 10.2절)와 호출자 판정(7.3절).
+
+use crate::config::PolicyError;
+use crate::model::{
+    Actor, BoundBy, Caps, ChangeSet, Config, DispatchId, HeadRef, Inbox, Known, Landing, Mode,
+    Need, Plan, ReviewEvidence, RoleId, Route, RunId, Seat, Session, Sha, SnapshotState, State,
+    TaskKey, same_path,
+};
+use std::collections::BTreeSet;
+use std::path::Path;
+
+/// 모든 사실은 지연 계산이고, 읽지 못하면 `Unknown`이다. 호출 상한(설계 7.1절)을 넘는 요청도 `Unknown`이다.
+pub trait Facts {
+    fn now(&self) -> i64;
+    fn caps(&self) -> Caps;
+    fn config(&mut self) -> Result<&Config, PolicyError>;
+    /// 설정 오류 또는 세션 중 모드 변경.
+    fn policy_error(&mut self) -> Option<PolicyError>;
+    fn actor(&mut self) -> Known<Actor>;
+    fn session(&mut self) -> Known<&Session>;
+    fn state(&mut self) -> Known<&State>;
+    fn archive_keys(&mut self) -> Known<&BTreeSet<TaskKey>>;
+    fn plan(&mut self) -> Known<&Plan>;
+    /// 이 체크아웃의 인박스.
+    fn inbox(&mut self, role: &RoleId) -> Known<Option<Inbox>>;
+    fn route(&mut self, key: &TaskKey) -> Known<Option<Route>>;
+    fn file_text(&mut self, path: &Path) -> Known<Option<String>>;
+    fn path_exists(&mut self, path: &Path) -> Known<bool>;
+    /// 세션이 만든 변경(설계 6.6절).
+    fn changed(&mut self) -> Known<ChangeSet>;
+    fn pass_covers(&mut self, head: &Sha, start: &Sha) -> Known<bool>;
+    fn head(&mut self) -> Known<Sha>;
+    fn review_need(&mut self, base: &Sha, head: &Sha) -> Known<Need>;
+    fn review_evidence(&mut self, head: &Sha) -> Known<ReviewEvidence>;
+    fn landing(&mut self, sha: &Sha) -> Known<Landing>;
+    fn qa_commit_candidates(&mut self, include_unstaged: bool) -> Known<Vec<String>>;
+    fn orca_settled(&mut self, id: &DispatchId) -> Known<bool>;
+    fn waiter_alive(&mut self, run: &RunId) -> Known<bool>;
+}
+
+/// 호출자 판정의 입력. 모두 git 프로세스 없이 얻는 값이다.
+pub struct ActorInput<'a> {
+    pub config: &'a Config,
+    pub head: &'a HeadRef,
+    /// 이 워크트리 루트. `path_text` 표기.
+    pub worktree: &'a str,
+    /// 세션 파일의 `dispatch.id`.
+    pub session_dispatch: Option<&'a DispatchId>,
+    /// 환경 변수 `ORCA_TERMINAL_HANDLE`.
+    pub terminal: Option<&'a str>,
+    /// 읽지 못했으면 `None`. 그때는 2·3번 판정을 건너뛴다.
+    pub state: Option<&'a State>,
+}
+
+pub struct ResolvedActor {
+    pub actor: Actor,
+    /// 2번(터미널 핸들)으로 묶였으면 그 dispatch와 Orca task ID. 부르는 쪽이 세션 파일에 쓴다.
+    pub bind: Option<(DispatchId, Option<String>, BoundBy)>,
+}
+
+/// 설계 7.3절의 순서대로 호출자를 정한다. hook과 CLI가 같은 함수를 쓴다.
+pub fn resolve_actor(input: &ActorInput) -> ResolvedActor {
+    let mut bind = None;
+    let mut dispatch = input.session_dispatch.cloned();
+    if dispatch.is_none()
+        && let (Some(terminal), Some(state)) =
+            (input.terminal.filter(|t| !t.is_empty()), input.state)
+    {
+        let mut matches = state.dispatches.iter().filter(|d| {
+            d.settled.is_none()
+                && d.terminal.as_deref() == Some(terminal)
+                && same_path(&d.worktree, input.worktree)
+        });
+        if let (Some(only), None) = (matches.next(), matches.next()) {
+            dispatch = Some(only.id.clone());
+            bind = Some((only.id.clone(), only.task_id.clone(), BoundBy::Terminal));
+        }
+    }
+    let seat = seat(input, dispatch.is_some());
+    let direct_dev = input.config.mode == Mode::Dev && seat == Seat::Lead && dispatch.is_none();
+    ResolvedActor {
+        actor: Actor {
+            seat,
+            dispatch,
+            direct_dev,
+        },
+        bind,
+    }
+}
+
+/// dispatch가 묶인 세션의 좌석은 4~6번으로만 정한다(3번의 리뷰 사본 판정을 건너뛴다).
+fn seat(input: &ActorInput, bound: bool) -> Seat {
+    let config = input.config;
+    let is_snapshot = !bound
+        && input.state.is_some_and(|state| {
+            state
+                .snapshots
+                .iter()
+                .any(|s| s.state == SnapshotState::Active && same_path(&s.path, input.worktree))
+        });
+    if is_snapshot {
+        return Seat::Reviewer;
+    }
+    let HeadRef::Branch(branch) = input.head else {
+        return Seat::Other;
+    };
+    match (config.role_of_branch(branch), config.mode) {
+        (Some((_, role)), Mode::Coor) if role.kind == crate::model::RoleKind::Coordinator => {
+            Seat::Lead
+        }
+        (Some((id, _)), Mode::Dev) if config.primary_role.as_ref() == Some(id) => Seat::Lead,
+        (Some((id, role)), _) => Seat::Role {
+            id: id.clone(),
+            kind: role.kind,
+        },
+        (None, Mode::Coor) => Seat::Lead,
+        (None, Mode::Dev) if config.primary_branch.as_deref() == Some(branch.as_str()) => {
+            Seat::Lead
+        }
+        (None, Mode::Dev) => Seat::Other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::*;
+
+    fn config(mode: Mode) -> Config {
+        let role = |kind| Role {
+            branch: format!("fullops/{kind}"),
+            kind,
+            about: None,
+        };
+        Config {
+            schema: 2,
+            applied_version: "2.0.0".into(),
+            mode,
+            primary_role: (mode == Mode::Dev).then(|| RoleId::new("worker").unwrap()),
+            primary_branch: (mode == Mode::Dev).then(|| "main".to_string()),
+            routing: Routing::Legacy,
+            tech_plan_role: None,
+            test_level: TestLevel::Lite,
+            subagent_level: SubagentLevel::Lite,
+            base: "main".into(),
+            remote: None,
+            roles: [RoleKind::Worker, RoleKind::Design, RoleKind::Coordinator]
+                .map(|kind| (RoleId::new(kind.as_str()).unwrap(), role(kind)))
+                .into(),
+            review: ReviewPolicy::default(),
+            code: CodeDef::default(),
+            wait: WaitConfig::default(),
+        }
+    }
+
+    fn dispatch(id: &str, terminal: &str, worktree: &str) -> Dispatch {
+        Dispatch {
+            id: DispatchId::new(id).unwrap(),
+            task_id: Some("task_1".into()),
+            run: RunId::new("run_1").unwrap(),
+            key: TaskKey::new("A-1").unwrap(),
+            role: RoleId::new("worker").unwrap(),
+            purpose: Purpose::Build,
+            tuple: ModelTuple {
+                agent: "claude".into(),
+                model: "m".into(),
+                effort: "medium".into(),
+            },
+            terminal: Some(terminal.into()),
+            worktree: worktree.into(),
+            session_mode: SessionMode::Fresh,
+            reason: None,
+            started_at: 1,
+            bound_session: None,
+            reported: None,
+            settled: None,
+            limit_escalated: false,
+            extra: Extra::new(),
+        }
+    }
+
+    fn seat_of(mode: Mode, head: &HeadRef) -> Seat {
+        let config = config(mode);
+        let input = ActorInput {
+            config: &config,
+            head,
+            worktree: "/w",
+            session_dispatch: None,
+            terminal: None,
+            state: None,
+        };
+        resolve_actor(&input).actor.seat
+    }
+
+    #[test]
+    fn seats_follow_branch_and_mode() {
+        let branch = |name: &str| HeadRef::Branch(name.into());
+        let role = |kind: RoleKind| Seat::Role {
+            id: RoleId::new(kind.as_str()).unwrap(),
+            kind,
+        };
+        let detached = HeadRef::Detached(Sha::new("a".repeat(40)).unwrap());
+
+        assert_eq!(seat_of(Mode::Coor, &branch("main")), Seat::Lead);
+        assert_eq!(seat_of(Mode::Coor, &branch("feature/x")), Seat::Lead);
+        assert_eq!(
+            seat_of(Mode::Coor, &branch("fullops/coordinator")),
+            Seat::Lead
+        );
+        assert_eq!(
+            seat_of(Mode::Coor, &branch("fullops/worker")),
+            role(RoleKind::Worker)
+        );
+        assert_eq!(
+            seat_of(Mode::Coor, &branch("fullops/design")),
+            role(RoleKind::Design)
+        );
+        assert_eq!(seat_of(Mode::Coor, &detached), Seat::Other);
+
+        assert_eq!(seat_of(Mode::Dev, &branch("main")), Seat::Lead);
+        assert_eq!(seat_of(Mode::Dev, &branch("fullops/worker")), Seat::Lead);
+        assert_eq!(
+            seat_of(Mode::Dev, &branch("fullops/design")),
+            role(RoleKind::Design)
+        );
+        assert_eq!(
+            seat_of(Mode::Dev, &branch("fullops/coordinator")),
+            role(RoleKind::Coordinator)
+        );
+        assert_eq!(seat_of(Mode::Dev, &branch("feature/x")), Seat::Other);
+    }
+
+    #[test]
+    fn dispatch_binding_and_review_snapshot() {
+        let (coor, dev) = (config(Mode::Coor), config(Mode::Dev));
+        let main = HeadRef::Branch("main".into());
+        let mut state = State::default();
+        state.dispatches = vec![
+            dispatch("dsp_1", "term_1", "C:/w/dev"),
+            dispatch("dsp_2", "term_2", "C:/w/art"),
+        ];
+        let input = |config, worktree, session_dispatch, terminal| ActorInput {
+            config,
+            head: &main,
+            worktree,
+            session_dispatch,
+            terminal,
+            state: Some(&state),
+        };
+
+        // 묶인 것이 없으면 lead이고, dev 모드의 lead는 직접 작업이다
+        let lead = resolve_actor(&input(&dev, "C:/w/dev", None, None));
+        assert!(lead.actor.is_lead() && lead.actor.direct_dev && lead.bind.is_none());
+        assert!(
+            !resolve_actor(&input(&coor, "C:/w/dev", None, None))
+                .actor
+                .direct_dev
+        );
+
+        // 터미널 핸들과 워크트리가 모두 같은 미정산 dispatch가 하나일 때만 묶는다
+        let bound = resolve_actor(&input(&dev, r"C:\w\dev\", None, Some("term_1")));
+        assert_eq!(
+            bound.actor.dispatch.as_ref().map(DispatchId::as_str),
+            Some("dsp_1")
+        );
+        assert_eq!(bound.bind.map(|b| b.2), Some(BoundBy::Terminal));
+        assert!(
+            bound.actor.seat == Seat::Lead && !bound.actor.is_lead() && !bound.actor.direct_dev
+        );
+        assert!(
+            resolve_actor(&input(&dev, "C:/w/other", None, Some("term_1")))
+                .actor
+                .is_lead()
+        );
+        assert!(
+            resolve_actor(&input(&dev, "C:/w/dev", None, Some("")))
+                .actor
+                .is_lead()
+        );
+
+        // 세션 파일의 dispatch가 먼저다
+        let session = DispatchId::new("dsp_9").unwrap();
+        let by_session = resolve_actor(&input(&coor, "C:/w/dev", Some(&session), Some("term_1")));
+        assert_eq!(
+            (by_session.actor.dispatch, by_session.bind.is_none()),
+            (Some(session), true)
+        );
+
+        // 등록된 리뷰 사본은 Reviewer다
+        state.dispatches[0].settled = Some(Settled {
+            how: SettledHow::Done,
+            outcome: None,
+            message: None,
+            at: 2,
+            extra: Extra::new(),
+        });
+        state.snapshots.push(Snapshot {
+            review: "A-1@aaaaaaaaaaaa".into(),
+            path: "C:/w/.fullops-review-1".into(),
+            head: Sha::new("a".repeat(40)).unwrap(),
+            base: Sha::new("b".repeat(40)).unwrap(),
+            state: SnapshotState::Active,
+            implementer_session: None,
+            reviewer_dispatch: None,
+            owner: RunOwner::Lead,
+            created_at: 3,
+            hold: None,
+            extra: Extra::new(),
+        });
+        let detached = HeadRef::Detached(Sha::new("a".repeat(40)).unwrap());
+        let review = |terminal| ActorInput {
+            config: &coor,
+            head: &detached,
+            worktree: "C:/w/.fullops-review-1",
+            session_dispatch: None,
+            terminal,
+            state: Some(&state),
+        };
+        assert_eq!(resolve_actor(&review(None)).actor.seat, Seat::Reviewer);
+        // 정산된 dispatch의 터미널로는 묶지 않는다
+        assert!(
+            resolve_actor(&ActorInput {
+                worktree: "C:/w/dev",
+                head: &main,
+                ..review(Some("term_1"))
+            })
+            .actor
+            .is_lead()
+        );
+    }
+}

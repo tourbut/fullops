@@ -1,0 +1,11 @@
+[package]
+name = "fullops-ext"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+fullops-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true

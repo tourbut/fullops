@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/fullops-core",
+    "crates/fullops-store",
+    "crates/fullops-ext",
+    "crates/fullops",
+    "crates/fullops-testkit",
+    "xtask",
+]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2024"
+publish = false
+
+# 외부 크레이트는 설계 10.1절이 정한 일곱 개뿐이다.
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+fancy-regex = "0.20"
+globset = { version = "0.4", default-features = false }
+sha2 = "0.11"
+lexopt = "0.3"
+fullops-core = { path = "crates/fullops-core" }
+fullops-store = { path = "crates/fullops-store" }
+fullops-ext = { path = "crates/fullops-ext" }
+fullops-testkit = { path = "crates/fullops-testkit" }
+
+# panic = "unwind"는 hook의 catch_unwind 때문이다(설계 10.5절).
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = true
