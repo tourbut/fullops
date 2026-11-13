@@ -1,5 +1,5 @@
 name = "패킷 있는 과제의 리뷰 check: 패킷을 만든 커밋 위의 작업인지와 처리 기록을 본다"
-origin = "설계 12.2절 P5 (처리 기록 완비·누락·uncertainty_review는 tests/explore.rs가 잇는다)"
+origin = "설계 12.2절 P5 (처리 기록을 쓴 뒤의 done과 review check 10번의 통과·J-15·J-16은 tests/explore.rs가 패킷의 input_sha256을 읽어 잇는다)"
 
 # 준비: 필수 문서 여섯, 코드, 문서를 커밋한다
 [[step]]
@@ -87,43 +87,32 @@ content = '''
 act = "commits"
 message = "시나리오 파일"
 
-# 준비: 인박스. `task new`(C)가 합쳐지기 전이라 파일로 둔다
+# 준비: 분류하고 인박스를 만든 뒤 지시 본문을 쓴다
 [[step]]
-act = "file"
+act = "lead_routes"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "PAY-12"
+role = "dev"
+goal = "결제 재시도 버튼"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "edits_file"
 path = ".fullops-squad/handovers/to_dev.md"
-content = '''
----
-id: handover-dev
-title: PAY-12 — 결제 재시도 버튼
-status: draft
-updated: 2026-11-14
-owner: dev
-summary: 결제 재시도 버튼
-key: PAY-12
-role: dev
-goal: 결제 재시도 버튼
-base: 0000000000000000000000000000000000000000
-route: direct
-from: lead
-round: 0
-budget: 2
-test_level: lite
-parallel: on
----
-# PAY-12 — 결제 재시도 버튼
-
-## 해야 할 일과 파일 소유권
-
+old = "- [ ] 구체적 작업과 수정할 파일"
+new = """
 - [ ] `retry`의 중복 클릭을 막는다
-  * [ ] 테스트를 더한다
+  * [ ] 테스트를 더한다"""
 
-## 완료 보고
-
-'''
-
+# 원천이 없는 갱신 ID가 있어 partial인 패킷
 [[step]]
 act = "runs_fullops"
-args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox"]
+args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--update-doc", "D99", "--write-inbox"]
 expect = { verdict = "pass", exit = 0, flow = "continues" }
 
 # 검사하는 커밋이 패킷을 만든 커밋보다 앞이다
@@ -138,9 +127,36 @@ act = "runs_fullops"
 args = ["packet", "check", "PAY-12", "--role", "dev", "--completion", "--head", "HEAD"]
 expect = { verdict = "deny", rule = "J-14", flow = "stopped" }
 
-# 리뷰 check 10번이 같은 검사를 한다
 [[step]]
-act = "runs_fullops"
-args = ["review", "check", "PAY-12"]
-pending = "E"
-expect = { verdict = "deny" }
+act = "lead_dispatches"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "PAY-12"
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+# 완료(R-10): 처리 기록이 없다
+[[step]]
+act = "worker_finishes"
+role = "dev"
+expect = { verdict = "deny", rule = "R-10", flow = "stopped", escape = "J-14" }

@@ -87,39 +87,27 @@ content = '''
 act = "commits"
 message = "시나리오 파일"
 
-# 준비: 인박스. `task new`(C)가 합쳐지기 전이라 파일로 둔다
+# 준비: 분류하고 인박스를 만든 뒤 지시 본문을 쓴다
 [[step]]
-act = "file"
+act = "lead_routes"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "PAY-12"
+role = "dev"
+goal = "결제 재시도 버튼"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "edits_file"
 path = ".fullops-squad/handovers/to_dev.md"
-content = '''
----
-id: handover-dev
-title: PAY-12 — 결제 재시도 버튼
-status: draft
-updated: 2026-11-14
-owner: dev
-summary: 결제 재시도 버튼
-key: PAY-12
-role: dev
-goal: 결제 재시도 버튼
-base: 0000000000000000000000000000000000000000
-route: direct
-from: lead
-round: 0
-budget: 2
-test_level: lite
-parallel: on
----
-# PAY-12 — 결제 재시도 버튼
-
-## 해야 할 일과 파일 소유권
-
+old = "- [ ] 구체적 작업과 수정할 파일"
+new = """
 - [ ] `retry`의 중복 클릭을 막는다
-  * [ ] 테스트를 더한다
-
-## 완료 보고
-
-'''
+  * [ ] 테스트를 더한다"""
 
 [[step]]
 act = "runs_fullops"
@@ -131,47 +119,6 @@ expect = { verdict = "pass", exit = 0, flow = "continues" }
 act = "runs_fullops"
 args = ["packet", "check", "PAY-12", "--role", "dev"]
 expect = { verdict = "pass", exit = 0, flow = "continues" }
-
-# 전달 항목(지시서가 아닌 파일)의 원문이 바뀐다
-[[step]]
-act = "file"
-path = "src/pay/retry.rs"
-content = '''
-pub fn retry(order: u32) -> u32 {
-    order + 1
-}
-'''
-
-[[step]]
-act = "runs_fullops"
-args = ["packet", "check", "PAY-12", "--role", "dev"]
-expect = { verdict = "deny", rule = "J-12", flow = "stopped", escape = "packet build" }
-
-[[step]]
-act = "lead_dispatches"
-key = "PAY-12"
-role = "dev"
-bare = true
-pending = "C"
-expect = { verdict = "deny", rule = "D-12", flow = "stopped" }
-
-[[step]]
-act = "runs_fullops"
-args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox", "--force"]
-expect = { verdict = "pass", exit = 0, flow = "continues" }
-
-[[step]]
-act = "runs_fullops"
-args = ["packet", "check", "PAY-12", "--role", "dev"]
-expect = { verdict = "pass", exit = 0, flow = "continues" }
-
-[[step]]
-act = "lead_dispatches"
-key = "PAY-12"
-role = "dev"
-bare = true
-pending = "C"
-expect = { verdict = "pass", flow = "continues" }
 
 # 커밋을 다시 써서 패킷의 head가 HEAD의 조상이 아니게 한다
 [[step]]
@@ -197,3 +144,46 @@ expect = { verdict = "pass", exit = 0, flow = "continues" }
 act = "runs_fullops"
 args = ["packet", "check", "PAY-12", "--role", "dev"]
 expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+# 전달 항목(지시서가 아닌 파일)의 원문이 바뀐다
+[[step]]
+act = "file"
+path = "src/pay/retry.rs"
+content = '''
+pub fn retry(order: u32) -> u32 {
+    order + 1
+}
+'''
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "PAY-12", "--role", "dev"]
+expect = { verdict = "deny", rule = "J-12", flow = "stopped", escape = "packet build" }
+
+# 그 변경이 기본 브랜치에 들어가 대상 워크트리에 닿는다. 배정이 대상 워크트리에서 같은 검사를 한다
+[[step]]
+act = "commits"
+message = "재시도 정책을 바꾼다"
+
+[[step]]
+act = "lead_dispatches"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "deny", rule = "D-12", flow = "stopped", escape = "J-12" }
+
+# 다시 만들면 이어진다
+[[step]]
+act = "runs_fullops"
+args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox", "--force"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "PAY-12", "--role", "dev"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "lead_dispatches"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }

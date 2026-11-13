@@ -9,6 +9,7 @@ use fullops_core::explore::{
 use fullops_core::model::{
     EXPLORE_V, RoleId, TaskKey, TreeEntry, path_text, same_path, sha256_hex,
 };
+use fullops_ext::jev::JevCurlAt;
 use fullops_ext::{
     Answer, Git, GitCli, JevCurl, Judge, JudgeError, Judged, Question, QuestionKind,
 };
@@ -116,43 +117,11 @@ impl Jev {
     }
 }
 
-/// env 파일에 그 이름의 키 줄(값이 비지 않은 것)이 있는가. 키 줄만 보고 값은 쓰지 않는다.
-fn key_line(text: &str, name: &str) -> bool {
-    text.lines().any(|line| {
-        let line = line.trim();
-        let line = line.strip_prefix("export ").unwrap_or(line);
-        line.split_once('=').is_some_and(|(k, v)| {
-            k.trim() == name && !v.trim().trim_matches(['"', '\'']).is_empty()
-        })
-    })
-}
-
-/// 키를 찾는 순서(설계 9.3절): `--env-file` → 환경 변수 → `.fullops-squad/.env`. 어느 엔드포인트를 부를지만 정한다.
-pub(super) fn jev_env(repo: &Repo, env_file: Option<&Path>) -> Jev {
-    let offline = fullops_ext::jev::offline();
-    let files: Vec<String> = [
-        env_file.map(Path::to_path_buf),
-        Some(repo.squad().join(".env")),
-    ]
-    .into_iter()
-    .flatten()
-    .filter_map(|path| std::fs::read_to_string(path).ok())
-    .collect();
-    let has = |name: &str| {
-        std::env::var(name).is_ok_and(|v| !v.is_empty()) || files.iter().any(|f| key_line(f, name))
-    };
-    let provider = if offline {
-        None
-    } else if has("TYPESAFE_API_KEY") {
-        Some("typesafe")
-    } else if has("OPENROUTER_API_KEY") {
-        Some("openrouter")
-    } else {
-        None
-    };
+/// 이번 실행의 Jev 조건. 키를 찾는 순서(설계 9.3절)와 부를 엔드포인트는 `JevCurlAt` 한 곳이 정한다(`route`와 같다).
+pub(super) fn jev_env(judge: &JevCurlAt) -> Jev {
     Jev {
-        offline,
-        provider,
+        offline: fullops_ext::jev::offline(),
+        provider: judge.provider(),
         cache_bypass: std::env::var("FULLOPS_JEV_CACHE_BYPASS").is_ok_and(|v| v == "1"),
     }
 }
@@ -305,13 +274,6 @@ pub(super) fn same_head(git: &dyn Git, task: &Task) -> Result<(), CliError> {
             "실행 중 HEAD가 바뀌어 결과를 쓰지 않았습니다. 다시 실행합니다.".into(),
         )),
     }
-}
-
-/// `Judge`의 실제 구현.
-// C가 JevCurl에 필드를 더해도 깨지지 않게 default로 만든다
-#[allow(clippy::default_constructed_unit_structs)]
-pub(super) fn jev_curl() -> JevCurl {
-    JevCurl::default()
 }
 
 /// Jev에 묻는다. Judge 구현과 별개로 본문을 글 규칙으로 한 번 더 본다(걸린 글은 어떤 구현으로도 나가지 않는다).
@@ -704,8 +666,8 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     let (key, role) = ids(key, role)?;
     let repo = ctx.repo()?;
     let git = GitCli::cli(repo.root.clone());
-    let jev = jev_env(repo, env_file.as_deref());
-    let (path, result, reused) = execute(repo, &git, &jev_curl(), &jev, &key, &role, &find)?;
+    let judge = JevCurl::at(&repo.root, env_file);
+    let (path, result, reused) = execute(repo, &git, &judge, &jev_env(&judge), &key, &role, &find)?;
     let path = shown(repo, &path);
     ctx.print(
         &report(&result, &path),

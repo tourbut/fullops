@@ -157,31 +157,6 @@ fn clean_key(raw: &str) -> Option<String> {
     (!key.is_empty() && key.chars().all(ok)).then(|| key.to_string())
 }
 
-/// 보내기 전에 요청 본문 전체에 적용하는 글 규칙(설계 8.14절 표의 "글" 행). 걸리면 보내지 않는다.
-fn unsafe_text(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    let assigned = |word: &str| {
-        lower.match_indices(word).any(|(at, _)| {
-            let rest = lower.get(at + word.len()..).unwrap_or_default();
-            rest.trim_start()
-                .strip_prefix([':', '='])
-                .is_some_and(|value| !value.trim_start().is_empty())
-        })
-    };
-    let token = |c: &char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-');
-    let long_key = |at: usize| {
-        let rest = text.get(at + 3..).unwrap_or_default();
-        rest.chars().take_while(token).count() >= 12
-    };
-    [
-        "api_key", "api-key", "apikey", "secret", "password", "token",
-    ]
-    .iter()
-    .any(|word| assigned(word))
-        || (text.contains("-----BEGIN") && text.contains("PRIVATE KEY-----"))
-        || text.match_indices("sk-").any(|(at, _)| long_key(at))
-}
-
 /// PATH에서 처음 찾은 `curl`의 전체 경로. Windows에서 이름만 주면 System32의 것이 PATH보다 먼저 잡힌다.
 fn curl_program() -> String {
     let name = format!("curl{}", std::env::consts::EXE_SUFFIX);
@@ -321,7 +296,8 @@ impl Judge for JevCurlAt {
         // 캐시 키는 제공자와 무관한 본문이다. 제공자별 모델 이름은 보내기 직전에 넣는다
         let mut body = json!({"model": PROVIDERS[0].3, "state": state, "questions": asked});
         let canonical = body.to_string();
-        if unsafe_text(&canonical) {
+        // 보내기 전에 본문 전체를 글 규칙(설계 8.14절 표의 "글" 행)으로 본다. 탐색과 같은 함수다
+        if !fullops_core::explore::sendable_text(&canonical) {
             return Err(JudgeError::Unsafe);
         }
         let cache = home().map(|h| {
@@ -396,6 +372,7 @@ mod tests {
 
     #[test]
     fn text_rule_and_key_lines() {
+        let unsafe_text = |text: &str| !fullops_core::explore::sendable_text(text);
         assert!(unsafe_text("password = hunter2"));
         assert!(unsafe_text("{\"note\":\"API_KEY: abc\"}"));
         assert!(unsafe_text("sk-abcdefghijkl"));

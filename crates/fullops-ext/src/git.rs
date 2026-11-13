@@ -65,7 +65,7 @@ pub trait Git {
     fn worktrees(&self) -> Known<Vec<Worktree>>;
     /// 탐색. `ls-tree -r -z` 한 번.
     fn ls_tree(&self, rev: &str) -> Known<Vec<TreeEntry>>;
-    /// 탐색. `cat-file --batch` 하나. `(크기, 앞 max 바이트)`. blob이 아니거나 없으면 `None`.
+    /// 탐색. 크기를 먼저 묻고(`cat-file --batch-check`) `cat-file --batch`로 읽는다. `(크기, 앞 max 바이트)`. blob이 아니거나 없으면 `None`.
     fn blob_prefixes(&self, oids: &[String], max: usize) -> Known<Vec<Option<(u64, Vec<u8>)>>>;
     /// 탐색. `grep -F -l -z --full-name`. 리터럴 가운데 하나라도 든 파일의 경로.
     fn grep_files(&self, rev: &str, literals: &[String]) -> Known<Vec<String>>;
@@ -98,6 +98,8 @@ pub struct GitCli {
 
 /// `fetch`·`push`·`merge`의 제한 시간.
 const SLOW: Duration = Duration::from_secs(120);
+/// `blob_prefixes`가 `cat-file --batch` 한 번에 읽는 blob 크기의 합.
+const BATCH_BYTES: u64 = 16 * 1024 * 1024;
 
 fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
@@ -230,6 +232,40 @@ impl GitCli {
             rest = &rest[size + 1..];
         }
         Known::Yes(items)
+    }
+
+    /// `cat-file --batch-check`로 크기만 읽는다. blob이 아니거나 없으면 `None`이다.
+    fn blob_sizes(&self, oids: &[String]) -> Known<Vec<Option<u64>>> {
+        if oids.is_empty() {
+            return Known::Yes(Vec::new());
+        }
+        if oids.iter().any(|n| n.contains('\n')) {
+            return Known::Unknown("git_name");
+        }
+        let stdin = oids.join("\n") + "\n";
+        let out = self.call(
+            &self.repo_root,
+            &["cat-file", "--batch-check"],
+            self.timeout,
+            Some(stdin.as_bytes()),
+            true,
+        );
+        if !out.ok() {
+            return Known::Unknown("git");
+        }
+        let sizes: Vec<Option<u64>> = text(&out.stdout)
+            .lines()
+            .map(|line| {
+                let mut fields = line.rsplitn(3, ' ');
+                let (size, kind) = (fields.next(), fields.next());
+                size.filter(|_| kind == Some("blob"))
+                    .and_then(|size| size.parse().ok())
+            })
+            .collect();
+        match sizes.len() == oids.len() {
+            true => Known::Yes(sizes),
+            false => Known::Unknown("git_format"),
+        }
     }
 }
 
@@ -393,19 +429,46 @@ impl Git for GitCli {
     }
 
     fn blob_prefixes(&self, oids: &[String], max: usize) -> Known<Vec<Option<(u64, Vec<u8>)>>> {
-        self.batch(oids, true).map(|found| {
-            found
-                .into_iter()
-                .map(|item| {
-                    item.filter(|(kind, _)| kind == "blob")
-                        .map(|(_, mut bytes)| {
-                            let size = bytes.len() as u64;
-                            bytes.truncate(max);
-                            (size, bytes)
-                        })
-                })
-                .collect()
-        })
+        // 크기를 먼저 묻고 합이 BATCH_BYTES를 넘지 않는 묶음으로 나눠 읽는다. 한 번에 읽으면 대상 blob 전체가 메모리에 오른다
+        // shortcut: 혼자 BATCH_BYTES를 넘는 blob은 여전히 통째로 읽는다, 그런 파일이 흔해지면 출력을 흘려 읽는 실행기로 바꾼다
+        let sizes = match self.blob_sizes(oids) {
+            Known::Yes(sizes) => sizes,
+            Known::Unknown(why) => return Known::Unknown(why),
+        };
+        let mut groups: Vec<Vec<usize>> = Vec::new();
+        let mut total = 0;
+        for (at, size) in sizes.iter().enumerate() {
+            let Some(size) = size else { continue };
+            if groups.is_empty() || total + size > BATCH_BYTES {
+                groups.push(Vec::new());
+                total = 0;
+            }
+            total += size;
+            if let Some(group) = groups.last_mut() {
+                group.push(at);
+            }
+        }
+        let mut out: Vec<Option<(u64, Vec<u8>)>> = vec![None; oids.len()];
+        for group in groups {
+            let names: Vec<String> = group
+                .iter()
+                .filter_map(|at| oids.get(*at).cloned())
+                .collect();
+            let found = match self.batch(&names, true) {
+                Known::Yes(found) => found,
+                Known::Unknown(why) => return Known::Unknown(why),
+            };
+            for (at, item) in group.into_iter().zip(found) {
+                if let (Some(slot), Some((_, mut bytes))) = (out.get_mut(at), item) {
+                    let size = bytes.len() as u64;
+                    bytes.truncate(max);
+                    // 잘라 낸 뒤쪽의 자리도 돌려준다
+                    bytes.shrink_to_fit();
+                    *slot = Some((size, bytes));
+                }
+            }
+        }
+        Known::Yes(out)
     }
 
     fn grep_files(&self, rev: &str, literals: &[String]) -> Known<Vec<String>> {
@@ -605,5 +668,35 @@ impl Git for GitCli {
             self.timeout,
         )
         .map(drop)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fullops_testkit::Sandbox;
+
+    // 묶음의 합이 BATCH_BYTES를 넘으면 나눠 읽고, 결과는 요청한 순서와 자리 그대로다
+    #[test]
+    fn blob_prefixes_reads_in_bounded_groups() {
+        let sb = Sandbox::empty();
+        let repo = sb.init_repo("repo");
+        let mut oids = Vec::new();
+        for (name, fill) in [("a.bin", b'a'), ("b.bin", b'b'), ("c.bin", b'c')] {
+            std::fs::write(repo.join(name), vec![fill; 6 * 1024 * 1024]).unwrap();
+            oids.push(sb.git_ok(&repo, &["hash-object", "-w", name]));
+        }
+        oids.insert(1, "0".repeat(40));
+        let found = GitCli::cli(repo).blob_prefixes(&oids, 3).yes().unwrap();
+        let size = 6 * 1024 * 1024;
+        assert_eq!(
+            found,
+            [
+                Some((size, b"aaa".to_vec())),
+                None,
+                Some((size, b"bbb".to_vec())),
+                Some((size, b"ccc".to_vec()))
+            ]
+        );
     }
 }

@@ -83,43 +83,52 @@ content = '''
 [재시도](../src/pay/retry.rs) 정책을 적는다.
 '''
 
+# 경로에는 과제의 낱말이 없고 파일 머리 설명에만 있다(로컬 후보는 경로와 요약으로 맞춘다)
+[[step]]
+act = "file"
+path = "src/pay/gate.rs"
+content = """
+//! retry 버튼의 연타를 세는 문지기.
+pub fn gate() {}
+"""
+
 [[step]]
 act = "commits"
 message = "시나리오 파일"
 
-# 준비: 인박스. `task new`(C)가 합쳐지기 전이라 파일로 둔다
+# 준비: 분류하고 인박스를 만든 뒤 지시 본문을 쓴다
 [[step]]
-act = "file"
+act = "lead_routes"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "PAY-12"
+role = "dev"
+goal = "결제 재시도 버튼"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "edits_file"
 path = ".fullops-squad/handovers/to_dev.md"
-content = '''
----
-id: handover-dev
-title: PAY-12 — 결제 재시도 버튼
-status: draft
-updated: 2026-11-14
-owner: dev
-summary: 결제 재시도 버튼
-key: PAY-12
-role: dev
-goal: 결제 재시도 버튼
-base: 0000000000000000000000000000000000000000
-route: direct
-from: lead
-round: 0
-budget: 2
-test_level: lite
-parallel: on
----
-# PAY-12 — 결제 재시도 버튼
-
-## 해야 할 일과 파일 소유권
-
+old = "- [ ] 구체적 작업과 수정할 파일"
+new = """
 - [ ] `retry`의 중복 클릭을 막는다
-  * [ ] 테스트를 더한다
+  * [ ] 테스트를 더한다"""
 
-## 완료 보고
+# 가짜 curl과 그 답을 먼저 둔다. 오프라인과 키 없음에서는 이 답이 쓰이지 않는다(tests/explore.rs가 호출 수를 센다)
+[[step]]
+act = "fakes"
+names = ["curl"]
 
-'''
+# 확률의 합이 1이 아닌 답
+[[step]]
+act = "curl_replies"
+when = ["--config", "-"]
+times = 1
+stdout = '{"model": "jev-1.14.0", "usage": {"input_tokens": 120, "output_tokens": 9}, "answers": {"where": {"type": "choice", "choice": "F000", "probabilities": {"F000": 0.9, "F001": 0.9, "F002": 0.0, "F003": 0.0, "F004": 0.0}, "confidence": 0.5}, "exists": {"type": "noul", "noul": 0.5}}}'
 
 # FULLOPS_OFFLINE=1(시험 환경의 기본값)
 [[step]]
@@ -134,20 +143,9 @@ env = { FULLOPS_OFFLINE = "0" }
 args = ["find", "PAY-12", "--role", "dev", "--force"]
 expect = { verdict = "pass", exit = 0, flow = "continues" }
 
-# Jev가 잘못된 확률 분포를 답한다. 응답의 전송 형식은 C가 JevCurl과 함께 정한다
-[[step]]
-act = "fakes"
-names = ["curl"]
-
-[[step]]
-act = "curl_replies"
-when = []
-stdout = "{\"answers\": [{\"id\": \"where\", \"choice\": \"F000\", \"probabilities\": {\"F000\": 0.9, \"F001\": 0.9}}, {\"id\": \"exists\", \"value\": 0.5}]}"
-pending = "C"
-
+# Jev가 잘못된 확률 분포를 답한다. 로컬 후보로 끝나고 종료 코드 0이다
 [[step]]
 act = "runs_fullops"
 env = { FULLOPS_OFFLINE = "0", TYPESAFE_API_KEY = "scenario-key" }
 args = ["find", "PAY-12", "--role", "dev", "--force"]
-pending = "C"
 expect = { verdict = "pass", exit = 0, flow = "continues" }

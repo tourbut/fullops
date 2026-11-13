@@ -1,6 +1,9 @@
 name = "1.24.0에서 옮겨 온 requires_packet만 패킷을 요구한다"
 origin = "설계 12.2절 P6"
 
+[setup]
+roles = { dev = "worker", art = "worker" }
+
 # 준비: 필수 문서 여섯, 코드, 문서를 커밋한다
 [[step]]
 act = "file"
@@ -87,23 +90,24 @@ content = '''
 act = "commits"
 message = "시나리오 파일"
 
-# 준비: 1.24.0 기록에서 옮겨 온 route. `route`(C)가 합쳐지면 `lead_routes`의 재분류로 바꾼다
+# 준비: 1.24.0이 남긴 route 기록. requires_packet이 켜져 있다
 [[step]]
 act = "file"
-path = ".fullops-squad/routes/OLD-1.json"
-content = "{\"v\": 1, \"key\": \"OLD-1\", \"class\": \"direct\", \"role\": \"dev\", \"deliverables\": [], \"origin\": \"user\", \"decided_by\": \"manual\", \"reason\": \"\", \"created_at\": 1794500000, \"requires_packet\": true, \"history\": []}\n"
+path = ".fullops-squad/docs/evaluations/jev/OLD-1-route.json"
+content = "{\"requires_packet\": true}\n"
 
-[[step]]
-act = "file"
-path = ".fullops-squad/routes/NEW-2.json"
-content = "{\"v\": 1, \"key\": \"NEW-2\", \"class\": \"direct\", \"role\": \"dev\", \"deliverables\": [], \"origin\": \"user\", \"decided_by\": \"manual\", \"reason\": \"\", \"created_at\": 1794500000, \"requires_packet\": false, \"history\": []}\n"
-
-# 다시 분류해도 requires_packet은 유지된다
+# 분류하면 켜져 있던 값만 옮겨 온다
 [[step]]
 act = "lead_routes"
 key = "OLD-1"
 role = "dev"
-pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+# 다시 분류해도 requires_packet은 유지된다
+[[step]]
+act = "runs_fullops"
+args = ["route", "OLD-1", "--request", "OLD-1 요청을 다시 분류한다", "--class", "direct", "--role", "dev", "--force"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
 
 [[step]]
 act = "runs_fullops"
@@ -111,59 +115,46 @@ args = ["packet", "check", "OLD-1", "--role", "dev"]
 expect = { verdict = "deny", rule = "J-17", flow = "stopped", escape = "packet build" }
 
 [[step]]
+act = "lead_writes_task"
+key = "OLD-1"
+role = "dev"
+goal = "결제 재시도 버튼"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "edits_file"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "- [ ] 구체적 작업과 수정할 파일"
+new = """
+- [ ] `retry`의 중복 클릭을 막는다
+  * [ ] 테스트를 더한다"""
+
+# 패킷 없이 배정한다. 거절 문구에 걸린 J 규칙이 있다
+[[step]]
 act = "lead_dispatches"
 key = "OLD-1"
 role = "dev"
-pending = "C"
-expect = { verdict = "deny", rule = "D-12", flow = "stopped" }
+expect = { verdict = "deny", rule = "D-12", flow = "stopped", escape = "J-17" }
 
 # 새 키는 패킷을 요구하지 않는다
 [[step]]
+act = "lead_routes"
+key = "NEW-2"
+role = "art"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
 act = "runs_fullops"
-args = ["packet", "check", "NEW-2", "--role", "dev"]
+args = ["packet", "check", "NEW-2", "--role", "art"]
 expect = { verdict = "pass", exit = 0, flow = "continues" }
 
 [[step]]
 act = "lead_dispatches"
 key = "NEW-2"
-role = "dev"
-pending = "C"
-expect = { verdict = "pass" }
+role = "art"
+expect = { verdict = "pass", flow = "continues" }
 
 # 패킷을 만들면 J-17에 안 걸린다
-[[step]]
-act = "file"
-path = ".fullops-squad/handovers/to_dev.md"
-content = '''
----
-id: handover-dev
-title: OLD-1 — 결제 재시도 버튼
-status: draft
-updated: 2026-11-14
-owner: dev
-summary: 결제 재시도 버튼
-key: OLD-1
-role: dev
-goal: 결제 재시도 버튼
-base: 0000000000000000000000000000000000000000
-route: direct
-from: lead
-round: 0
-budget: 2
-test_level: lite
-parallel: on
----
-# OLD-1 — 결제 재시도 버튼
-
-## 해야 할 일과 파일 소유권
-
-- [ ] `retry`의 중복 클릭을 막는다
-  * [ ] 테스트를 더한다
-
-## 완료 보고
-
-'''
-
 [[step]]
 act = "runs_fullops"
 args = ["packet", "build", "OLD-1", "--role", "dev", "--write-inbox"]
@@ -173,3 +164,9 @@ expect = { verdict = "pass", exit = 0, flow = "continues" }
 act = "runs_fullops"
 args = ["packet", "check", "OLD-1", "--role", "dev"]
 expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "lead_dispatches"
+key = "OLD-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }

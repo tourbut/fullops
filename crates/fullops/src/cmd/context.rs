@@ -1,8 +1,8 @@
 //! `fullops context`: 후보 문서를 분류해 worker가 먼저 읽을 목록을 줄인다(설계 8.14절). 추천이고 제외도 추천일 뿐이다(묶음 J).
 
 use super::find::{
-    Jev, add_usage, ask, error_word, ids, jev_curl, jev_env, load_task, no_usage, noul,
-    path_refusal, prior, repo_path, same_head, shown,
+    Jev, add_usage, ask, error_word, ids, jev_env, load_task, no_usage, noul, path_refusal, prior,
+    repo_path, same_head, shown,
 };
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
@@ -11,7 +11,7 @@ use fullops_core::explore::{
     Signal,
 };
 use fullops_core::model::{EXPLORE_V, RoleId, TaskKey, sha256_hex};
-use fullops_ext::{Git, GitCli, Judge, Question, QuestionKind};
+use fullops_ext::{Git, GitCli, JevCurl, Judge, Question, QuestionKind};
 use fullops_store::Repo;
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -387,8 +387,9 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     }
     let repo = ctx.repo()?;
     let git = GitCli::cli(repo.root.clone());
-    let jev = jev_env(repo, env_file.as_deref());
-    let (path, result, reused) = execute(repo, &git, &jev_curl(), &jev, &key, &role, &context)?;
+    let judge = JevCurl::at(&repo.root, env_file);
+    let (path, result, reused) =
+        execute(repo, &git, &judge, &jev_env(&judge), &key, &role, &context)?;
     let path = shown(repo, &path);
     ctx.print(
         &report(&result, &path),

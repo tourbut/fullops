@@ -303,6 +303,15 @@ fn is_word(c: char) -> bool {
 
 /// `word`가 낱말로(앞뒤가 낱말 글자가 아니게) 들어 있는가.
 fn has_word(text: &str, word: &str) -> bool {
+    bounded(text, word, is_word)
+}
+
+/// 산출물 ID가 글에 나오는가. 한글 조사가 바로 붙는 글("D05를")에서도 찾게 앞뒤의 ASCII 영숫자만 낱말 글자로 본다.
+fn mentions(text: &str, id: &str) -> bool {
+    bounded(text, id, |c| c.is_ascii_alphanumeric())
+}
+
+fn bounded(text: &str, word: &str, is_word: fn(char) -> bool) -> bool {
     !word.is_empty()
         && text.match_indices(word).any(|(at, _)| {
             !text[..at].chars().next_back().is_some_and(is_word)
@@ -1226,7 +1235,7 @@ pub fn build_packet_from(input: &PacketInput, template: &str) -> Result<Packet, 
             if update {
                 let category = PacketCategory::DocumentUpdate;
                 items.add(source, category, "deliverable update", found, Some(&row.id));
-            } else if items.map.contains_key(source) || has_word(&authored_text, &row.id) {
+            } else if items.map.contains_key(source) || mentions(&authored_text, &row.id) {
                 let category = PacketCategory::DocumentRead;
                 let reason = "deliverable reference";
                 items.add(source, category, reason, found, Some(&row.id));
