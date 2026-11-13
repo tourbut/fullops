@@ -42,6 +42,7 @@ fullops dispatch <KEY> [--role <역할>] [--purpose build|fix|review|research] [
 4. 결과를 확인하지 못했다고 나오면 같은 명령을 다시 실행한다. 같은 요청 ID로 결과를 받으므로 worker가 두 번 뜨지 않는다. Orca가 실패 영수증을 냈으면 Orca의 `next`를 읽고 정한다. 다른 CLI나 호스트로 자동 전환하지 않는다.
 5. 한도로 worker가 끝났으면 같은 모델을 기다렸다가 `fullops dispatch <KEY> --reason limit`으로 다시 배정한다. 과제당 2회까지이고 3회째는 결정이 열려 사용자에게 올라간다. 다른 모델로 바꾸는 재배정은 거절된다.
 6. 출력된 다음 할 일을 따른다. "턴을 끝내면 Orca가 깨운다"가 나오면 턴을 끝낸다.
+7. worker가 도중에 끊겼으면(터미널 종료 등) 다시 배정하기 전에 그 역할의 워크트리를 살린다: `fullops task recover --role <역할> --key <KEY> --repo <역할 워크트리>`. 미커밋 변경을 WIP 커밋으로 보존하고 기본 브랜치를 반영한다. 충돌하면 병합을 물리고 종료 코드 3으로 끝나므로 사람이 정한다.
 
 ## 대기
 

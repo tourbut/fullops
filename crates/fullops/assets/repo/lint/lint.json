@@ -19,8 +19,7 @@
     "**/pnpm-lock.yaml",
     ".fullops-squad/handovers/**",
     ".fullops-squad/contexts/**",
-    ".fullops-squad/docs/evaluations/**",
-    ".fullops-squad/board/**"
+    ".fullops-squad/docs/evaluations/**"
   ],
   "rules": [
     {

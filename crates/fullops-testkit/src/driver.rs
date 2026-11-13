@@ -15,6 +15,7 @@ pub struct Verb {
     pub name: &'static str,
     /// 인자. `?`가 붙은 것은 생략할 수 있다. `who`의 기본값은 `lead`다.
     /// hook과 CLI를 부르는 동사는 모두 `env?`(환경 변수 표)를 더 받는다.
+    /// hook을 부르는 동사는 `hook_args?`(등록 문자열에 더 붙는 인자. 예: `["--plugin-root", "../pkg"]`)도 받는다.
     pub args: &'static str,
     /// `rs` 구동기가 하는 일.
     pub rs: &'static str,
@@ -160,6 +161,8 @@ pub struct Driver {
     runs: BTreeMap<String, String>,
     /// 세션 ID → 마지막 사용자 입력. agy가 모든 이벤트에 싣는다.
     prompts: BTreeMap<String, String>,
+    /// 지금 단계의 `hook_args`.
+    hook_args: Vec<String>,
     seq: u32,
 }
 
@@ -210,6 +213,7 @@ impl Driver {
             dispatched: Vec::new(),
             runs: BTreeMap::new(),
             prompts: BTreeMap::new(),
+            hook_args: Vec::new(),
             seq: 0,
         }
     }
@@ -256,6 +260,7 @@ impl Driver {
         };
         let args: Vec<String> = std::iter::once("hook".to_string())
             .chain(call.args)
+            .chain(self.hook_args.iter().cloned())
             .collect();
         let run = self.fullops(who, &args, env, call.input.to_string().as_bytes());
         StepResult::hook(act, &self.host, &run)
@@ -675,6 +680,7 @@ impl Driver {
         let who = step.str("who").unwrap_or("lead");
         let session = step.str("session");
         let env = env_of_step(step);
+        self.hook_args = step.list("hook_args");
         let flag = |name: &str| step.args.get(name).and_then(|v| v.as_bool()) == Some(true);
         // 각본 규칙: 단계의 인자를 그대로 규칙으로 쓴다
         let rule = || -> Result<Value, String> {

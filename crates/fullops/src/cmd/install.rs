@@ -61,6 +61,15 @@ fn old_bin_name(at: i64) -> String {
     format!("fullops.old-{at}{}", std::env::consts::EXE_SUFFIX)
 }
 
+/// 옛 실행본을 옮겨 둘 빈 자리. 같은 초에 두 번 바꿔도 실행 중일 수 있는 옛 파일을 덮지 않게 시각을 올려 찾는다.
+fn old_bin_path(bin_dir: &Path) -> PathBuf {
+    let now = fullops_store::now();
+    (now..now + 60)
+        .map(|at| bin_dir.join(old_bin_name(at)))
+        .find(|path| !path.exists())
+        .unwrap_or_else(|| bin_dir.join(old_bin_name(now)))
+}
+
 fn same_file(a: &Path, b: &Path) -> bool {
     matches!((std::fs::canonicalize(a), std::fs::canonicalize(b)), (Ok(a), Ok(b)) if a == b)
 }
@@ -105,7 +114,7 @@ pub fn runtime_stage(plugin_root: Option<&Path>) -> io::Result<Runtime> {
         std::fs::create_dir_all(bin_dir)?;
         let new = bin_dir.join(format!("fullops.new-{}", std::process::id()));
         std::fs::copy(&source, &new)?;
-        let old = bin_dir.join(old_bin_name(fullops_store::now()));
+        let old = old_bin_path(bin_dir);
         swap_in(&new, &fixed, &old).inspect_err(|_| {
             let _ = std::fs::remove_file(&new);
         })?;
@@ -215,7 +224,7 @@ fn folder_sha256(dir: &Path) -> io::Result<String> {
     Ok(sha256_hex(&all))
 }
 
-/// 스킬 명령의 `--skill` 뒤 이름들(`*`는 개별 이름을 알 수 없다).
+/// 스킬 명령의 `--skill` 뒤 이름들. `*`도 그대로 돌려준다.
 fn skill_names(step: &Step) -> Vec<&str> {
     step.argv
         .iter()
@@ -223,28 +232,50 @@ fn skill_names(step: &Step) -> Vec<&str> {
         .skip(1)
         .take_while(|a| !a.starts_with("--"))
         .map(String::as_str)
-        .filter(|name| *name != "*")
+        .collect()
+}
+
+/// 스킬 폴더 `root` 아래에서 이 명령이 덮어쓸 수 있는 폴더들.
+fn skills_at_risk(root: &Path, names: &[&str]) -> Vec<PathBuf> {
+    if !names.contains(&"*") {
+        return names.iter().map(|name| root.join(name)).collect();
+    }
+    // `*` 묶음은 어떤 스킬을 덮어쓸지 알 수 없어 있는 스킬을 모두 남긴다(1.24.0과 같다)
+    std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|dir| dir.join("SKILL.md").is_file())
         .collect()
 }
 
 /// 다시 설치하기 전에 있던 스킬 폴더를 `~/.fullops/skill-backups/<호스트>/<이름>/<앞 12자>/`에 한 번만 복사한다.
 fn backup_skills(step: &Step) -> io::Result<()> {
     let backups = fullops_home()?.join("skill-backups");
+    let names = skill_names(step);
     for &host in &step.hosts {
-        for name in skill_names(step) {
-            for root in hosts::skill_roots(host) {
-                let dir = root.join(name);
-                if !dir.is_dir() {
+        for root in hosts::skill_roots(host) {
+            for dir in skills_at_risk(&root, &names) {
+                let Some(name) = dir.file_name().filter(|_| dir.is_dir()) else {
                     continue;
-                }
+                };
                 let hash = folder_sha256(&dir)?;
                 let target = backups
                     .join(host.as_str())
                     .join(name)
                     .join(hash.get(..12).unwrap_or(&hash));
-                if !target.exists() {
-                    copy_tree(&dir, &target)?;
+                if target.exists() {
+                    continue;
                 }
+                // 반쯤 복사된 폴더가 온전한 백업으로 보이지 않게 새 폴더에 복사한 뒤 이름을 바꾼다
+                let staging = target.with_extension(format!("new-{}", std::process::id()));
+                let _ = std::fs::remove_dir_all(&staging);
+                copy_tree(&dir, &staging)
+                    .and_then(|()| std::fs::rename(&staging, &target))
+                    .inspect_err(|_| {
+                        let _ = std::fs::remove_dir_all(&staging);
+                    })?;
             }
         }
     }
@@ -477,9 +508,15 @@ fn install(ctx: &Ctx, args: &Args) -> Result<u8, CliError> {
     if wants("runtime") {
         let fixed = fixed_bin()?;
         if args.dry_run {
+            let home = fullops_home()?;
             lines.push(format!(
-                "[runtime] 실행본과 deps.toml 복사 → {}",
-                fixed.display()
+                "[runtime] 실행본과 deps.toml 복사 → {}, {}",
+                fixed.display(),
+                home.join("deps.toml").display()
+            ));
+            lines.push(format!(
+                "[runtime] 쓰기: {}",
+                home.join("install.json").display()
             ));
         } else {
             let done = runtime_stage(root)
@@ -553,6 +590,20 @@ fn install(ctx: &Ctx, args: &Args) -> Result<u8, CliError> {
         if !skills.is_empty() && !have_skill_cli {
             ctx.note(&msg::skill_cli_missing(skill_cli));
         }
+        // 사용자 홈에 쓰는 나머지 자리도 계획에 낸다(있던 스킬의 백업과 설치 기록)
+        if network {
+            let home = fullops_home()?;
+            if !skills.is_empty() && have_skill_cli {
+                lines.push(format!(
+                    "[skills] 있던 스킬 폴더의 백업 → {}",
+                    home.join("skill-backups").display()
+                ));
+            }
+            lines.push(format!(
+                "[기록] 쓰기: {}",
+                home.join("deps-state.json").display()
+            ));
+        }
         ctx.print(
             &format!("계획(실행하지 않는다):\n{}", lines.join("\n")),
             json!({ "dry_run": true, "plan": plan_json }),
@@ -599,21 +650,18 @@ fn install(ctx: &Ctx, args: &Args) -> Result<u8, CliError> {
     } else {
         for step in &skills {
             ctx.note(&format!("[skills] {}", step.what));
-            let out = match backup_skills(step) {
-                Ok(()) => hosts::run_step(step, INSTALL_TIMEOUT),
-                Err(e) => {
-                    ctx.note(&format!("스킬 백업 실패: {e}"));
-                    hosts::run_step(step, INSTALL_TIMEOUT)
-                }
+            // 백업하지 못한 스킬은 덮어쓰지 않는다(사용자가 고친 스킬을 잃지 않게 한다)
+            let detail = match backup_skills(step).map(|()| hosts::run_step(step, INSTALL_TIMEOUT))
+            {
+                Ok(out) if out.ok() => continue,
+                Ok(out) => tail3(&out.stderr_text()),
+                Err(e) => format!("있던 스킬을 백업하지 못해 설치하지 않았다: {e}"),
             };
-            if !out.ok() {
-                let detail = tail3(&out.stderr_text());
-                for &host in &step.hosts {
-                    let run = runner.run_mut(host);
-                    run.failed.push(step.what.clone());
-                    if !detail.is_empty() {
-                        run.detail.push(format!("{}\n{detail}", step.what));
-                    }
+            for &host in &step.hosts {
+                let run = runner.run_mut(host);
+                run.failed.push(step.what.clone());
+                if !detail.is_empty() {
+                    run.detail.push(format!("{}\n{detail}", step.what));
                 }
             }
         }
@@ -875,11 +923,7 @@ fn rollback(ctx: &Ctx) -> Result<u8, CliError> {
         return Err(CliError::Internal("되돌릴 옛 실행본이 없습니다.".into()));
     };
     // 지금 실행본을 옛 파일 자리로 옮기고 가장 최근 옛 파일을 제자리에 둔다
-    swap_in(
-        &old,
-        &fixed,
-        &bin_dir.join(old_bin_name(fullops_store::now())),
-    )?;
+    swap_in(&old, &fixed, &old_bin_path(&bin_dir))?;
     let record_path = home.join("install.json");
     let mut record: Value = fullops_store::read_json(&record_path)
         .yes()
@@ -917,6 +961,12 @@ fn remove_hooks(ctx: &Ctx) -> Result<u8, CliError> {
 
 pub fn run(ctx: &Ctx, parser: lexopt::Parser) -> Result<u8, CliError> {
     let args = parse_args(parser)?;
+    // 지우거나 되돌리는 인자는 --dry-run·--check를 보지 않으므로 함께 주면 거절한다
+    if (args.remove_hooks || args.prune || args.rollback) && (args.dry_run || args.check) {
+        return Err(CliError::Usage(
+            "--prune·--rollback·--remove-hooks는 --dry-run·--check와 함께 쓰지 않습니다(미리 보기가 없습니다).".into(),
+        ));
+    }
     if args.remove_hooks {
         remove_hooks(ctx)
     } else if args.prune {

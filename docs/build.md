@@ -46,7 +46,7 @@ cargo xtask dist [--root <폴더>] [--target <타깃>]... [--prebuilt <폴더>] 
 | `bin/fullops.exe`, `bin/fullops-darwin-arm64`, `bin/fullops-darwin-x64`, `bin/fullops-linux-x64` | 타깃별 릴리스 바이너리 |
 | `deps.toml`, `INSTALL.md`, `releases/*.md`, `VERSION`, `LICENSE` | `plugin/deps.toml`, `plugin/INSTALL.md`, `crates/fullops/assets/releases/`, 워크스페이스 버전, 저장소 루트의 `LICENSE`(있을 때) |
 
-끝에 G4를 검사한다. 두 배포 폴더에서 `.py`·`.js`·`.cjs`·`.mjs`를 찾아 `skills/fullops-motion/render.mjs` 밖의 것이 있으면 실패한다.
+끝에 G4를 검사한다. 두 배포 폴더에서 `.py`·`.js`·`.cjs`·`.mjs`를 찾아 `skills/fullops-motion/render.mjs` 밖의 것이 있으면 실패한다. 검사 대상은 두 배포 폴더뿐이다. Orca 패널(`panel/`)은 hook·CLI와 따로 배포하는 Orca 플러그인이라 배포 폴더에 복사하지 않으므로 그 안의 `.mjs`·`.js`는 이 검사에 걸리지 않는다. 시나리오 구동기(`scenarios/drivers/py_driver.py`)도 배포 폴더에 들어가지 않는다.
 
 ### 타깃별 바이너리
 
@@ -100,4 +100,4 @@ cargo xtask dist [--root <폴더>] [--target <타깃>]... [--prebuilt <폴더>] 
 
 ## 유통
 
-바이너리의 유통 방식과 서명, 마켓플레이스 출처는 사람이 정한다(`docs/design.md` 17절 H3). 출처가 정해지면 `plugin/deps.toml`의 `[self].source`만 바꾼다. `dist/`는 `xtask dist`의 생성물이고 개발 브랜치에는 커밋하지 않는다.
+바이너리의 유통 방식과 서명, 마켓플레이스 출처는 사람이 정한다(`docs/design.md` 17절 H3). 출처가 정해지면 `plugin/deps.toml`의 `[self].source`만 바꾼다. `dist/`는 `xtask dist`의 생성물이고 개발 브랜치에는 커밋하지 않는다(저장소 `.gitignore`의 `/dist/`). 마켓플레이스 카탈로그 둘은 `./dist/native/fullops`를 가리키므로, 배포본을 저장소로 유통하기로 정하면 배포 브랜치에서는 그 줄을 빼거나 `git add -f dist`로 싣는다.

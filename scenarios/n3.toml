@@ -7,7 +7,7 @@ roles = { dev = "worker", architecture = "design" }
 # Python판(1.24.0)을 쓰던 레포로 만든다: 새 표식을 지우고 fullops.json과 라우팅 기준을 둔다
 [[step]]
 act = "git"
-args = ["rm", "-q", ".fullops-squad/fullops.toml"]
+args = ["rm", "-q", "--ignore-unmatch", ".fullops-squad/fullops.toml"]
 [[step]]
 act = "file"
 path = ".fullops-squad/fullops.json"
@@ -67,11 +67,11 @@ expect = { verdict = "pass", exit = 0, escape = "읽지 못한 표식 줄" }
 [[step]]
 act = "commits"
 message = "fullops로 전환"
-# 판정 확인: 전환한 레포에서는 새 판의 hook이 판정한다(T-01은 묶음 B의 규칙이다)
+# 판정 확인: 전환한 레포에서는 새 판의 hook만 판정한다(T-01). Python판은 자기 표식이 없어 통과를 낸다(`py`는 py 구동기의 판정이다)
 [[step]]
 act = "runs_shell"
 command = "orca orchestration worker-start --spec \"A-1 구현\""
-pending = "B"
+py = "pass"
 expect = { verdict = "deny", rule = "T-01" }
 # 이미 전환한 레포에서 다시 실행하면 거절한다
 [[step]]
@@ -88,8 +88,9 @@ expect = { verdict = "pass", exit = 0, escape = "D001" }
 [[step]]
 act = "commits"
 message = "Python판으로 되돌림"
-# 되돌린 레포에서는 새 판의 hook이 판정하지 않는다. Python판의 판정은 py 구동기가 같은 레포에서 확인한다(묶음 G)
+# 되돌린 레포에서는 새 판의 hook이 판정하지 않고 Python판이 바로 판정한다(py 구동기가 같은 순서로 전환·되돌린 레포에서 돌린다)
 [[step]]
 act = "runs_shell"
 command = "orca orchestration worker-start --spec \"A-1 구현\""
+py = "deny"
 expect = { verdict = "pass", flow = "continues" }

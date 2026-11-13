@@ -127,6 +127,11 @@ fn q1_dry_run_plans_four_hosts_without_touching_anything() {
         "[grok] 조립: ",
         "[grok] grok plugin install ",
         "[grok] 쓰기: ",
+        // 사용자 홈에 쓰는 자리는 모두 계획에 나온다
+        "[runtime] 실행본과 deps.toml 복사 → ",
+        "[runtime] 쓰기: ",
+        "[skills] 있던 스킬 폴더의 백업 → ",
+        "[기록] 쓰기: ",
         "[agy] 조립: ",
         "[agy] agy plugin install ",
         "[skills] npx --yes skills@latest add JuliusBrussee/caveman --skill caveman --global --agent claude-code codex grok antigravity-cli --yes",
@@ -355,6 +360,12 @@ fn q5_no_trust_no_npx_and_single_backup() {
     let kept = std::fs::read_to_string(copies[0].path().join("SKILL.md")).unwrap();
     assert!(kept.contains("사용자가 고친 스킬"));
     assert_eq!(copies[0].file_name().to_string_lossy().len(), 12);
+    // `*` 묶음의 대상 호스트(Codex)는 스킬 폴더에 있던 스킬을 모두 한 번씩 남긴다. 반쯤 복사한 폴더는 남지 않는다
+    let own = driver.sb.home.join(".fullops/skill-backups/codex/my-own");
+    let copies: Vec<_> = std::fs::read_dir(&own).unwrap().flatten().collect();
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    let kept = std::fs::read_to_string(copies[0].path().join("SKILL.md")).unwrap();
+    assert!(kept.contains("사용자가 만든 스킬"));
 }
 
 #[test]
@@ -415,13 +426,91 @@ fn q10_remove_hooks_deletes_only_the_fullops_file() {
     assert_eq!(count(&calls, "grok plugin install "), 1);
 }
 
-/// N2: 실행 중인 hook이 있어도 실행본을 바꿀 수 있고, 그 hook은 옛 실행본으로 끝까지 돈다.
+/// 고정 위치 폴더의 옛 실행본들.
+fn old_bins(fixed: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(fixed.parent().unwrap())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("fullops.old-"))
+        .map(|e| e.path())
+        .collect()
+}
+
+/// 고정 위치의 실행본을 직접 돌린다. 방금 바꿔 넣은 실행 파일은 백신이 잠깐 잡고 있을 수 있어 몇 번 다시 띄운다.
+fn run_fixed(
+    sb: &fullops_testkit::Sandbox,
+    fixed: &Path,
+    cwd: &Path,
+    args: &[&str],
+    stdin: &[u8],
+) -> std::process::Output {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut cmd = sb.command(fixed, cwd);
+    cmd.args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let mut child = (0..50)
+        .find_map(|_| {
+            cmd.spawn()
+                .inspect_err(|_| std::thread::sleep(std::time::Duration::from_millis(200)))
+                .ok()
+        })
+        .expect("고정 위치 실행본을 띄우지 못했다");
+    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+/// N2: 플러그인 갱신 뒤의 SessionStart가 실행본을 스스로 올리고(S-04), 실행 중인 hook이 있어도 실행본을 바꿀 수 있으며,
+/// 그 hook은 옛 실행본으로 끝까지 돈다.
 #[test]
 fn n2_runtime_swap_while_a_hook_is_running() {
     let (driver, _) = play("n2");
     let sb = &driver.sb;
     let fixed = fixed_bin(&driver);
     let lead = sb.path("lead");
+    let pkg = sb.root.join("pkg");
+    let record = || json(&sb.home.join(".fullops/install.json"));
+    let start = |sid: &str| serde_json::json!({"hook_event_name": "SessionStart", "session_id": sid, "cwd": lead, "source": "startup"});
+    let plugin_root = pkg.to_string_lossy().into_owned();
+
+    // S-04: 통합 패키지의 VERSION(2.0.1)이 기록(2.0.0)보다 높은 SessionStart가 실행본 단계를 한다.
+    // 시나리오의 단계가 이미 했으면 이 호출은 아무것도 바꾸지 않는다. 패키지에는 실제 실행본을 둔다
+    // (hook이 실행본 단계를 플러그인 루트의 실행본에 맡기든 직접 하든 결과가 같아야 한다)
+    if cfg!(windows) {
+        std::fs::copy(fullops_testkit::bin("fullops"), pkg.join("bin/fullops.exe")).unwrap();
+    }
+    // 방금 복사한 실행 파일은 백신이 잠깐 잡고 있을 수 있다. 그때 S-04는 조용히 실패하므로(hook은 통과) 새 세션으로 다시 본다
+    for attempt in 0..20 {
+        let sid = format!("sid-n2-a{attempt}");
+        let auto = sb.hook(
+            &["claude", "--plugin-root", &plugin_root],
+            &lead,
+            &start(&sid),
+        );
+        assert_eq!(auto.code, Some(0), "{}", auto.stderr);
+        assert!(auto.stdout.trim_start().starts_with('{'), "{}", auto.stdout);
+        // 등록 타임아웃(SessionStart 10초) 안에 끝난다. 다른 빌드가 도는 PC라 넉넉히 본다
+        eprintln!("S-04를 실은 SessionStart hook: {}ms", auto.ms);
+        assert!(auto.ms < 10_000, "S-04가 너무 오래 걸렸다: {}ms", auto.ms);
+        if record()["version"] == "2.0.1" {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    assert_eq!(record()["version"], "2.0.1");
+    assert_eq!(record()["previous"], "2.0.0");
+    assert_eq!(old_bins(&fixed).len(), 1);
+    // 버전이 같아진 뒤의 SessionStart는 다시 바꾸지 않는다
+    let again = sb.hook(
+        &["claude", "--plugin-root", &plugin_root],
+        &lead,
+        &start("sid-n2-b"),
+    );
+    assert_eq!(again.code, Some(0), "{}", again.stderr);
+    assert_eq!(old_bins(&fixed).len(), 1);
+
     let before = std::fs::read(&fixed).unwrap();
     // 고정 위치의 실행본으로 hook 하나를 띄워 stdin을 열어 둔다(입력을 기다리는 동안 실행 중이다)
     let mut hook = sb.command(&fixed, &lead);
@@ -437,8 +526,8 @@ fn n2_runtime_swap_while_a_hook_is_running() {
                 .ok()
         })
         .expect("고정 위치 실행본을 띄우지 못했다");
-    // 플러그인이 갱신됐다: 새 VERSION의 통합 패키지에서 실행본 단계를 다시 한다
-    sb.write(&sb.root.join("pkg/VERSION"), "2.0.1\n");
+    // 플러그인이 또 갱신됐다: 새 VERSION의 통합 패키지에서 실행본 단계를 사람이 다시 한다
+    sb.write(&pkg.join("VERSION"), "2.0.2\n");
     let swapped = sb.fullops(
         &lead,
         &["install", "--only", "runtime"],
@@ -446,14 +535,11 @@ fn n2_runtime_swap_while_a_hook_is_running() {
         b"",
     );
     assert_eq!(swapped.code, Some(0), "{}", swapped.stderr);
-    // 옛 실행본은 이름만 바뀌어 남았다
-    let olds: Vec<_> = std::fs::read_dir(fixed.parent().unwrap())
-        .unwrap()
-        .flatten()
-        .filter(|e| e.file_name().to_string_lossy().starts_with("fullops.old-"))
-        .collect();
-    assert_eq!(olds.len(), 1);
-    assert_eq!(std::fs::read(olds[0].path()).unwrap(), before);
+    eprintln!("install --only runtime: {}ms", swapped.ms);
+    // 옛 실행본은 이름만 바뀌어 남았다(같은 초에 바꿔도 앞의 옛 파일을 덮지 않는다)
+    let olds = old_bins(&fixed);
+    assert_eq!(olds.len(), 2);
+    assert!(olds.iter().all(|old| std::fs::read(old).unwrap() == before));
     // 실행 중이던 hook은 옛 실행본으로 끝까지 돌아 통과를 낸다
     use std::io::Write;
     let event = serde_json::json!({"hook_event_name": "Stop", "session_id": "sid-n2", "cwd": lead});
@@ -471,15 +557,30 @@ fn n2_runtime_swap_while_a_hook_is_running() {
             .starts_with('{')
     );
     // 다음 호출부터 새 실행본이다
-    let record = json(&sb.home.join(".fullops/install.json"));
-    assert_eq!(record["version"], "2.0.1");
-    assert_eq!(record["previous"], "2.0.0");
-    let version = {
-        let mut cmd = sb.command(&fixed, &lead);
-        cmd.arg("--version");
-        sb.run(cmd, b"")
-    };
-    assert_eq!(version.code, Some(0));
+    assert_eq!(record()["version"], "2.0.2");
+    assert_eq!(record()["previous"], "2.0.1");
+    let version = run_fixed(sb, &fixed, &lead, &["--version"], b"");
+    assert_eq!(version.status.code(), Some(0));
+
+    // Codex처럼 고정 위치 실행본이 hook을 받는 경우: 실행 중인 자기 자신을 S-04가 바꾼다(Windows도 실행 중인 exe의 이름은 바꿀 수 있다)
+    sb.write(&pkg.join("VERSION"), "2.0.3\n");
+    let own = run_fixed(
+        sb,
+        &fixed,
+        &lead,
+        &["hook", "codex", "--plugin-root", &plugin_root],
+        start("sid-n2-c").to_string().as_bytes(),
+    );
+    assert_eq!(own.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&own.stdout)
+            .trim_start()
+            .starts_with('{')
+    );
+    assert_eq!(record()["version"], "2.0.3");
+    assert_eq!(old_bins(&fixed).len(), 3);
+    assert!(fixed.is_file());
+
     // --rollback은 가장 최근 옛 파일로 되돌린다
     let back = sb.fullops(
         &lead,
@@ -488,11 +589,19 @@ fn n2_runtime_swap_while_a_hook_is_running() {
         b"",
     );
     assert_eq!(back.code, Some(0), "{}", back.stderr);
-    assert_eq!(
-        json(&sb.home.join(".fullops/install.json"))["version"],
-        "2.0.0"
-    );
+    assert_eq!(record()["version"], "2.0.2");
     assert_eq!(std::fs::read(&fixed).unwrap(), before);
+    // 지우거나 되돌리는 인자에는 미리 보기가 없다: --dry-run과 함께 주면 아무것도 하지 않고 거절한다
+    for args in [
+        ["install", "--prune", "--dry-run"],
+        ["install", "--rollback", "--dry-run"],
+        ["install", "--remove-hooks", "--check"],
+    ] {
+        let refused = sb.fullops(&lead, &args, &[("PATH", "../bin")], b"");
+        assert_eq!(refused.code, Some(1), "{args:?}: {}", refused.stderr);
+    }
+    assert_eq!(old_bins(&fixed).len(), 3);
+    assert_eq!(record()["version"], "2.0.2");
 }
 
 fn all_files(dir: &Path) -> Vec<String> {

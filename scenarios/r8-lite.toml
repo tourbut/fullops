@@ -7,7 +7,7 @@ roles = { dev = "worker", architecture = "design" }
 # Python판(1.24.0)을 쓰던 레포로 만든다: 새 표식을 지우고 fullops.json과 라우팅 기준을 둔다
 [[step]]
 act = "git"
-args = ["rm", "-q", ".fullops-squad/fullops.toml"]
+args = ["rm", "-q", "--ignore-unmatch", ".fullops-squad/fullops.toml"]
 [[step]]
 act = "file"
 path = ".fullops-squad/fullops.json"

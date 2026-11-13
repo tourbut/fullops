@@ -284,7 +284,8 @@ fn py_baseline(runs: usize) -> Result<Option<Value>, String> {
     for name in ["fake-curl", "fake-host"] {
         bin(name);
     }
-    let out = Command::new(if cfg!(windows) { "python" } else { "python3" })
+    let python = crate::compare::python().ok_or("python을 PATH에서 찾지 못했습니다")?;
+    let out = Command::new(python)
         .args(["-X", "utf8", "-B"])
         .arg(workspace().join("scenarios/drivers/py_driver.py"))
         .args(["--bench", &runs.to_string()])

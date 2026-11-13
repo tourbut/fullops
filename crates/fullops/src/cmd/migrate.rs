@@ -789,7 +789,8 @@ pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
     }
     match (python, back) {
         (true, false) => from_python(ctx, dry_run),
-        (false, true) => rollback(ctx),
+        // 되돌리기에는 미리 보기가 없다. --dry-run을 함께 주면 실행하지 않고 사용법을 낸다
+        (false, true) if !dry_run => rollback(ctx),
         _ => Err(CliError::Usage(
             "사용법: fullops migrate --from-python [--dry-run] | fullops migrate --rollback".into(),
         )),

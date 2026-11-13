@@ -116,13 +116,21 @@ fn run_rs(scenario: &Scenario) -> Ran {
     }
 }
 
+/// py 구동기를 돌릴 Python. 이름만으로 띄우지 않고 PATH에서 찾은 전체 경로를 쓴다.
+pub fn python() -> Option<PathBuf> {
+    fullops_ext::hosts::find_program(if cfg!(windows) { "python" } else { "python3" })
+}
+
 fn run_py(file: &Path, scenario: &Scenario, baseline: &str) -> Ran {
-    let python = if cfg!(windows) { "python" } else { "python3" };
+    let Some(python) = python() else {
+        return failed(scenario, "python을 PATH에서 찾지 못했습니다".into());
+    };
     let fakes = bin("fake-orca");
-    for name in ["fake-curl", "fake-host"] {
+    // fullops는 py 구동기가 `migrate` 단계를 실제로 돌릴 때 쓴다
+    for name in ["fake-curl", "fake-host", "fullops"] {
         bin(name);
     }
-    let out = Command::new(python)
+    let out = Command::new(&python)
         .args(["-X", "utf8", "-B"])
         .arg(workspace().join("scenarios/drivers/py_driver.py"))
         .arg(file)
@@ -131,7 +139,7 @@ fn run_py(file: &Path, scenario: &Scenario, baseline: &str) -> Ran {
         .output();
     let out = match out {
         Ok(out) => out,
-        Err(e) => return failed(scenario, format!("{python}을 실행하지 못했습니다: {e}")),
+        Err(e) => return failed(scenario, format!("python을 실행하지 못했습니다: {e}")),
     };
     let parsed: Value = serde_json::from_slice(&out.stdout).unwrap_or(Value::Null);
     let Some(steps) = parsed["steps"].as_array() else {
@@ -210,12 +218,15 @@ fn flow_verb(act: &str) -> bool {
 
 /// 단계 하나의 결과 칸. 설계 12.4절: 판정 종류와 흐름이 같거나, 다르면 12.3절에 근거가 있어야 한다.
 /// 흐름 동사는 1.24.0에서 hook 거부이고 새 판에서 CLI 거절일 수 있어 흐름(이어짐·멈춤)만 견준다(12.1절).
+/// 근거는 그 단계의 `df = "DF-n"`이다. `stepwise`(그 파일에 `df`를 적은 단계가 있다)가 거짓이면
+/// 시나리오 ID의 12.2절 행에 있는 DF로 가린다(행 단위라 같은 행의 다른 차이도 함께 가려진다).
 fn classify(
     step: &Step,
     py: Option<&Out>,
     rs: &Out,
     row: Option<&Row>,
     known: &[String],
+    stepwise: bool,
 ) -> String {
     let wrong = if rs.note.is_empty() || rs.verdict == "pending" {
         String::new()
@@ -236,6 +247,13 @@ fn classify(
     if same {
         return format!("같음{wrong}");
     }
+    if let Some(df) = step.str("df") {
+        return if known.iter().any(|k| k == df) {
+            format!("의도한 차이({df}){wrong}")
+        } else {
+            format!("회귀({df}는 12.3절에 없다){wrong}")
+        };
+    }
     // 1.24.0은 caveman 스킬이 없으면 세션 시작마다 경고를 낸다. 새 판은 내지 않는다
     if step.act == "session_starts" && py.verdict == "warn" && rs.flow() == "continues" {
         return format!("의도한 차이(DF-12){wrong}");
@@ -245,10 +263,14 @@ fn classify(
     };
     let named: Vec<String> = dfs(&row.text)
         .into_iter()
-        .filter(|df| known.contains(df))
+        .filter(|df| !stepwise && known.contains(df))
         .collect();
     if !named.is_empty() {
-        format!("의도한 차이({}){wrong}", named.join("·"))
+        format!(
+            "의도한 차이(12.2절 {} 행: {}){wrong}",
+            row.id,
+            named.join("·")
+        )
     } else if row.text.contains("더 나음") {
         format!("의도한 차이(12.2절 {}: 더 나음){wrong}", row.id)
     } else if row.baseline == "-" {
@@ -314,7 +336,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
     let mut pending: BTreeMap<String, usize> = BTreeMap::new();
     let mut covered = Vec::new();
     let mut flows = String::new();
-    let mut wrong = 0;
+    let (mut wrong, mut coarse) = (0, 0);
+    let mut broken = Vec::new();
     for file in &files {
         let stem = file
             .file_stem()
@@ -329,16 +352,29 @@ pub fn run(args: &[String]) -> Result<(), String> {
         let rs = std::panic::catch_unwind(|| run_rs(&scenario))
             .unwrap_or_else(|_| failed(&scenario, "rs 구동기가 죽었습니다".into()));
         let py = baseline.as_deref().map(|b| run_py(file, &scenario, b));
+        // py 구동기가 끝까지 돌지 못한 시나리오는 견준 것이 아니다. 12.2절 행의 `-`에 가려지지 않게 따로 센다
+        let crashed = py.as_ref().and_then(|py| py.steps.first());
+        if let Some(why) = crashed.map(|step| &step.note).filter(|n| !n.is_empty()) {
+            broken.push(format!("{stem}({why})"));
+        }
+        let stepwise = scenario.steps.iter().any(|s| s.str("df").is_some());
         for (n, step) in scenario.steps.iter().enumerate() {
             let rs_out = &rs.steps[n];
             let py_out = py.as_ref().and_then(|py| py.steps.get(n));
-            let result = classify(step, py_out, rs_out, row, &known);
+            let mut result = classify(step, py_out, rs_out, row, &known, stepwise);
+            // 단계의 `py`는 py 구동기가 내야 하는 판정이다(전환·되돌린 레포에서 1.24.0이 내는 것. N3)
+            if let (Some(want), Some(got)) = (step.str("py"), py_out)
+                && got.verdict != want
+            {
+                let _ = write!(result, " · py 기대와 다름({want}가 아니라 {})", got.verdict);
+            }
             let kind = ["같음", "의도한 차이", "기준선 없음", "보류", "회귀"]
                 .into_iter()
                 .find(|kind| result.starts_with(kind))
                 .unwrap_or("회귀");
             *counts.entry(kind).or_default() += 1;
-            wrong += usize::from(result.contains("rs 기대와 다름"));
+            wrong += usize::from(result.contains("기대와 다름"));
+            coarse += usize::from(result.contains(" 행: "));
             if let Some(bundle) = &step.pending {
                 *pending.entry(bundle.clone()).or_default() += 1;
             }
@@ -390,13 +426,15 @@ pub fn run(args: &[String]) -> Result<(), String> {
          - 시나리오 {}개, 단계 {}개.\n\
          - 기준선(py 구동기): {}.\n\
          - 견주는 것: hook 동사는 판정 종류, 흐름 동사(`lead_*`·`worker_*`)는 흐름(이어짐·멈춤). 문구와 파일 바이트는 견주지 않는다.\n\
-         - 결과 칸: `같음`, `의도한 차이`(설계 12.3절의 DF나 12.2절의 \"더 나음\"이 그 시나리오 ID의 행에 있다), `기준선 없음`(1.24.0에 대응이 없거나 12.2절의 1.24.0 칸이 `-`다), `보류`(`pending`), `회귀`(그 밖의 차이).\n\n\
+         - 결과 칸: `같음`, `의도한 차이`(그 단계에 적은 `df`가 설계 12.3절에 있다. `df`를 적은 단계가 하나도 없는 시나리오 파일은 그 ID의 12.2절 행에 있는 DF로 가리고 \"행:\"이라고 적는다. 12.2절 행의 \"더 나음\"도 여기 든다), `기준선 없음`(1.24.0에 대응이 없거나 12.2절의 1.24.0 칸이 `-`다), `보류`(`pending`), `회귀`(그 밖의 차이).\n\
+         - 단계의 `py`는 py 구동기가 내야 하는 판정이다. 다르면 결과 칸에 `py 기대와 다름`이 붙고 기대와 다른 단계로 센다.\n\n\
          ## 합격 점검 (설계 12.4절)\n\n\
          | 항목 | 값 | 판정 |\n|---|---|---|\n\
          | 회귀 | {}건 | {} |\n\
-         | rs가 시나리오의 기대와 다른 단계 | {wrong}건 | {} |\n\
+         | 시나리오의 기대와 다른 단계(rs의 `expect`, py의 `py`) | {wrong}건 | {} |\n\
          | 남은 `pending` | {held}건{} | {} |\n\
-         | 시나리오 파일이 없는 12.2절 ID | {}개 | {} |\n\n",
+         | 시나리오 파일이 없는 12.2절 ID | {}개 | {} |\n\
+         | py 구동기가 끝까지 돌지 못한 시나리오 | {}개 | {} |\n\n",
         files.len(),
         counts.values().sum::<usize>(),
         if baseline.is_some() {
@@ -415,13 +453,22 @@ pub fn run(args: &[String]) -> Result<(), String> {
         mark(held == 0),
         missing.len(),
         mark(missing.is_empty()),
+        broken.len(),
+        mark(broken.is_empty()),
     );
+    if !broken.is_empty() {
+        let _ = writeln!(
+            report,
+            "py 구동기가 끝까지 돌지 못한 시나리오(그 단계들은 견주지 못했다): {}.\n",
+            broken.join(", ")
+        );
+    }
     if !missing.is_empty() {
         let _ = writeln!(report, "시나리오 파일이 없는 ID: {}.\n", missing.join(", "));
     }
     let _ = write!(
         report,
-        "같음 {}건, 의도한 차이 {}건, 기준선 없음 {}건, 보류 {}건, 회귀 {}건.\n\n\
+        "같음 {}건, 의도한 차이 {}건(그 가운데 12.2절 행 단위로 가린 것 {coarse}건. 단계에 `df`를 적으면 단계 단위가 된다), 기준선 없음 {}건, 보류 {}건, 회귀 {}건.\n\n\
          ## 끝까지 간 정도\n\n\
          사람 입력 없이 병합된 과제 수는 통합 기준 ref에 들어간 `<KEY> 구현` 커밋의 키 수이고, lead가 받은 차단 수는 lead가 한 단계 가운데 판정이 차단·거부인 것이다. \
          K4의 합격은 병합된 과제 수가 py 이상이고 차단 수가 py 이하인 것이다. rs 칸의 `-`는 보류 단계가 남아 아직 셀 수 없다는 뜻이다.\n\n\
@@ -436,13 +483,17 @@ pub fn run(args: &[String]) -> Result<(), String> {
     );
     std::fs::write(&out, report).map_err(|e| format!("{}: {e}", out.display()))?;
     println!(
-        "{}: 회귀 {}건, rs 기대와 다름 {wrong}건, pending {held}건, 시나리오 없는 ID {}개",
+        "{}: 회귀 {}건, 기대와 다름 {wrong}건, pending {held}건, 시나리오 없는 ID {}개, py 구동기 실패 {}개",
         out.display(),
         count("회귀"),
-        missing.len()
+        missing.len(),
+        broken.len()
     );
-    if count("회귀") + wrong > 0 {
-        return Err("회귀나 기대와 다른 단계가 있습니다. 보고서를 확인하세요.".into());
+    if count("회귀") + wrong + broken.len() > 0 {
+        return Err(
+            "회귀, 기대와 다른 단계, py 구동기가 끝까지 돌지 못한 시나리오 가운데 하나가 있습니다. 보고서를 확인하세요."
+                .into(),
+        );
     }
     Ok(())
 }
@@ -479,15 +530,27 @@ mod tests {
         assert!(known.contains(&"DF-1".to_string()) && known.contains(&"DF-24".to_string()));
 
         let class = |act: &str, py: &str, rs: &str, id: &str| {
-            classify(&step(act), Some(&out(py)), &out(rs), row(id), &known)
+            classify(&step(act), Some(&out(py)), &out(rs), row(id), &known, false)
         };
         assert_eq!(class("runs_shell", "deny", "deny", "C1"), "같음");
         // 흐름 동사는 흐름만 견준다: hook 거부와 CLI 거절은 같은 결과다
         assert_eq!(class("lead_dispatches", "block", "deny", "D1"), "같음");
         assert_eq!(
             class("runs_shell", "pass", "deny", "C2"),
-            "의도한 차이(DF-1)"
+            "의도한 차이(12.2절 C2 행: DF-1)"
         );
+        // 단계의 `df`는 그 단계만 가린다. `df`를 쓰는 파일에서는 행의 DF가 다른 단계의 차이를 가리지 않는다
+        let stepwise = |df: Option<&str>| {
+            let mut step = step("runs_shell");
+            if let Some(df) = df {
+                step.args.insert("df".into(), df.into());
+            }
+            let (py, rs) = (out("pass"), out("deny"));
+            classify(&step, Some(&py), &rs, row("C2"), &known, true)
+        };
+        assert_eq!(stepwise(Some("DF-1")), "의도한 차이(DF-1)");
+        assert_eq!(stepwise(Some("DF-99")), "회귀(DF-99는 12.3절에 없다)");
+        assert_eq!(stepwise(None), "회귀");
         assert_eq!(
             class("session_starts", "warn", "context", "B1"),
             "의도한 차이(DF-12)"
@@ -504,7 +567,7 @@ mod tests {
             ..out("pending")
         };
         assert_eq!(
-            classify(&step("lead_plans"), None, &held, None, &known),
+            classify(&step("lead_plans"), None, &held, None, &known, false),
             "보류(묶음 C)"
         );
     }

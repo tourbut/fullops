@@ -28,6 +28,9 @@ stdout에 JSON 하나를 낸다. 시나리오는 {"name", "steps": [{"act", "ver
 - lead_waits: `orca_wait.py --run …`(가짜 Orca는 기다리지 않으므로 확인 주기를 0.001분으로 준다).
 - lead_merges: `integration.py status`로 SHA를 찾고 `review.py need`, 기본 브랜치 병합, push, 역할 워크트리 동기화, PLANS.md 기록.
 - runs_fullops, worker의 하위 배정이 아닌 `fullops` 전용 인자: 1.24.0에 대응이 없다. 판정 "n/a"로 적는다.
+  단 `raw`인 `fullops migrate …`는 FULLOPS_FAKES 폴더의 새 판 실행본으로 실제로 돌린다(판정은 그대로 "n/a").
+  전환·되돌린 레포에서 1.24.0의 hook이 무엇을 내는지 뒤 단계가 보게 하려는 것이다(N3).
+- 단계의 `df`(그 단계의 차이를 설명하는 12.3절 ID)와 `py`(이 구동기가 내야 하는 판정)는 `xtask compare`가 읽는다. 이 구동기는 보지 않는다.
 - 준비 동사(file, git, commits, orca_replies, orca_sends, host_replies, curl_replies, fakes): rs 구동기와 같다.
 에이전트가 실행하는 명령은 실제 흐름처럼 셸 도구의 PreToolUse hook과 PostToolUse hook 사이에서 실행한다.
 가짜 Orca는 사실대로 답해야 하므로, 배정한 worker의 `worker-list` 응답은 구동기가 각본 규칙 하나로 유지한다.
@@ -674,6 +677,9 @@ class Driver:
         if act == 'lead_merges':
             return self.lead_merges(act, req('key'))
         if act == 'runs_fullops':
+            # migrate는 레포의 판을 바꾸는 일이다. 새 판 실행본으로 실제로 돌려, 뒤 단계가 전환·되돌린 레포에서 1.24.0의 판정을 받게 한다(N3)
+            if step.get('raw') and req('args')[:1] == ['migrate']:
+                self.run([self.fakes / f'fullops{EXE}', *step['args']], self.dir(who), self.env(who, env))
             raise Unsupported('1.24.0에는 `fullops` 명령이 없다')
         raise ValueError(f'모르는 동사입니다: {act}')
 

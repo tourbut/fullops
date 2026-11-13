@@ -68,7 +68,7 @@ worker는 지시서의 완료 기준을 채울 때까지 진행 보고나 승인
 | `off` | 하위 에이전트와 하위 worker를 쓰지 않고 직접 처리한다 |
 | `read` | 읽기 전용 조사·리뷰에만 쓴다. 지시에 `Purpose: research` 또는 `Purpose: review`와 `read only`를 적는다 |
 | `on`(기본) | 서로 겹치지 않는 파일 묶음의 구현과 독립된 조사를 하위 에이전트로 동시에 진행한다. 한 번에 4개 이하로 시작한다 |
-| `ultra` | `on`에 더해 Claude Code에서 울트라코드가 켜져 있으면 조각이 많은 일을 Workflow로 조율한다. 울트라코드는 사용자가 켠다 |
+| `ultra` | `on`에 더해 Claude Code에서 울트라코드가 켜져 있으면 조각이 많은 일을 Workflow로 조율한다. 켜져 있지 않으면 `Agent` 도구를 쓴다. 울트라코드는 사용자가 켠다(지시서나 spec에 키워드를 넣어 켜지 않는다). `fullops dispatch`가 새 터미널로 띄운 Claude Code worker는 울트라코드로 뜨고, 그 worker의 권한 모드가 auto나 bypass가 아니면 Workflow 실행마다 승인 창에서 멈춘다 |
 
 수단은 일의 모양으로 고른다.
 
