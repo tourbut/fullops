@@ -1,0 +1,20 @@
+{
+  "hookEventName": "stop",
+  "hook_event_name": "Stop",
+  "sessionId": "0193a000-0000-7000-8000-000000000001",
+  "session_id": "0193a000-0000-7000-8000-000000000001",
+  "transcriptPath": "/home/dev/.grok/sessions/0193a000-0000-7000-8000-000000000001/transcript.jsonl",
+  "transcript_path": "/home/dev/.grok/sessions/0193a000-0000-7000-8000-000000000001/transcript.jsonl",
+  "cwd": "/home/dev/repo",
+  "workspaceRoot": "/home/dev/repo",
+  "permissionMode": "default",
+  "permission_mode": "default",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "reason": "shutdown",
+  "stopHookActive": false,
+  "stop_hook_active": false,
+  "lastAssistantMessage": "",
+  "last_assistant_message": "",
+  "backgroundTasks": [],
+  "sessionCrons": []
+}

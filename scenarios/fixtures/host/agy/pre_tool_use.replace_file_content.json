@@ -1,0 +1,19 @@
+{
+  "toolCall": {
+    "name": "replace_file_content",
+    "args": {
+      "TargetFile": "/home/dev/repo/.fullops-squad/handovers/to_dev.md",
+      "TargetContent": "상태: 대기",
+      "ReplacementContent": "상태: 진행"
+    }
+  },
+  "stepIdx": 21,
+  "conversationId": "ec33ebf9-0cba-4100-8142-c61503f6c587",
+  "workspacePaths": [
+    "/home/dev/repo"
+  ],
+  "transcriptPath": "/home/dev/.gemini/antigravity-cli/brain/ec33ebf9-0cba-4100-8142-c61503f6c587/.system_generated/logs/transcript.jsonl",
+  "artifactDirectoryPath": "/home/dev/.gemini/antigravity-cli/brain/ec33ebf9-0cba-4100-8142-c61503f6c587",
+  "modelName": "auto",
+  "lastUserInput": "결제 재시도 버튼을 추가해 줘."
+}

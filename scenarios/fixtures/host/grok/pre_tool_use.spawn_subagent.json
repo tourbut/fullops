@@ -1,0 +1,30 @@
+{
+  "hookEventName": "pre_tool_use",
+  "hook_event_name": "PreToolUse",
+  "sessionId": "0193a000-0000-7000-8000-000000000001",
+  "session_id": "0193a000-0000-7000-8000-000000000001",
+  "transcriptPath": "/home/dev/.grok/sessions/0193a000-0000-7000-8000-000000000001/transcript.jsonl",
+  "transcript_path": "/home/dev/.grok/sessions/0193a000-0000-7000-8000-000000000001/transcript.jsonl",
+  "cwd": "/home/dev/repo",
+  "workspaceRoot": "/home/dev/repo",
+  "permissionMode": "default",
+  "permission_mode": "default",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "toolName": "spawn_subagent",
+  "tool_name": "spawn_subagent",
+  "toolInput": {
+    "prompt": "결제 모듈에서 재시도 로직이 있는 곳을 찾아 요약해 줘.",
+    "description": "재시도 로직 조사",
+    "run_in_background": true,
+    "isolation": "none"
+  },
+  "tool_input": {
+    "prompt": "결제 모듈에서 재시도 로직이 있는 곳을 찾아 요약해 줘.",
+    "description": "재시도 로직 조사",
+    "run_in_background": true,
+    "isolation": "none"
+  },
+  "toolUseId": "call_00000000000000000000000001",
+  "tool_use_id": "call_00000000000000000000000001",
+  "toolInputTruncated": false
+}
