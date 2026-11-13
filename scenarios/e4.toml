@@ -1,0 +1,56 @@
+name = "lead는 design 과제의 타 역할 지시서를 직접 고치지 못한다"
+origin = "설계 12.2절 E4"
+
+[setup]
+roles = { dev = "worker", architecture = "design" }
+
+[[step]]
+act = "file"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: design\nfrom: architecture\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
+
+[[step]]
+act = "edits_file"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고"
+new = "## 추가 지시\n\n## 완료 보고"
+expect = { verdict = "deny", rule = "T-06", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "file"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: design\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
+
+[[step]]
+act = "edits_file"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고"
+new = "## 추가 지시\n\n## 완료 보고"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "file"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: architecture\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
+
+[[step]]
+act = "edits_file"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고"
+new = "## 추가 지시\n\n## 완료 보고"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_routes"
+key = "D-1"
+role = "architecture"
+class = "design"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "D-1"
+role = "dev"
+pending = "C"
+expect = { verdict = "deny", rule = "H-02", flow = "stopped" }

@@ -1,0 +1,20 @@
+name = "PowerShell의 호출 연산자와 역슬래시 경로로 부른 worker-start를 알아본다"
+origin = "설계 12.2절 C3 (DF-5)"
+
+[[step]]
+act = "runs_shell"
+dialect = "powershell"
+command = "& \"C:\\Program Files\\Orca\\orca.exe\" orchestration worker-start --run run_1 --spec x"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "runs_shell"
+dialect = "powershell"
+command = "$orca = 'C:\\tools\\orca.exe'; & $orca orchestration worker-start --spec x"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+dialect = "powershell"
+command = "Write-Output \"orca orchestration worker-start\""
+expect = { verdict = "pass", flow = "continues" }

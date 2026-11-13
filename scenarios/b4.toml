@@ -1,0 +1,54 @@
+name = "detached HEAD 세션과 리뷰 snapshot 세션에는 역할 규칙을 적용하지 않는다"
+origin = "설계 12.2절 B4 (DF-4)"
+
+[setup]
+roles = { dev = "worker" }
+
+[[step]]
+act = "git"
+who = "dev"
+args = ["checkout", "-q", "--detach"]
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues", escape = "역할 규칙이 적용되지 않는다" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = "src/a.py"
+content = "print(1)\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+pending = "C"
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "snapshot", "A-1"]
+pending = "E"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "session_starts"
+who = ".fullops-review-A-1"
+pending = "E"
+expect = { verdict = "context", flow = "continues", escape = "읽기 전용 리뷰 사본" }

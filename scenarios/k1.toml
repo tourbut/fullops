@@ -1,0 +1,33 @@
+name = "준비된 행이 있으면 lead의 종료를 한 번 막고 다음 턴 끝에 다시 막는다"
+origin = "설계 12.2절 K1"
+
+[[step]]
+act = "file"
+path = ".fullops-squad/PLANS.md"
+content = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n| A-1 | 결제 재시도 | DEV | 대기 | 사용자 지시 11-13 |\n\n## 위임 범위\n\n"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "A-1" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-07", flow = "stopped", escape = "fullops task new" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "warn", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+text = "계속해 줘"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-07", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }

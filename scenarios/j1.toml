@@ -1,0 +1,47 @@
+# 다른 묶음의 명령이 만드는 state.json과 세션 기록에 기대는 단계는 pending이다.
+# 같은 규칙의 걸림·안 걸림은 crates/fullops/tests/hook.rs가 저장 계층으로 상태를 만들어 지금 확인한다.
+name = "미통합 완료 보고: 어디에도 없으면 막고, 로컬 기본에만 있으면 막고, 원격에 있으면 통과한다"
+origin = "설계 12.2절 J1"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_waits"
+ack = ["msg_1"]
+no_wait = true
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+pending = "C"
+expect = { verdict = "block", rule = "X-06", flow = "stopped", escape = "fullops merge" }
+
+[[step]]
+act = "git"
+args = ["merge", "-q", "--no-edit", "fullops/dev"]
+pending = "C"
+
+[[step]]
+act = "stops"
+pending = "C"
+expect = { verdict = "block", flow = "stopped", escape = "X-06" }
+
+[[step]]
+act = "git"
+args = ["push", "-q", "origin", "main"]
+pending = "C"
+
+[[step]]
+act = "stops"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }

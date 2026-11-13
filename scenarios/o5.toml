@@ -1,0 +1,67 @@
+# 세션 파일 쓰기 0회와 turns.jsonl의 줄 수는 crates/fullops/tests/hook.rs가 본다.
+name = "agy는 프롬프트 이벤트 없이 dispatch를 묶고 턴을 센다"
+origin = "설계 12.2절 O5"
+
+[setup]
+host = "agy"
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-show"]
+stdout = { ok = true, result = { dispatchId = "ctx_9", taskId = "task_9", runId = "run_9", terminal = "term_9", state = "ready", stage = "input_accepted", liveness = "live" } }
+
+[[step]]
+act = "preamble_arrives"
+who = "dev"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "ls"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "ls"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "ls"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-03", flow = "stopped", escape = "fullops done" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+who = "dev"
+text = "계속해 줘"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-03", flow = "stopped" }
+
+[[step]]
+act = "user_prompts"
+text = "결제 재시도 버튼을 추가해 줘"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+command = "ls"
+expect = { verdict = "pass", flow = "continues" }

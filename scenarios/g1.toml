@@ -1,0 +1,76 @@
+name = "worker가 코드를 바꾸고 lint 없이 끝내면 한 번 막는다"
+origin = "설계 12.2절 G1"
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = "src/a.py"
+content = "print(1)\n"
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-01", flow = "stopped", escape = "fullops lint" }
+
+[[step]]
+act = "commits"
+who = "dev"
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-01", flow = "stopped", escape = "fullops lint" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "warn", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+who = "dev"
+text = "계속해 줘"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-01", flow = "stopped" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+session = "2"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = "docs/notes.md"
+content = "메모\n"
+
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/handovers/logs/A-1.dev.r0.md"
+content = "# 기록\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+
+[[step]]
+act = "stops"
+who = "dev"
+session = "2"
+expect = { verdict = "pass", flow = "continues" }

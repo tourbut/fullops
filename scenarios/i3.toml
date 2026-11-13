@@ -1,0 +1,84 @@
+# 다른 묶음의 명령이 만드는 state.json과 세션 기록에 기대는 단계는 pending이다.
+# 같은 규칙의 걸림·안 걸림은 crates/fullops/tests/hook.rs가 저장 계층으로 상태를 만들어 지금 확인한다.
+name = "worker 실행 중인 lead의 종료: 백그라운드 대기가 세션을 깨우지 않는 호스트 (Codex)"
+origin = "설계 12.2절 I3 (DF-15)"
+
+[setup]
+host = "codex"
+
+[[step]]
+act = "session_starts"
+env = { ORCA_AGENT_SESSION_ID = "term_lead" }
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "A-1"
+role = "dev"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "run-create"]
+times = 1
+stdout = { ok = true, result = { runId = "run_1", objective = "fullops" } }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-start"]
+times = 1
+stdout = { ok = true, result = { dispatchId = "ctx_1", taskId = "task_1", runId = "run_1", state = "ready", agent = "claude", terminal = "term_1" } }
+
+[[step]]
+act = "runs_fullops"
+env = { ORCA_AGENT_SESSION_ID = "term_lead" }
+args = ["dispatch", "A-1", "--role", "dev"]
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+env = { ORCA_AGENT_SESSION_ID = "term_lead" }
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "session_starts"
+session = "2"
+
+[[step]]
+act = "stops"
+session = "2"
+pending = "C"
+expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "fullops wait --run" }
+
+[[step]]
+act = "stops"
+session = "2"
+pending = "C"
+expect = { verdict = "warn", flow = "continues" }
+
+[[step]]
+act = "runs_fullops"
+session = "2"
+args = ["wait", "--run", "run_1", "--max-minutes", "0"]
+pending = "C"
+
+[[step]]
+act = "user_prompts"
+session = "2"
+text = "다음"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+session = "2"
+pending = "C"
+expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "fullops wait --run" }

@@ -1,12 +1,17 @@
 //! 규칙 표(설계 7.5절). 이 표가 판정 규칙의 정본이고 표 순서가 평가 순서다.
-//! 뼈대에서는 모든 `check`가 `Finding::None`이다. 묶음 B가 `check`와 `decide`를 채운다.
+//! `check`는 이벤트별 파일에, 평가 순서와 판정 조립은 `decide.rs`에, 한 호출의 문맥은 `call.rs`에 있다.
 //! 표(`RULES`)의 ID·이벤트·대상·강도·탈출구는 동결돼 있고 설계 7.5절의 표와 시험으로 대조한다.
 
+mod call;
+mod decide;
 mod failure;
 mod prompt;
 mod session;
 mod stop;
 mod tool;
+
+pub use call::{NO_SESSION, Scene};
+pub use decide::{decide, decide_in};
 
 use crate::facts::Facts;
 use crate::messages::MsgId;
@@ -265,11 +270,27 @@ pub struct Outcome {
     pub trace: Vec<RuleTrace>,
 }
 
-/// 이벤트 하나를 판정한다. 뼈대에서는 모든 규칙이 걸리지 않아 항상 통과다.
-pub fn decide(_input: &HookInput, _facts: &mut dyn Facts) -> Outcome {
-    Outcome {
-        verdict: Verdict::Pass,
-        effects: Vec::new(),
-        trace: Vec::new(),
+/// 경우를 나누지 않는 규칙의 걸림.
+pub(crate) fn hit(fp: impl Into<String>, args: Vec<String>) -> Finding {
+    hit_case(fp, args, "")
+}
+
+pub(crate) fn hit_case(fp: impl Into<String>, args: Vec<String>, case: &'static str) -> Finding {
+    Finding::Hit {
+        fp: fp.into(),
+        args,
+        case,
+        always: false,
     }
 }
+
+/// 사실을 읽지 못하면 그 규칙은 걸리지 않은 것으로 본다(`Finding::Unknown`).
+macro_rules! known {
+    ($e:expr) => {
+        match $e {
+            crate::model::Known::Yes(value) => value,
+            crate::model::Known::Unknown(_) => return crate::rules::Finding::Unknown,
+        }
+    };
+}
+pub(crate) use known;

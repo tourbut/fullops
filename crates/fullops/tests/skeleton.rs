@@ -56,8 +56,8 @@ fn at(mut input: Value, cwd: &Path) -> Value {
 fn hook_passes_every_input_on_every_host() {
     let sb = Sandbox::with(&Setup::default());
     let plain = sb.init_repo("plain");
-    // 활성 레포(주 체크아웃, 역할 워크트리), 비활성 레포, Git 레포가 아닌 폴더
-    let places = [sb.path("lead"), sb.path("dev"), plain, sb.home.clone()];
+    // 비활성 레포와 Git 레포가 아닌 폴더. 활성 레포에서의 판정은 묶음 B의 시험(tests/hook.rs)이 본다
+    let places = [plain, sb.home.clone()];
     let junk: Vec<Vec<u8>> = vec![
         Vec::new(),
         b"{ \"hook_event_name\": ".to_vec(),
@@ -140,7 +140,7 @@ fn hook_passes_every_input_on_every_host() {
             }
         }
     }
-    assert!(checked > 300, "돌린 입력 수: {checked}");
+    assert!(checked > 200, "돌린 입력 수: {checked}");
 
     let stop = at(
         fixtures("claude")
@@ -208,14 +208,15 @@ fn hook_passes_every_input_on_every_host() {
     let bare = sb.fullops(&sb.path("lead"), &[], &[], stop.as_bytes());
     assert_eq!((bare.stdout.as_str(), bare.code), ("", Some(0)));
     assert!(bare.stderr.contains("사용법") && bare.stderr.contains("hook <claude|codex|grok|agy>"));
-    // 깨진 설정에서도 뼈대의 hook은 죽지 않는다(정책 오류의 차단은 묶음 B가 규칙으로 넣는다)
+    // 깨진 설정에서도 hook은 죽지 않고 JSON 객체 하나를 낸다(정책 오류의 차단 X-00은 tests/hook.rs가 본다)
     sb.write(
         &sb.path("lead").join(".fullops-squad/fullops.toml"),
         "schema = = 2",
     );
     for host in HOSTS {
         let run = sb.fullops(&sb.path("lead"), &["hook", host], &[], stop.as_bytes());
-        assert_eq!((run.stdout.as_str(), run.code), ("{}", Some(0)), "{host}");
+        let out: Value = serde_json::from_str(&run.stdout).unwrap();
+        assert!(out.is_object() && run.code == Some(0), "{host}");
     }
 }
 
@@ -413,7 +414,6 @@ fn cli_follows_common_contract() {
         "env",
         "gc",
         "status",
-        "why",
         "mode",
         "upgrade",
         "init",
@@ -474,11 +474,12 @@ fn cli_follows_common_contract() {
                 .contains("정책 오류")
         );
         for recovery in [
-            "doctor", "mode", "init", "migrate", "upgrade", "status", "why", "install",
+            "doctor", "mode", "init", "migrate", "upgrade", "status", "install",
         ] {
             let run = sb.cli(&lead, &[recovery]);
             assert_ne!(run.code, Some(2), "{recovery}: {}", run.stderr);
         }
         assert_eq!(sb.cli(&lead, &["rules"]).code, Some(0));
+        assert_eq!(sb.cli(&lead, &["why"]).code, Some(0));
     }
 }

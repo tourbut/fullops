@@ -1,22 +1,61 @@
-//! Claude Code 어댑터(설계 7.2절 표의 `claude` 열). `pass`는 뼈대의 완성본이고 `decode`와 `encode`는 묶음 B가 채운다.
+//! Claude Code 어댑터(설계 7.2절 표의 `claude` 열).
 
-use super::{DecodeError, Host};
-use fullops_core::model::{EventKind, HookInput, HostId, Verdict};
+use super::{DecodeError, Host, decode_snake, edit_op, encode_claude, joined, text, tool};
+use fullops_core::model::{Dialect, EventKind, HookInput, HostId, ToolCall, ToolKind, Verdict};
+use serde_json::Value;
 
 pub struct Claude;
+
+fn tool_of(name: &str, args: &Value) -> ToolCall {
+    let shell = |dialect| ToolCall {
+        command: text(args, "command"),
+        ..tool(name, ToolKind::Shell(dialect))
+    };
+    match name {
+        "Bash" => shell(Dialect::Bash),
+        "PowerShell" => shell(Dialect::PowerShell),
+        "Write" => ToolCall {
+            file_path: text(args, "file_path"),
+            content: text(args, "content"),
+            ..tool(name, ToolKind::Write)
+        },
+        "Edit" => ToolCall {
+            file_path: text(args, "file_path"),
+            edits: edit_op(args, "old_string", "new_string")
+                .into_iter()
+                .collect(),
+            ..tool(name, ToolKind::Edit)
+        },
+        "MultiEdit" => ToolCall {
+            file_path: text(args, "file_path"),
+            edits: args["edits"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|e| edit_op(e, "old_string", "new_string"))
+                .collect(),
+            ..tool(name, ToolKind::Edit)
+        },
+        "Agent" | "Task" => ToolCall {
+            text: joined(args, &["prompt", "description"]),
+            ..tool(name, ToolKind::SubAgent)
+        },
+        "Workflow" => tool(name, ToolKind::Workflow),
+        _ => tool(name, ToolKind::Other),
+    }
+}
 
 impl Host for Claude {
     fn id(&self) -> HostId {
         HostId::Claude
     }
 
-    fn decode(&self, _raw: &[u8], _event_arg: Option<&str>) -> Result<HookInput, DecodeError> {
-        Err(DecodeError("unimplemented"))
+    fn decode(&self, raw: &[u8], event_arg: Option<&str>) -> Result<HookInput, DecodeError> {
+        decode_snake(raw, event_arg, tool_of).map(|(input, _)| input)
     }
 
-    // 뼈대: 어떤 판정이든 통과의 글을 낸다
-    fn encode(&self, _event: EventKind, _v: &Verdict) -> String {
-        super::EMPTY.to_string()
+    fn encode(&self, event: EventKind, v: &Verdict) -> String {
+        encode_claude(event, v, false)
     }
 
     /// 모든 이벤트에서 `{}`다.

@@ -1,0 +1,52 @@
+name = "표식 없는 레포에서는 다섯 이벤트가 모두 통과한다"
+origin = "설계 12.2절 A1"
+
+[[step]]
+act = "file"
+who = "plain"
+path = "README.md"
+content = "# 비활성 레포\n"
+
+[[step]]
+act = "git"
+who = "plain"
+args = ["init", "-q"]
+
+[[step]]
+act = "session_starts"
+who = "plain"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+who = "plain"
+text = "결제 버튼을 추가해 줘"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "plain"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "writes_file"
+who = "plain"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "# 직접 만든 인박스\n"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "plain"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "turn_fails"
+who = "plain"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "session_starts"
+who = "home"
+expect = { verdict = "pass", flow = "continues" }

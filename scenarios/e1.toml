@@ -1,0 +1,22 @@
+name = "인박스를 Write로 직접 만들지 못한다"
+origin = "설계 12.2절 E1 (DF-9)"
+
+[[step]]
+act = "writes_file"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
+expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops task new" }
+
+[[step]]
+act = "writes_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
+expect = { verdict = "deny", rule = "T-05", flow = "stopped" }
+
+[[step]]
+act = "lead_writes_task"
+key = "A-1"
+role = "dev"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }

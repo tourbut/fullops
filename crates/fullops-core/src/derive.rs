@@ -1,4 +1,4 @@
-//! 유도값(설계 6.6절). 저장하지 않고 계산한다. `changed`·`pass_covers`·`landing`의 순수 부분은 묶음 B가 여기에 더한다.
+//! 유도값(설계 6.6절). 저장하지 않고 계산한다. `changed`·`pass_covers`·`landing`의 git 호출은 `facts_real`이 하고 순수 부분만 여기에 둔다.
 
 use crate::model::{Plan, PlanStatus, RoleId, SnapshotState, Stage, State, TaskKey, WorkOutcome};
 use std::collections::BTreeSet;
@@ -72,4 +72,44 @@ pub fn ready(
         })
         .map(|row| row.key.clone())
         .collect()
+}
+
+/// 기록 경로(설계 6.6절 5번). `changed()`의 대상에서 항상 빼고, lint 통과 뒤의 기록 전용 커밋을 가릴 때 쓴다.
+pub const RECORD_PATHS: [&str; 5] = [
+    ".fullops-squad/handovers/",
+    ".fullops-squad/docs/evaluations/",
+    ".fullops-squad/routes/",
+    ".fullops-squad/reviews/",
+    ".fullops-squad/PLANS.md",
+];
+
+pub fn is_record_path(path: &str) -> bool {
+    RECORD_PATHS.iter().any(|record| path.starts_with(record))
+}
+
+/// `changed()`의 대상인가: 기록 경로가 아니고, 코드 파일이다(dev 직접 작업은 lint 제외에 안 걸리는 모든 파일).
+pub fn is_change_target(
+    path: &str,
+    code: &crate::model::CodeDef,
+    exclude: &globset::GlobSet,
+    direct_dev: bool,
+) -> bool {
+    if is_record_path(path) {
+        return false;
+    }
+    if direct_dev {
+        !exclude.is_match(path)
+    } else {
+        crate::config::is_code(path, code, exclude)
+    }
+}
+
+/// 통합 위치(설계 6.6절). `on_base`는 통합 기준 ref의 조상인가, `on_local`은 원격이 있을 때 `refs/heads/<base>`의 조상인가다.
+pub fn landing_of(on_base: bool, on_local: Option<bool>) -> crate::model::Landing {
+    use crate::model::Landing;
+    match (on_base, on_local) {
+        (true, _) => Landing::Landed,
+        (false, Some(true)) => Landing::PushLeft,
+        _ => Landing::MergeLeft,
+    }
 }

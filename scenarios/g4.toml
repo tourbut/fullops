@@ -1,0 +1,34 @@
+name = "dev 직접 작업은 lint 없이 끝낼 때마다 막는다"
+origin = "설계 12.2절 G4"
+
+[setup]
+mode = "dev"
+primary_role = "dev"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "dev 모드의 주 담당" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "file"
+path = "src/a.py"
+content = "print(1)\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-01", flow = "stopped", escape = "fullops lint" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-01", flow = "stopped" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-01", flow = "stopped" }

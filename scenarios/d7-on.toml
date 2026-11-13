@@ -1,0 +1,25 @@
+name = "병렬 방침 on에서는 형식 때문에 막히지 않는다"
+origin = "설계 12.2절 D7 (DF-22)"
+
+[setup]
+parallel = "on"
+
+[[step]]
+act = "spawns_subagent"
+prompt = "Purpose: research. Read only. 결제 모듈의 재시도 경로를 찾아 보고한다."
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "spawns_subagent"
+prompt = "결제 모듈의 재시도 경로를 찾아 보고한다."
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "spawns_subagent"
+who = "dev"
+prompt = "Purpose: research. Read only. Find the retry path and implement the fix."
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_workflow"
+expect = { verdict = "pass", flow = "continues" }

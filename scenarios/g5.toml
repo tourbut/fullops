@@ -1,0 +1,44 @@
+name = "dev 직접 작업의 큰 변경은 lint를 통과해도 리뷰나 면제 기록이 있어야 끝난다"
+origin = "설계 12.2절 G5"
+
+[setup]
+mode = "dev"
+primary_role = "dev"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "file"
+path = "src/big.py"
+content = "\"\"\"큰 변경.\"\"\"\nprint(0)\nprint(1)\nprint(2)\nprint(3)\nprint(4)\nprint(5)\nprint(6)\nprint(7)\nprint(8)\nprint(9)\nprint(10)\nprint(11)\nprint(12)\nprint(13)\nprint(14)\nprint(15)\nprint(16)\nprint(17)\nprint(18)\nprint(19)\nprint(20)\nprint(21)\nprint(22)\nprint(23)\nprint(24)\nprint(25)\nprint(26)\nprint(27)\nprint(28)\nprint(29)\nprint(30)\nprint(31)\nprint(32)\nprint(33)\nprint(34)\nprint(35)\nprint(36)\nprint(37)\nprint(38)\nprint(39)\nprint(40)\nprint(41)\nprint(42)\nprint(43)\nprint(44)\nprint(45)\nprint(46)\nprint(47)\nprint(48)\nprint(49)\nprint(50)\nprint(51)\nprint(52)\nprint(53)\nprint(54)\nprint(55)\nprint(56)\nprint(57)\nprint(58)\nprint(59)\nprint(60)\nprint(61)\nprint(62)\nprint(63)\nprint(64)\nprint(65)\nprint(66)\nprint(67)\nprint(68)\nprint(69)\nprint(70)\nprint(71)\nprint(72)\nprint(73)\nprint(74)\nprint(75)\nprint(76)\nprint(77)\nprint(78)\nprint(79)\nprint(80)\nprint(81)\nprint(82)\nprint(83)\nprint(84)\nprint(85)\nprint(86)\nprint(87)\nprint(88)\nprint(89)\nprint(90)\nprint(91)\nprint(92)\nprint(93)\nprint(94)\nprint(95)\nprint(96)\nprint(97)\nprint(98)\nprint(99)\nprint(100)\nprint(101)\nprint(102)\nprint(103)\nprint(104)\nprint(105)\nprint(106)\nprint(107)\nprint(108)\nprint(109)\nprint(110)\nprint(111)\nprint(112)\nprint(113)\nprint(114)\nprint(115)\nprint(116)\nprint(117)\nprint(118)\nprint(119)\nprint(120)\nprint(121)\nprint(122)\nprint(123)\nprint(124)\nprint(125)\nprint(126)\nprint(127)\nprint(128)\nprint(129)\nprint(130)\nprint(131)\nprint(132)\nprint(133)\nprint(134)\nprint(135)\nprint(136)\nprint(137)\nprint(138)\nprint(139)\nprint(140)\nprint(141)\nprint(142)\nprint(143)\nprint(144)\nprint(145)\nprint(146)\nprint(147)\nprint(148)\nprint(149)\nprint(150)\nprint(151)\nprint(152)\nprint(153)\nprint(154)\nprint(155)\nprint(156)\nprint(157)\nprint(158)\nprint(159)\nprint(160)\nprint(161)\nprint(162)\nprint(163)\nprint(164)\nprint(165)\nprint(166)\nprint(167)\nprint(168)\nprint(169)\nprint(170)\nprint(171)\nprint(172)\nprint(173)\nprint(174)\nprint(175)\nprint(176)\nprint(177)\nprint(178)\nprint(179)\nprint(180)\nprint(181)\nprint(182)\nprint(183)\nprint(184)\nprint(185)\nprint(186)\nprint(187)\nprint(188)\nprint(189)\nprint(190)\nprint(191)\nprint(192)\nprint(193)\nprint(194)\nprint(195)\nprint(196)\nprint(197)\nprint(198)\nprint(199)\nprint(200)\nprint(201)\nprint(202)\nprint(203)\nprint(204)\nprint(205)\nprint(206)\nprint(207)\nprint(208)\nprint(209)\nprint(210)\nprint(211)\nprint(212)\nprint(213)\nprint(214)\nprint(215)\nprint(216)\nprint(217)\nprint(218)\nprint(219)\nprint(220)\nprint(221)\nprint(222)\nprint(223)\nprint(224)\nprint(225)\nprint(226)\nprint(227)\nprint(228)\nprint(229)\nprint(230)\nprint(231)\nprint(232)\nprint(233)\nprint(234)\nprint(235)\nprint(236)\nprint(237)\nprint(238)\nprint(239)\nprint(240)\nprint(241)\nprint(242)\nprint(243)\nprint(244)\nprint(245)\nprint(246)\nprint(247)\nprint(248)\nprint(249)\nprint(250)\nprint(251)\nprint(252)\nprint(253)\nprint(254)\nprint(255)\nprint(256)\nprint(257)\nprint(258)\nprint(259)\nprint(260)\nprint(261)\nprint(262)\nprint(263)\nprint(264)\nprint(265)\nprint(266)\nprint(267)\nprint(268)\nprint(269)\nprint(270)\nprint(271)\nprint(272)\nprint(273)\nprint(274)\nprint(275)\nprint(276)\nprint(277)\nprint(278)\nprint(279)\nprint(280)\nprint(281)\nprint(282)\nprint(283)\nprint(284)\nprint(285)\nprint(286)\nprint(287)\nprint(288)\nprint(289)\nprint(290)\nprint(291)\nprint(292)\nprint(293)\nprint(294)\nprint(295)\nprint(296)\nprint(297)\nprint(298)\nprint(299)\nprint(300)\nprint(301)\nprint(302)\nprint(303)\nprint(304)\nprint(305)\nprint(306)\nprint(307)\nprint(308)\nprint(309)\nprint(310)\nprint(311)\nprint(312)\nprint(313)\nprint(314)\nprint(315)\nprint(316)\nprint(317)\nprint(318)\nprint(319)\nprint(320)\nprint(321)\nprint(322)\nprint(323)\nprint(324)\nprint(325)\nprint(326)\nprint(327)\nprint(328)\nprint(329)\nprint(330)\nprint(331)\nprint(332)\nprint(333)\nprint(334)\nprint(335)\nprint(336)\nprint(337)\nprint(338)\nprint(339)\nprint(340)\nprint(341)\nprint(342)\nprint(343)\nprint(344)\nprint(345)\nprint(346)\nprint(347)\nprint(348)\nprint(349)\nprint(350)\nprint(351)\nprint(352)\nprint(353)\nprint(354)\nprint(355)\nprint(356)\nprint(357)\nprint(358)\nprint(359)\nprint(360)\nprint(361)\nprint(362)\nprint(363)\nprint(364)\nprint(365)\nprint(366)\nprint(367)\nprint(368)\nprint(369)\nprint(370)\nprint(371)\nprint(372)\nprint(373)\nprint(374)\nprint(375)\nprint(376)\nprint(377)\nprint(378)\nprint(379)\nprint(380)\nprint(381)\nprint(382)\nprint(383)\nprint(384)\nprint(385)\nprint(386)\nprint(387)\nprint(388)\nprint(389)\nprint(390)\nprint(391)\nprint(392)\nprint(393)\nprint(394)\nprint(395)\nprint(396)\nprint(397)\nprint(398)\nprint(399)\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-01", flow = "stopped" }
+
+[[step]]
+act = "runs_fullops"
+args = ["lint"]
+pending = "D"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+pending = "D"
+expect = { verdict = "block", rule = "X-02", flow = "stopped", escape = "fullops review snapshot" }
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "waive", "DIRECT", "--reason", "긴급 수정"]
+pending = "E"
+expect = { verdict = "human", flow = "stopped" }
+
+[[step]]
+act = "stops"
+pending = "E"
+expect = { verdict = "pass", flow = "continues" }

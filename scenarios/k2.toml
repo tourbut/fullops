@@ -1,0 +1,42 @@
+name = "준비 조건을 하나씩 어긴 행은 준비된 행이 아니다"
+origin = "설계 12.2절 K2"
+
+[setup]
+roles = { dev = "worker", art = "worker" }
+
+[[step]]
+act = "file"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "---\nid: handover-dev\ntitle: Z-9\nstatus: draft\nkey: Z-9\nrole: dev\ngoal: Z-9 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# Z-9\n\n## 완료 보고\n"
+
+[[step]]
+act = "file"
+path = ".fullops-squad/PLANS.md"
+content = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n| B-1 | 상태가 보류 | art | 보류(범위 미정) | 사용자 지시 |\n| B-2 | 원천이 비었다 | art | 대기 |  |\n| B-3 | 담당 역할의 인박스가 있다 | dev | 대기 | 사용자 지시 |\n| B-4 | 선행 과제가 보고 전이다 | art | 대기 선행: B-1 | 사용자 지시 |\n| B-5 | 사람을 기다린다 | art | 대기(사람: 배포 승인) | 사용자 지시 |\n\n## 위임 범위\n\n"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_dispatches"
+key = "B-6"
+role = "art"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_plans"
+key = "B-6"
+role = "art"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }

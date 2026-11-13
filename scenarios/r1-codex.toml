@@ -1,0 +1,21 @@
+name = "Codex의 병렬 안내는 도구 이름이 spawn_agent다"
+origin = "설계 12.2절 R1 (DF-22)"
+
+[setup]
+parallel = "ultra"
+host = "codex"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "(`spawn_agent`)" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues", escape = "(`spawn_agent`)" }
+
+[[step]]
+act = "runs_fullops"
+args = ["status"]
+pending = "C"
+expect = { verdict = "pass", flow = "continues", escape = "(`spawn_agent`)" }

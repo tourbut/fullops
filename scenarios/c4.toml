@@ -1,0 +1,34 @@
+name = "terminal send: 지시서 경로는 주입, lead의 21자는 거부, 20자는 통과"
+origin = "설계 12.2절 C4"
+
+[[step]]
+act = "runs_shell"
+command = "orca terminal send --terminal term_1 --text \"handovers/to_dev.md 를 읽고 진행해 주세요\" --enter"
+expect = { verdict = "deny", rule = "T-02", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration dispatch --task task_1 --to term_1 --inject"
+expect = { verdict = "deny", rule = "T-02", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+command = "orca terminal send --terminal term_1 --text \"123456789012345678901\" --enter"
+expect = { verdict = "deny", rule = "T-03", flow = "stopped", escape = "orca orchestration send" }
+
+[[step]]
+act = "runs_shell"
+command = "orca terminal send --terminal term_1 --text \"12345678901234567890\" --enter"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "orca terminal send --terminal term_1 --text \"123456789012345678901\" --enter"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "orca terminal send --terminal term_1 --text \"handovers/to_dev.md\" --enter"
+expect = { verdict = "deny", rule = "T-02", flow = "stopped" }

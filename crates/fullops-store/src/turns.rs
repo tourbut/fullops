@@ -1,4 +1,4 @@
-//! `turns.jsonl`(설계 6.2.2절). 쓰기는 묶음 B가 채운다.
+//! `turns.jsonl`(설계 6.2.2절). 본문은 쓰지 않는다.
 
 use crate::files::read_text;
 use crate::repo::Repo;
@@ -16,9 +16,6 @@ pub fn read_turns(repo: &Repo) -> Known<Vec<Turn>> {
 }
 
 /// 한 줄을 `O_APPEND`로 `write` 한 번에 쓴다. 잠그지 않는다.
-pub fn append_turn(_repo: &Repo, _turn: &Turn) -> io::Result<()> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "append_turn은 아직 구현되지 않았습니다",
-    ))
+pub fn append_turn(repo: &Repo, turn: &Turn) -> io::Result<()> {
+    crate::files::append_line(&repo.turns_path(), turn)
 }

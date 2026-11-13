@@ -1,0 +1,40 @@
+name = "dispatch 받은 세션이 보고 없이 끝내면 한 번 막는다"
+origin = "설계 12.2절 H1"
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "preamble_arrives"
+who = "dev"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-show"]
+stdout = { ok = true, result = { dispatchId = "ctx_9", taskId = "task_9", runId = "run_9", terminal = "term_9", state = "ready", stage = "input_accepted", liveness = "live" } }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-03", flow = "stopped", escape = "fullops done" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "warn", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+who = "dev"
+text = "계속해 줘"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-03", flow = "stopped" }

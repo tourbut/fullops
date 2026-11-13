@@ -1,0 +1,10 @@
+# pstack 문장이 없는 것은 crates/fullops/tests/hook.rs가 본다.
+name = "agy의 SessionStart 안내"
+origin = "설계 12.2절 Q8"
+
+[setup]
+host = "agy"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "FullOps 역할" }

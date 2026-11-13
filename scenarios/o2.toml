@@ -1,0 +1,82 @@
+# toolInputTruncated: true인 편집은 동사로 적을 수 없어 crates/fullops/tests/hook.rs가 본다.
+name = "grok 표본과 같은 입력에서 같은 판정을 내고 닿지 않는 안내는 내지 않는다"
+origin = "설계 12.2절 O2 (DF-24)"
+
+[setup]
+host = "grok"
+parallel = "off"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "warn", flow = "continues", escape = "fullops status" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "key: A-1"
+new = "key: B-2"
+expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops plan add" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "spawns_subagent"
+who = "dev"
+prompt = "Purpose: research. Read only. 결제 모듈의 재시도 경로를 찾아 보고한다."
+expect = { verdict = "deny", rule = "T-08", flow = "stopped" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "warn", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+who = "dev"
+text = "결제 재시도 버튼을 추가해 줘"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "preamble_arrives"
+who = "dev"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-show"]
+stdout = { ok = true, result = { dispatchId = "ctx_9", taskId = "task_9", runId = "run_9", terminal = "term_9", state = "ready", stage = "input_accepted", liveness = "live" } }
+
+[[step]]
+act = "stops"
+who = "dev"
+reason = "shutdown"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+reason = "channel_closed"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-03", flow = "stopped", escape = "fullops done" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }

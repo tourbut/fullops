@@ -1,0 +1,17 @@
+name = "조건을 채운 날것 worker-start --run도 거부한다"
+origin = "설계 12.2절 C2 (DF-1)"
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --run run_1 --spec \"Task key: A-1; Purpose: implementation\" --worktree path:/w/dev --agent claude"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "runs_shell"
+command = "cd /w && FOO=1 orca orchestration worker-start --run run_1 2>&1 | tee log"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+command = "bash -lc \"orca orchestration worker-start --run run_1\""
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }

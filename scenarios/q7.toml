@@ -1,0 +1,35 @@
+# 스킬이 없을 때 아무 말도 붙지 않는 것, 3,000자 자르기, 9,000자 줄이기는 crates/fullops/tests/hook.rs와 messages의 단위 시험이 본다.
+name = "caveman 스킬이 설치돼 있으면 SessionStart 안내에 붙인다"
+origin = "설계 12.2절 Q7 (DF-12)"
+
+[[step]]
+act = "session_starts"
+session = "none"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "file"
+who = "home"
+path = ".agents/skills/caveman/SKILL.md"
+content = "---\nname: caveman\ndescription: 짧게 말한다\n---\n# caveman\n\n군말 없이 답부터 말한다.\n"
+
+[[step]]
+act = "session_starts"
+session = "has"
+expect = { verdict = "context", flow = "continues", escape = "군말 없이 답부터 말한다" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues", escape = "caveman 스킬을 이 새 세션에 full 강도로 적용한다" }
+
+[[step]]
+act = "file"
+who = "home"
+path = ".agents/skills/caveman/SKILL.md"
+content = "---\nname: caveman\n---\n"
+
+[[step]]
+act = "session_starts"
+session = "empty"
+expect = { verdict = "context", flow = "continues" }

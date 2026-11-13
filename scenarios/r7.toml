@@ -1,0 +1,52 @@
+# agent_id가 붙은 입력은 동사로 적을 수 없어 crates/fullops/tests/hook.rs가 계약 표본으로 본다.
+name = "서브에이전트가 만든 변경에도 같은 게이트가 걸린다"
+origin = "설계 12.2절 R7"
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "spawns_subagent"
+who = "dev"
+prompt = "src/a.py를 맡는다. 완료 조건: 함수 하나"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = "src/a.py"
+content = "\"\"\"A-1 구현.\"\"\"\nprint(1)\n"
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-01", flow = "stopped", escape = "fullops lint" }
+
+[[step]]
+act = "commits"
+who = "dev"
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-01", flow = "stopped" }
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+pending = "D"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+pending = "C"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped", escape = "fullops dispatch" }

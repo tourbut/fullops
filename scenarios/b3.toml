@@ -1,0 +1,35 @@
+name = "dev 모드의 주 담당 브랜치는 주 담당 안내, 다른 등록 역할은 worker 안내를 받는다"
+origin = "설계 12.2절 B3"
+
+[setup]
+mode = "dev"
+primary_role = "dev"
+roles = { dev = "worker", art = "worker" }
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "dev 모드의 주 담당" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues", escape = "dev 모드의 주 담당" }
+
+[[step]]
+act = "session_starts"
+who = "art"
+expect = { verdict = "context", flow = "continues", escape = "worker `art`" }
+
+[[step]]
+act = "preamble_arrives"
+who = "art"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "context", flow = "continues", escape = "worker `art`" }
+
+[[step]]
+act = "preamble_arrives"
+who = "art"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "pass", flow = "continues" }

@@ -1,0 +1,15 @@
+name = "Codex는 CODEX_HOME의 skills에서도 caveman을 찾는다"
+origin = "설계 12.2절 Q7"
+
+[setup]
+host = "codex"
+
+[[step]]
+act = "file"
+who = "home"
+path = ".codex/skills/caveman/SKILL.md"
+content = "---\nname: caveman\ndescription: 짧게 말한다\n---\n# caveman\n\n군말 없이 답부터 말한다.\n"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "군말 없이 답부터 말한다" }

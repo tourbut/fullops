@@ -1,0 +1,62 @@
+name = "lint 통과 뒤의 기록 전용 커밋은 통과 기록을 무효로 만들지 않는다"
+origin = "설계 12.2절 G2"
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = "src/a.py"
+content = "\"\"\"A-1 구현.\"\"\"\nprint(1)\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+pending = "D"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+pending = "D"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/handovers/logs/A-1.dev.r0.md"
+content = "# 완료 기록\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "fullops: 완료 기록 A-1 (dev)"
+
+[[step]]
+act = "stops"
+who = "dev"
+pending = "D"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = "src/a.py"
+content = "\"\"\"A-1 구현.\"\"\"\nprint(2)\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+
+[[step]]
+act = "stops"
+who = "dev"
+pending = "D"
+expect = { verdict = "block", rule = "X-01", flow = "stopped" }

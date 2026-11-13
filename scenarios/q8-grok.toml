@@ -1,0 +1,14 @@
+name = "grok의 SessionStart는 안내 대신 사용자에게 한 줄만 낸다"
+origin = "설계 12.2절 Q8"
+
+[setup]
+host = "grok"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "warn", flow = "continues", escape = "fullops status" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "warn", flow = "continues" }
