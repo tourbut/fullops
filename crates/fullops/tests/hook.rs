@@ -1336,7 +1336,152 @@ fn snapshot_session_is_a_reviewer() {
     assert_eq!(h.state().snapshots[0].state, SnapshotState::Missing);
 }
 
+/// 키도 SHA도 없는 완료 보고: X-06의 문구가 메시지 ID와 그 건을 실제로 푸는 명령을 준다(BlockAlways의 탈출구).
+#[test]
+fn keyless_completion_has_a_way_out() {
+    let h = Hooks::new(&Setup::default());
+    let lead = h.sb.path("lead");
+    h.claude(
+        "lead",
+        "s",
+        "SessionStart",
+        json!({"source": "startup"}),
+        &[],
+    );
+    let keyless = json!({"v": 1,
+        "runs": [run_of("run_1", "lead", None)],
+        "completions": [{"id": "msg_1", "dispatch": null, "key": null, "role": null, "branch": null,
+            "sha": null, "sha_source": null, "outcome": "succeeded", "received_at": 20}],
+        "messages": [{"id": "msg_1", "delivery": null, "run": "run_1", "type": "worker_done",
+            "dispatch": null, "received_at": 20, "acked_at": 21}]});
+    h.set_state(keyless.clone());
+    for _ in 0..2 {
+        let out = h.stop("lead", "s", &[]);
+        let text = reason(&out);
+        assert!(text.starts_with("FullOps[X-06]: "), "{out}");
+        for part in [
+            "키 없음(메시지 msg_1, SHA 없음)",
+            "fullops completion set-sha <메시지 ID> <SHA> --key <KEY>",
+            "fullops hold --completion <메시지 ID>",
+        ] {
+            assert!(text.contains(part), "{part}: {out}");
+        }
+    }
+    // 길 하나: 메시지 ID만으로 보류한다
+    let hold = [
+        "hold",
+        "--completion",
+        "msg_1",
+        "--reason",
+        "r",
+        "--owner",
+        "o",
+        "--resume",
+        "x",
+    ];
+    let run = h.sb.cli(&lead, &hold);
+    assert_eq!(run.code, Some(0), "{}{}", run.stdout, run.stderr);
+    assert!(h.state().completions[0].hold.is_some());
+    assert_eq!(h.stop("lead", "s", &[]), json!({}));
+    // 길 둘: 키와 SHA를 적으면 키로 가리키는 보통의 탈출구(`merge`·`hold <KEY>`)가 통한다
+    h.set_state(keyless);
+    let head = h.head("lead");
+    let run = h.sb.cli(
+        &lead,
+        &["completion", "set-sha", "msg_1", &head, "--key", "A-1"],
+    );
+    assert_eq!(run.code, Some(0), "{}{}", run.stdout, run.stderr);
+    let run = h.sb.cli(
+        &lead,
+        &[
+            "hold", "A-1", "--reason", "r", "--owner", "o", "--resume", "x",
+        ],
+    );
+    assert_eq!(run.code, Some(0), "{}{}", run.stdout, run.stderr);
+    assert_eq!(h.stop("lead", "s", &[]), json!({}));
+    // 키 없이 부르려면 메시지 ID가 있어야 한다
+    let run = h.sb.cli(
+        &lead,
+        &["hold", "--reason", "r", "--owner", "o", "--resume", "x"],
+    );
+    assert_eq!(run.code, Some(1), "{}{}", run.stdout, run.stderr);
+}
+
+/// 링크를 만든다(Windows는 junction). 만들지 못하면 거짓이다.
+fn link_dir(link: &Path, target: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let line = format!(
+            "/c mklink /J \"{}\" \"{}\"",
+            link.display(),
+            target.display()
+        );
+        let made = std::process::Command::new("cmd").raw_arg(line).output();
+        made.is_ok_and(|o| o.status.success())
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+}
+
+/// 경로 규칙은 실제 경로로 판정한다: 링크(junction)를 거친 경로와 Windows에서 대소문자만 다른 경로도 같은 파일이다.
+#[test]
+fn path_rules_see_the_real_path() {
+    let h = Hooks::new(&Setup::default());
+    let lead = h.sb.path("lead");
+    let write = |path: &str| {
+        let more = json!({"tool_name": "Write", "tool_input": {"file_path": path, "content": "# A-1 — x\n"}});
+        h.claude("lead", "s", "PreToolUse", more, &[])
+    };
+    let inbox = lead.join(".fullops-squad/handovers");
+    std::fs::create_dir_all(&inbox).unwrap();
+    let plain = write(&inbox.join("A-1.md").to_string_lossy());
+    assert!(reason(&plain).starts_with("FullOps[T-05]"), "{plain}");
+
+    let link = lead.join("hv");
+    assert!(link_dir(&link, &inbox), "링크를 만들지 못했다");
+    let linked = write(&link.join("A-1.md").to_string_lossy());
+    // 문구의 경로는 실제 자리다
+    assert!(
+        reason(&linked).starts_with("FullOps[T-05]: `.fullops-squad/handovers/A-1.md`"),
+        "{linked}"
+    );
+    // 링크 안의 다른 폴더는 그대로 통과한다
+    let other = lead.join("docs-link");
+    std::fs::create_dir_all(lead.join("docs")).unwrap();
+    assert!(link_dir(&other, &lead.join("docs")));
+    assert_eq!(write(&other.join("A-1.md").to_string_lossy()), json!({}));
+    std::fs::remove_dir(&link)
+        .or_else(|_| std::fs::remove_file(&link))
+        .unwrap();
+    std::fs::remove_dir(&other)
+        .or_else(|_| std::fs::remove_file(&other))
+        .unwrap();
+
+    if cfg!(windows) {
+        let upper = format!(r"{}\.FULLOPS-SQUAD\Handovers\A-1.md", lead.display());
+        assert!(
+            reason(&write(&upper)).starts_with("FullOps[T-05]"),
+            "{upper}"
+        );
+        // 아직 없는 폴더도 이름만으로 같은 자리다(T-10의 차수 폴더)
+        let qa = lead.join(".fullops-squad/docs/evaluations/qa-reports");
+        std::fs::create_dir_all(qa.join("A-1")).unwrap();
+        let round = format!(
+            r"{}\.fullops-squad\DOCS\Evaluations\QA-Reports\A-1-R2\report.md",
+            lead.display()
+        );
+        assert!(
+            reason(&write(&round)).starts_with("FullOps[T-10]"),
+            "{round}"
+        );
+    }
+}
+
 /// 감시 스레드: stdin이 끝나지 않으면 내부 기한 뒤에 그 호스트의 통과 글을 내고 종료 코드 0으로 끝난다.
+/// `--event`로 이벤트를 아는 agy는 그 이벤트의 내부 기한(PreToolUse 4초)을 쓴다: 등록 타임아웃(8초)보다 먼저 답한다.
 #[test]
 fn watchdog_passes_when_the_deadline_is_over() {
     let sb = Sandbox::with(&Setup::default());
@@ -1355,7 +1500,13 @@ fn watchdog_passes_when_the_deadline_is_over() {
         ),
         (r#"{"decision":"ask"}"#, Some(0))
     );
-    assert!(started.elapsed() >= std::time::Duration::from_secs(11));
+    let elapsed = started.elapsed().as_millis();
+    let registered = fullops_core::deps::HOOK_TIMEOUTS
+        .iter()
+        .find(|(event, _)| *event == "PreToolUse")
+        .map(|(_, seconds)| u128::from(*seconds) * 1000)
+        .unwrap();
+    assert!((3_900..registered).contains(&elapsed), "{elapsed}ms");
 }
 
 trait KeepStdin {

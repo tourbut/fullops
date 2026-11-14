@@ -7,7 +7,7 @@ use crate::model::{
     SnapshotState, State, TaskKey, same_path,
 };
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 모든 사실은 지연 계산이고, 읽지 못하면 `Unknown`이다. 호출 상한(설계 7.1절)을 넘는 요청도 `Unknown`이다.
 pub trait Facts {
@@ -28,6 +28,10 @@ pub trait Facts {
     fn route(&mut self, key: &TaskKey) -> Known<Option<Route>>;
     fn file_text(&mut self, path: &Path) -> Known<Option<String>>;
     fn path_exists(&mut self, path: &Path) -> Known<bool>;
+    /// 존재하는 앞부분을 실제 경로로 푼 절대 경로(링크, junction, Windows의 대소문자). 풀지 못하면 받은 그대로다.
+    fn real_path(&mut self, path: &Path) -> PathBuf {
+        path.to_path_buf()
+    }
     /// 세션이 만든 변경(설계 6.6절).
     fn changed(&mut self) -> Known<ChangeSet>;
     fn pass_covers(&mut self, head: &Sha, start: &Sha) -> Known<bool>;

@@ -91,7 +91,7 @@ fn candidate(input: &HookInput, facts: &mut dyn Facts) -> bool {
     if call::intents().iter().any(relevant) {
         return true;
     }
-    let paths = call::target_paths(input);
+    let paths = call::target_paths(input, facts);
     if paths
         .iter()
         .any(|p| p.starts_with(HANDOVERS) || p.starts_with(QA_REPORTS))

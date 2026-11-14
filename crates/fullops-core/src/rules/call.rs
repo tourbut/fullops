@@ -3,6 +3,8 @@
 //! hook은 이벤트당 프로세스 하나이고 `decide`는 한 스레드에서 한 번 돈다.
 
 use super::Effect;
+use super::decide::{HANDOVERS, QA_REPORTS};
+use super::tool::CONFIG;
 use crate::facts::Facts;
 use crate::messages::hook::Brief;
 use crate::model::{Actor, DispatchId, HookInput, Intent, Known, SkillText, ToolKind};
@@ -37,6 +39,9 @@ pub(super) struct Call {
     pub scene: Scene,
     pub intents: Vec<Intent>,
     targets: Option<Vec<Target>>,
+    paths: Option<Vec<String>>,
+    /// 실제 경로로 푼 레포 루트.
+    real_root: Option<PathBuf>,
     pub effects: Vec<Effect>,
     /// 이 호출에서 P-00이 턴을 올렸다.
     pub turn_bump: bool,
@@ -92,15 +97,46 @@ pub(super) fn root() -> PathBuf {
     with(|call| call.scene.root.clone())
 }
 
-/// 편집 대상의 경로만(파일을 읽지 않는다). 규칙 후보를 가릴 때 쓴다.
-pub(super) fn target_paths(input: &HookInput) -> Vec<String> {
-    let (Some(tool), root) = (&input.tool, root()) else {
-        return Vec::new();
+/// 편집 대상의 레포 루트 기준 상대 경로. 경로를 보는 규칙(T-00, T-05, T-06, T-07, T-10과 후보 가리기)이 모두 이 함수를 거친다.
+/// 판정 전에 실제 경로로 푼다: 링크나 junction을 거친 경로와 Windows에서 대소문자만 다른 경로도 같은 파일이다.
+fn rel_path(path: &Path, input: &HookInput, facts: &mut dyn Facts) -> Option<String> {
+    let real_root = match with(|call| call.real_root.clone()) {
+        Some(root) => root,
+        None => {
+            let real = facts.real_path(&root());
+            with(|call| call.real_root = Some(real.clone()));
+            real
+        }
     };
-    edit_targets(tool, &mut |_| Known::Unknown("skip"))
-        .iter()
-        .filter_map(|t| repo_relative(&t.path.to_string_lossy(), &input.cwd, &root))
-        .collect()
+    let mut real = |path: &Path| facts.real_path(path);
+    let rel = repo_relative(&path.to_string_lossy(), &input.cwd, &real_root, &mut real)?;
+    if cfg!(windows) {
+        // 아직 없는 폴더는 받은 표기 그대로다: 규칙이 견주는 이름을 정본 표기로 맞춘다
+        for known in [HANDOVERS, QA_REPORTS, CONFIG, ".fullops-squad/"] {
+            if let (Some(head), Some(tail)) = (rel.get(..known.len()), rel.get(known.len()..))
+                && head.eq_ignore_ascii_case(known)
+            {
+                return Some(format!("{known}{tail}"));
+            }
+        }
+    }
+    Some(rel)
+}
+
+/// 편집 대상의 경로만(파일 글을 읽지 않는다). 규칙 후보를 가릴 때 쓴다. 한 호출에서 한 번만 계산한다.
+pub(super) fn target_paths(input: &HookInput, facts: &mut dyn Facts) -> Vec<String> {
+    if let Some(cached) = with(|call| call.paths.clone()) {
+        return cached;
+    }
+    let list: Vec<String> = match &input.tool {
+        Some(tool) => edit_targets(tool, &mut |_| Known::Unknown("skip"))
+            .iter()
+            .filter_map(|t| rel_path(&t.path, input, facts))
+            .collect(),
+        None => Vec::new(),
+    };
+    with(|call| call.paths = Some(list.clone()));
+    list
 }
 
 /// 편집 대상과 바뀐 뒤의 글. 레포 루트 밖의 대상은 뺀다. 한 호출에서 한 번만 계산한다.
@@ -109,18 +145,25 @@ pub(super) fn targets(input: &HookInput, facts: &mut dyn Facts) -> Vec<Target> {
         return cached;
     }
     let root = root();
-    let rel = |path: &Path| repo_relative(&path.to_string_lossy(), &input.cwd, &root);
     let list: Vec<Target> = match &input.tool {
         Some(tool) => {
-            let mut read = |path: &Path| match rel(path) {
-                Some(rel) => facts.file_text(&root.join(rel)),
-                None => Known::Unknown("outside"),
+            // 대상마다 경로는 한 번만 푼다
+            let mut rels: Vec<(PathBuf, Option<String>)> = Vec::new();
+            let mut read = |path: &Path| {
+                let rel = rel_path(path, input, facts);
+                rels.push((path.to_path_buf(), rel.clone()));
+                match rel {
+                    Some(rel) => facts.file_text(&root.join(rel)),
+                    None => Known::Unknown("outside"),
+                }
             };
-            edit_targets(tool, &mut read)
+            let found = edit_targets(tool, &mut read);
+            found
                 .into_iter()
                 .filter_map(|t| {
+                    let (_, rel) = rels.iter().find(|(path, _)| *path == t.path)?;
                     Some(Target {
-                        rel: rel(&t.path)?,
+                        rel: rel.clone()?,
                         before: t.before,
                         after: t.after,
                     })

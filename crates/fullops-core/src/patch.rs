@@ -13,7 +13,14 @@ pub struct EditTarget {
 
 /// 경로 맞추기: `\`를 `/`로 바꾸고, 상대 경로면 `cwd`에 붙이고, 레포 루트 아래면 루트 기준 상대 경로를 돌려준다.
 /// 루트 밖이면 `None`이다(그 대상에는 어떤 규칙도 걸리지 않는다). Windows에서는 대소문자를 가리지 않는다.
-pub fn repo_relative(path: &str, cwd: &Path, root: &Path) -> Option<String> {
+/// `real`은 존재하는 앞부분을 실제 경로로 푼다(`Facts::real_path`): 링크나 junction을 거친 경로도 실제 자리로 견준다.
+/// `root`는 같은 방법으로 이미 푼 루트다.
+pub fn repo_relative(
+    path: &str,
+    cwd: &Path,
+    root: &Path,
+    real: &mut dyn FnMut(&Path) -> PathBuf,
+) -> Option<String> {
     let path = path.replace('\\', "/");
     let drive = path.as_bytes().get(1) == Some(&b':');
     let full = if path.starts_with('/') || drive {
@@ -31,6 +38,11 @@ pub fn repo_relative(path: &str, cwd: &Path, root: &Path) -> Option<String> {
             other => parts.push(other),
         }
     }
+    // 앞의 `/`(UNC면 둘)는 남긴다
+    let lead = full.len() - full.trim_start_matches('/').len();
+    let lexical = format!("{}{}", "/".repeat(lead), parts.join("/"));
+    let full = path_text(&real(Path::new(&lexical)));
+    let parts: Vec<&str> = full.split('/').filter(|p| !p.is_empty()).collect();
     let root = path_text(root);
     let root: Vec<&str> = root.split('/').filter(|p| !p.is_empty()).collect();
     let same = |a: &str, b: &str| {
@@ -367,7 +379,8 @@ mod tests {
     #[test]
     fn aligns_paths_to_the_repo_root() {
         let (cwd, root) = (Path::new("/home/dev/repo/sub"), Path::new("/home/dev/repo"));
-        let rel = |p: &str| repo_relative(p, cwd, root);
+        let mut same = |p: &Path| p.to_path_buf();
+        let mut rel = |p: &str| repo_relative(p, cwd, root, &mut same);
         assert_eq!(rel("a.md").as_deref(), Some("sub/a.md"));
         assert_eq!(
             rel("../.fullops-squad/x.md").as_deref(),
@@ -381,16 +394,25 @@ mod tests {
             repo_relative(
                 "C:\\project\\.fullops-squad\\handovers\\to_dev.md",
                 win,
-                win
+                win,
+                &mut |p| p.to_path_buf()
             )
             .as_deref(),
             Some(".fullops-squad/handovers/to_dev.md")
         );
         if cfg!(windows) {
             assert_eq!(
-                repo_relative("c:\\PROJECT\\a.rs", win, win).as_deref(),
+                repo_relative("c:\\PROJECT\\a.rs", win, win, &mut |p| p.to_path_buf()).as_deref(),
                 Some("a.rs")
             );
         }
+        // 링크를 거친 경로는 실제 자리로 견준다
+        let mut link = |p: &Path| {
+            PathBuf::from(path_text(p).replace("/repo/hv", "/repo/.fullops-squad/handovers"))
+        };
+        assert_eq!(
+            repo_relative("../hv/to_dev.md", cwd, root, &mut link).as_deref(),
+            Some(".fullops-squad/handovers/to_dev.md")
+        );
     }
 }

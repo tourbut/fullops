@@ -97,14 +97,15 @@ pub(super) fn landing(git: &GitCli, config: &Config, sha: &Sha) -> Known<Landing
 }
 
 /// 그 키의 아직 통합되지 않은 성공 보고 가운데 하나를 고른다(M-02). `held`가 참이면 보류된 것에서, 아니면 통합 대기에서 고른다.
+/// 키가 없으면 메시지 ID로만 고른다: 키 없이 들어온 보고는 키로 가리킬 수 없다.
 pub(super) fn pick(
     state: &State,
-    key: &TaskKey,
+    key: Option<&TaskKey>,
     id: Option<&str>,
     held: bool,
 ) -> Result<Completion, CliError> {
     let open = |c: &&Completion| {
-        c.key.as_ref() == Some(key)
+        key.is_none_or(|key| c.key.as_ref() == Some(key))
             && !c.direct
             && c.outcome == WorkOutcome::Succeeded
             && c.landed_at.is_none()
@@ -115,14 +116,15 @@ pub(super) fn pick(
         .iter()
         .filter(open)
         .partition(|c| c.hold.is_some() == held);
+    let key = key.map_or(id.unwrap_or_default(), |key| key.as_str());
     match (wanted.as_slice(), held) {
         ([one], _) => Ok((*one).clone()),
-        ([], true) => Err(refused("HD-01", "", &[key.as_str()])),
-        ([], false) if !other.is_empty() => Err(refused("M-02", "held", &[key.as_str()])),
-        ([], false) => Err(refused("M-02", "none", &[key.as_str()])),
+        ([], true) => Err(refused("HD-01", "", &[key])),
+        ([], false) if !other.is_empty() => Err(refused("M-02", "held", &[key])),
+        ([], false) => Err(refused("M-02", "none", &[key])),
         (many, _) => {
             let ids: Vec<&str> = many.iter().map(|c| c.id.as_str()).collect();
-            Err(refused("M-02", "many", &[key.as_str(), &ids.join(", ")]))
+            Err(refused("M-02", "many", &[key, &ids.join(", ")]))
         }
     }
 }
@@ -298,7 +300,11 @@ fn hold(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             other => return Err(other.unexpected().into()),
         }
     }
-    let key = task_key(key)?;
+    // 키 없는 보고는 `--completion <메시지 ID>`만으로 보류한다(X-06의 탈출구)
+    let key = match (key, &id) {
+        (None, Some(_)) => None,
+        (key, _) => Some(task_key(key)?),
+    };
     if [&reason, &owner, &resume]
         .iter()
         .any(|v| v.trim().is_empty())
@@ -307,7 +313,7 @@ fn hold(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             "보류에는 --reason, --owner, --resume 셋이 모두 필요합니다.".into(),
         ));
     }
-    let picked = pick(&load_state(ctx)?, &key, id.as_deref(), false)?;
+    let picked = pick(&load_state(ctx)?, key.as_ref(), id.as_deref(), false)?;
     let now = fullops_store::now();
     ctx.update_state(None, |state| {
         let open = |c: &&mut Completion| c.id == picked.id;
@@ -323,10 +329,17 @@ fn hold(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         // 보류는 lead가 그 보고를 처리했다는 뜻이다
         ack(state, now, |m| m.id == picked.id);
     })?;
-    ctx.print(
-        &format!(
+    let human = match &key {
+        Some(key) => format!(
             "{key} 보류: {reason} (담당 {owner}, 재개 조건 {resume}). 재개는 `fullops resume {key}`"
         ),
+        None => format!(
+            "완료 보고 {id} 보류: {reason} (담당 {owner}, 재개 조건 {resume}). 재개는 `fullops completion set-sha {id} <SHA> --key <KEY>`로 키를 적은 뒤 `fullops resume <KEY>`",
+            id = picked.id
+        ),
+    };
+    ctx.print(
+        &human,
         json!({ "key": key, "completion": picked.id, "held": true }),
     );
     Ok(EXIT_OK)
@@ -342,7 +355,7 @@ fn resume(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         }
     }
     let key = task_key(key)?;
-    let picked = pick(&load_state(ctx)?, &key, id.as_deref(), true)?;
+    let picked = pick(&load_state(ctx)?, Some(&key), id.as_deref(), true)?;
     ctx.update_state(None, |state| {
         let open = |c: &&mut Completion| c.id == picked.id;
         if let Some(completion) = state.completions.iter_mut().find(open) {

@@ -32,3 +32,9 @@ act = "runs_shell"
 who = "dev"
 command = "orca terminal send --terminal term_1 --text \"handovers/to_dev.md\" --enter"
 expect = { verdict = "deny", rule = "T-02", flow = "stopped" }
+
+# 서브셸로 감싼 주입도 같다
+[[step]]
+act = "runs_shell"
+command = "(orca terminal send --terminal term_1 --text 'read .fullops-squad/handovers/to_dev.md and start')"
+expect = { verdict = "deny", rule = "T-02", flow = "stopped" }

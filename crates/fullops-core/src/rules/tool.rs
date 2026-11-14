@@ -17,7 +17,7 @@ const RECOVERY: [&str; 9] = [
 const MEDIA: [&str; 8] = [
     ".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov",
 ];
-const CONFIG: &str = ".fullops-squad/fullops.toml";
+pub(super) const CONFIG: &str = ".fullops-squad/fullops.toml";
 
 /// `handovers/` 바로 아래의 `.md` 파일 이름. `_TEMPLATE.md`는 뺀다.
 fn handover_name(rel: &str) -> Option<&str> {
@@ -29,6 +29,14 @@ fn handover_name(rel: &str) -> Option<&str> {
 fn inbox_role(name: &str) -> Option<RoleId> {
     let role = name.strip_prefix("to_")?.strip_suffix(".md")?;
     RoleId::new(role).ok()
+}
+
+/// 소문자로 바꾼 글에서 첫 `purpose:`(또는 `purpose=`. 기호 앞뒤의 공백은 봐준다) 뒤의 글.
+fn purpose_of(lower: &str) -> Option<&str> {
+    lower.match_indices("purpose").find_map(|(at, word)| {
+        let rest = lower.get(at + word.len()..)?.trim_start();
+        Some(rest.strip_prefix([':', '='])?.trim_start())
+    })
 }
 
 fn front_key(text: &str) -> Option<String> {
@@ -50,7 +58,7 @@ pub(super) fn t00(input: &HookInput, facts: &mut dyn Facts) -> Finding {
     {
         return Finding::None;
     }
-    let paths = call::target_paths(input);
+    let paths = call::target_paths(input, facts);
     if !paths.is_empty() && paths.iter().all(|p| p == CONFIG) {
         return Finding::None;
     }
@@ -121,7 +129,7 @@ pub(super) fn t04(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
             )],
         );
     };
-    let review = spec.to_lowercase().contains("purpose: review");
+    let review = purpose_of(&spec.to_lowercase()).is_some_and(|p| p.starts_with("review"));
     if review && route.tuples.contains_key("reviewer") {
         return Finding::None;
     }
@@ -197,7 +205,7 @@ pub(super) fn t07(input: &HookInput, facts: &mut dyn Facts) -> Finding {
         return Finding::Unknown;
     };
     let none = globset::GlobSet::empty();
-    for path in call::target_paths(input) {
+    for path in call::target_paths(input, facts) {
         if !path.starts_with(".fullops-squad/") && is_code(&path, &code, &none) {
             return hit(path.clone(), vec![path]);
         }
@@ -221,8 +229,7 @@ pub(super) fn t08(input: &HookInput, facts: &mut dyn Facts) -> Finding {
             let Some(text) = tool.text.as_deref().map(str::to_lowercase) else {
                 return Finding::Unknown;
             };
-            let purpose = text.split("purpose:").nth(1).map(str::trim_start);
-            let purpose = purpose.and_then(|rest| {
+            let purpose = purpose_of(&text).and_then(|rest| {
                 ["research", "review", "implementation"]
                     .into_iter()
                     .find(|p| rest.starts_with(p))
@@ -296,7 +303,7 @@ fn is_round(segment: &str) -> bool {
 /// T-10
 pub(super) fn t10(input: &HookInput, facts: &mut dyn Facts) -> Finding {
     let qa = call::root().join(QA_REPORTS);
-    for path in call::target_paths(input) {
+    for path in call::target_paths(input, facts) {
         let Some((folder, _)) = path
             .strip_prefix(QA_REPORTS)
             .and_then(|rest| rest.split_once('/'))

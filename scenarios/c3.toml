@@ -18,3 +18,28 @@ act = "runs_shell"
 dialect = "powershell"
 command = "Write-Output \"orca orchestration worker-start\""
 expect = { verdict = "pass", flow = "continues" }
+
+# Start-Process, Invoke-Expression, 스크립트 블록, orca.ps1로 불러도 같은 명령이다
+[[step]]
+act = "runs_shell"
+dialect = "powershell"
+command = "Start-Process orca -ArgumentList 'orchestration','worker-start','--run','run_1'"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+dialect = "powershell"
+command = "Invoke-Expression 'orca orchestration worker-start --run run_1'"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+dialect = "powershell"
+command = "if ($true) { & orca.ps1 orchestration worker-start --run run_1 }"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+dialect = "powershell"
+command = "Select-String -Path docs/*.md -Pattern '(orca orchestration worker-start)'"
+expect = { verdict = "pass", flow = "continues" }

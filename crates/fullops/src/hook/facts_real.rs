@@ -342,6 +342,23 @@ impl Facts for RealFacts {
     fn path_exists(&mut self, path: &Path) -> Known<bool> {
         Known::Yes(self.repo.root.join(path).exists())
     }
+    fn real_path(&mut self, path: &Path) -> PathBuf {
+        // 아직 없는 뒷부분은 그대로 붙인다: 새로 만드는 파일도 실제 폴더 기준으로 본다
+        let mut tail = Vec::new();
+        let mut head = path;
+        loop {
+            if let Ok(real) = std::fs::canonicalize(head) {
+                return tail.iter().rev().fold(real, |path, name| path.join(name));
+            }
+            match (head.parent(), head.file_name()) {
+                (Some(parent), Some(name)) => {
+                    tail.push(name);
+                    head = parent;
+                }
+                _ => return path.to_path_buf(),
+            }
+        }
+    }
     fn changed(&mut self) -> Known<ChangeSet> {
         if self.changed.is_none() {
             self.changed = Some(self.compute_changed());

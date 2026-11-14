@@ -214,7 +214,7 @@ fn emit(text: &str) {
     }
 }
 
-/// 내부 기한(밀리초). 이벤트를 알기 전에는 가장 긴 값이다.
+/// 내부 기한(밀리초). 이벤트를 알기 전에는 가장 긴 값이다. `--event`가 있으면 stdin을 읽기 전에 그 이벤트의 값으로 낮춘다.
 static DEADLINE_MS: AtomicU64 = AtomicU64::new(12_000);
 
 fn deadline_ms(event: EventKind) -> u64 {
@@ -491,6 +491,10 @@ fn answer(args: &[OsString], started: Instant) {
     }
     // stdin을 읽기 전에 정해지므로 감시 스레드, 해석 실패, panic 처리가 같은 글을 쓴다
     let pass = args.host.pass(args.event.as_deref());
+    // 등록 문자열이 이벤트를 알려 주면(agy) stdin이 멈춰도 등록 타임아웃보다 먼저 통과를 낸다
+    if let Some(event) = args.event.as_deref().and_then(EventKind::parse) {
+        DEADLINE_MS.store(deadline_ms(event), Ordering::Relaxed);
+    }
     watch(pass, started);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle(&args, started)));
     let failed = match result {

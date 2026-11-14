@@ -354,7 +354,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     }
     // M-02
     let state = load_state(ctx)?;
-    let completion = pick(&state, &key, id.as_deref(), false)?;
+    let completion = pick(&state, Some(&key), id.as_deref(), false)?;
     let Some(sha) = completion.sha.clone() else {
         return Err(refused("M-02", "nosha", &[completion.id.as_str()]));
     };

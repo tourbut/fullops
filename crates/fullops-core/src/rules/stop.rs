@@ -314,30 +314,29 @@ pub(super) fn x05(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
 
 /// X-06
 pub(super) fn x06(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
-    let open: Vec<(MessageId, String, Option<Sha>, bool)> = known!(facts.state())
+    let open: Vec<(MessageId, Option<TaskKey>, Option<Sha>, bool)> = known!(facts.state())
         .completions
         .iter()
         .filter(|c| !c.direct && c.outcome == WorkOutcome::Succeeded && c.landed_at.is_none())
-        .map(|c| {
-            let key = c
-                .key
-                .as_ref()
-                .map_or("키 없음".to_string(), |k| k.to_string());
-            (c.id.clone(), key, c.sha.clone(), c.hold.is_some())
-        })
+        .map(|c| (c.id.clone(), c.key.clone(), c.sha.clone(), c.hold.is_some()))
         .collect();
     let (mut landed, mut left) = (Vec::new(), Vec::new());
     for (id, key, sha, held) in open {
+        // 키가 없는 건은 `merge <KEY>`·`hold <KEY>`로 가리킬 수 없다: 탈출구가 쓰는 메시지 ID를 적는다
+        let label = |what: String| match &key {
+            Some(key) => format!("{key}({what})"),
+            None => format!("키 없음(메시지 {id}, {what})"),
+        };
         let Some(sha) = sha else {
             if !held {
-                left.push(format!("{key}(SHA 없음)"));
+                left.push(label("SHA 없음".into()));
             }
             continue;
         };
         // 통합 위치를 모르는 건은 대기로 세지 않는다
         let what = match facts.landing(&sha) {
             Known::Yes(Landing::Landed) => {
-                landed.push(id);
+                landed.push(id.clone());
                 continue;
             }
             Known::Yes(Landing::MergeLeft) => "병합 남음",
@@ -345,7 +344,7 @@ pub(super) fn x06(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
             Known::Unknown(_) => continue,
         };
         if !held {
-            left.push(format!("{key}({}, {what})", sha.short(7)));
+            left.push(label(format!("{}, {what}", sha.short(7))));
         }
     }
     if !landed.is_empty() {

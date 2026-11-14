@@ -33,3 +33,9 @@ expect = { verdict = "deny", rule = "T-08", flow = "stopped", escape = "읽기 �
 act = "spawns_subagent"
 prompt = "Purpose: implementation. read only."
 expect = { verdict = "deny", rule = "T-08", flow = "stopped", escape = "읽기 전용 조사·리뷰로 좁히거나" }
+
+# 콜론 앞의 공백은 봐준다
+[[step]]
+act = "spawns_subagent"
+prompt = "Purpose : review. read only. 변경을 리뷰한다."
+expect = { verdict = "pass", flow = "continues" }
