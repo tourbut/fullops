@@ -7,8 +7,8 @@ use crate::facts::Facts;
 use crate::messages::hook::{self, Brief, RoleGuide};
 use crate::messages::parallel_brief;
 use crate::model::{
-    Actor, BriefAt, DecisionStatus, HookInput, HostId, Known, Mode, Parallel, RoleId, RunOwner,
-    Seat, SnapshotState,
+    Actor, BriefAt, Caps, DecisionStatus, HookInput, HostId, Known, Mode, Parallel, RoleId,
+    Routing, RunOwner, Seat, SkillText, SnapshotState,
 };
 
 /// S-01·S-06의 대상 `source`. `fork`는 갈라진 새 세션이라 `startup`과 같게 다룬다.
@@ -22,6 +22,7 @@ fn fresh(input: &HookInput) -> bool {
 /// 역할 안내 한 덩어리. S-01, S-05, P-01이 함께 쓴다.
 pub(super) fn role_text(facts: &mut dyn Facts, actor: &Actor) -> String {
     let dev = facts.config().is_ok_and(|c| c.mode == Mode::Dev);
+    let split = facts.config().is_ok_and(|c| c.routing == Routing::Split);
     let guide = match &actor.seat {
         Seat::Lead if actor.dispatch.is_some() => {
             // dispatch를 받은 기본 브랜치·주 담당 세션은 lead가 아니다. 맡은 역할로 안내한다
@@ -33,6 +34,7 @@ pub(super) fn role_text(facts: &mut dyn Facts, actor: &Actor) -> String {
                             kind: crate::model::RoleKind::Worker,
                         },
                         actor.sub,
+                        split,
                     );
                 }
                 None => RoleGuide::Other,
@@ -47,7 +49,7 @@ pub(super) fn role_text(facts: &mut dyn Facts, actor: &Actor) -> String {
         Seat::Reviewer => RoleGuide::Reviewer,
         Seat::Other => RoleGuide::Other,
     };
-    hook::role_guide(&guide, actor.sub)
+    hook::role_guide(&guide, actor.sub, split)
 }
 
 /// 이 체크아웃의 역할: 역할 좌석이면 그 역할, dev 모드의 주 담당 좌석이면 `primary_role`.
@@ -266,16 +268,29 @@ pub(super) fn s05(input: &HookInput, facts: &mut dyn Facts) -> Finding {
     hit("", args)
 }
 
+/// S-06의 조건과 읽기. 비활성 레포의 SessionStart도 이것만 쓴다(hook 진입. 1.24.0의 caveman 주입은 레포를 가리지 않았다).
+pub fn start_skill(
+    input: &HookInput,
+    caps: Caps,
+    read: impl FnOnce(&str) -> Known<Option<SkillText>>,
+) -> Option<SkillText> {
+    if !fresh(input) || !caps.context_at_start {
+        return None;
+    }
+    read("caveman")
+        .yes()
+        .flatten()
+        .filter(|skill| !skill.body.trim().is_empty())
+}
+
 /// S-06
 pub(super) fn s06(input: &HookInput, facts: &mut dyn Facts) -> Finding {
-    if !fresh(input) || !facts.caps().context_at_start {
-        return Finding::None;
-    }
-    match facts.user_skill("caveman") {
-        Known::Yes(Some(skill)) if !skill.body.trim().is_empty() => {
+    let caps = facts.caps();
+    match start_skill(input, caps, |name| facts.user_skill(name)) {
+        Some(skill) => {
             call::with(|call| call.skill = Some(skill));
             hit("", Vec::new())
         }
-        _ => Finding::None,
+        None => Finding::None,
     }
 }

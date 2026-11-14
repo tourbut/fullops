@@ -515,9 +515,10 @@ pub fn record_message(
         None => note
             .notes
             .push("`fullops done` 기록이 없는 보고다. lint 증거를 확인한다".into()),
-        Some(r) if r.lint_head.is_none() => note
-            .notes
-            .push("lint 없이 끝낸 보고다(`--no-checks`)".into()),
+        // lint_head는 `--no-checks`뿐 아니라 코드 변경이 없을 때도 빈다. 실패 보고는 lint를 따지지 않는다
+        Some(r) if r.lint_head.is_none() && outcome != WorkOutcome::Failed => note.notes.push(
+            "lint 통과 기록이 없는 보고다(코드 변경이 없거나 `--no-checks`). 병합 때 `fullops merge`가 확인한다".into(),
+        ),
         Some(_) => {}
     }
     let (sha, sha_source) = sha_of(
@@ -868,6 +869,46 @@ mod tests {
         assert_eq!(pick(true), (Some(new.clone()), Some(ShaSource::Body)));
         // 서로 조상이 아니면 본문에서 고르지 않는다(역할이 없어 tip도 없다)
         assert_eq!(pick(false), (None, None));
+    }
+
+    /// lint 기록이 없는 보고의 알림은 까닭을 `--no-checks`로 단정하지 않고, 실패 보고에는 내지 않는다.
+    #[test]
+    fn report_without_a_lint_record_is_not_called_no_checks() {
+        let notes = |outcome: &str| {
+            let mut state = State::default();
+            let dispatch = serde_json::json!({
+                "id": "ctx_1", "request": "req_0000000000000001", "task_id": "task_1", "run": "run_1",
+                "key": "A-1", "role": "dev", "purpose": "build",
+                "tuple": {"agent": "claude", "model": "m", "effort": "medium"},
+                "terminal": "term_1", "worktree": "/w", "session_mode": "fresh", "started_at": 10,
+                "reported": {"branch": "fullops/dev", "sha": "a".repeat(40), "lint_head": null, "followups": [], "at": 11},
+            });
+            state.dispatches.push(serde_json::from_value(dispatch).unwrap());
+            let msg = OrcaMessage {
+                id: crate::model::MessageId::new("msg_1").unwrap(),
+                kind: "worker_done".into(),
+                from: None,
+                subject: None,
+                body: None,
+                task_id: None,
+                dispatch_id: DispatchId::new("ctx_1").ok(),
+                outcome: Some(outcome.into()),
+            };
+            let run = RunId::new("run_1").unwrap();
+            let note = record_message(
+                &mut state,
+                &run,
+                &msg,
+                20,
+                &mut |_| None,
+                &mut |_| None,
+                &mut |_, _| false,
+            );
+            note.notes.join(" ")
+        };
+        let text = notes("succeeded");
+        assert!(text.contains("코드 변경이 없거나 `--no-checks`") && !text.contains("lint 없이 끝낸"));
+        assert_eq!(notes("failed"), "");
     }
 
     #[test]

@@ -489,12 +489,19 @@ impl Facts for RealFacts {
         crate::cli::session_handle()
     }
     fn user_skill(&mut self, name: &str) -> Known<Option<SkillText>> {
+        Self::skill_of(self.host, name)
+    }
+}
+
+impl RealFacts {
+    /// 사용자 스킬의 글. 레포가 필요 없어서 비활성 레포의 SessionStart(S-06)도 쓴다.
+    pub(super) fn skill_of(host: HostId, name: &str) -> Known<Option<SkillText>> {
         // `~/.agents/skills`를 먼저 보고 그다음 호스트의 스킬 폴더를 본다. 같은 폴더는 한 번만 본다
         let mut dirs: Vec<PathBuf> = Vec::new();
         let agents = fullops_store::home().map(|home| home.join(".agents").join("skills"));
         for dir in agents
             .into_iter()
-            .chain(fullops_ext::skill_roots(self.host))
+            .chain(fullops_ext::skill_roots(host))
         {
             if !dirs.contains(&dir) {
                 dirs.push(dir);

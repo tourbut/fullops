@@ -873,6 +873,34 @@ fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// 스킬 문서에 나오지만 `fullops`의 것이 아닌 옵션: Orca의 `worker_done --outcome`과 `reply --id --body`, 호스트 CLI의 `--trust`.
+const FOREIGN_OPTIONS: &[&str] = &["outcome", "id", "body", "trust"];
+
+/// 인자 해석기가 받는 긴 옵션 이름. 소스에서 읽는다: `Long("이름")`, 공통 옵션의 `"--이름"`, `review`의 `Parsed::new` 목록.
+/// 어느 명령의 옵션인지는 가리지 않는다(문서의 오타와 없어진 옵션을 잡는 것이 목적이다).
+fn cli_options() -> std::collections::BTreeSet<String> {
+    let src = repo_root().join("crates/fullops/src");
+    let mut text = std::fs::read_to_string(src.join("cli.rs")).unwrap();
+    for file in all_files(&src.join("cmd")) {
+        text.push_str(&std::fs::read_to_string(src.join("cmd").join(file)).unwrap());
+    }
+    let mut options = std::collections::BTreeSet::new();
+    let name = |rest: &str| -> String {
+        rest.chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .collect()
+    };
+    for mark in ["Long(\"", "\"--"] {
+        options.extend(text.split(mark).skip(1).map(name));
+    }
+    for call in text.split("Parsed::new(args, ").skip(1) {
+        let lists = call.split(")?").next().unwrap_or_default();
+        options.extend(lists.split('"').skip(1).step_by(2).map(str::to_string));
+    }
+    options.remove("");
+    options
+}
+
 /// 스킬 문서와 INSTALL.md: Python 표기가 없고, 가리키는 명령과 스킬 이름이 실제와 같다(설계 18.2절 F의 확인).
 #[test]
 fn skill_docs_name_real_commands_and_skills() {
@@ -912,6 +940,8 @@ fn skill_docs_name_real_commands_and_skills() {
         );
     }
 
+    let options = cli_options();
+    assert!(options.contains("request-file") && options.contains("finished"));
     let mut docs: Vec<PathBuf> = all_files(&skills_dir)
         .into_iter()
         .filter(|f| f.ends_with("SKILL.md") && !f.starts_with("fullops-motion/"))
@@ -947,6 +977,16 @@ fn skill_docs_name_real_commands_and_skills() {
                 );
             }
         }
+        // `--옵션`은 인자 해석기가 받는 이름이어야 한다(Orca와 호스트 CLI의 옵션은 따로 적는다)
+        for word in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
+            let Some(option) = word.strip_prefix("--").filter(|o| !o.is_empty()) else {
+                continue;
+            };
+            assert!(
+                options.contains(option) || FOREIGN_OPTIONS.contains(&option),
+                "{name}: `--{option}`은 없는 옵션이다"
+            );
+        }
         // 가리키는 스킬 이름이 있다
         for word in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
             let looks_like_skill = (word.starts_with("fullops-") && word != "fullops-squad")
@@ -965,6 +1005,29 @@ fn skill_docs_name_real_commands_and_skills() {
             "{name}: Windows의 고정 위치 실행본 경로가 없다"
         );
     }
+}
+
+/// `fullops-orca`가 worker 질문에 답하는 길, 설계 완료 뒤의 배정, 환경 파일 연결을 말한다(1.24.0 스킬의 절).
+/// Orca 명령은 계약 문서(`docs/contracts/orca.md`)에 있는 꼴 그대로다.
+#[test]
+fn orca_skill_tells_how_to_answer_questions_and_continue_after_design() {
+    let read = |path: &str| std::fs::read_to_string(repo_root().join(path)).unwrap();
+    let skill = read("plugin/skills/fullops-orca/SKILL.md");
+    let reply = "orca orchestration reply --id <질문 메시지 ID> --body \"<답>\"";
+    assert!(skill.contains(reply));
+    assert!(read("docs/contracts/orca.md").contains("orchestration reply --id <msg_id> --body"));
+    for needle in [
+        "## 질문: lead가 전달한다",
+        "--class design --role <설계 역할>",
+        "fullops decision add --question \"<질문>\" --key <KEY> --blocks <KEY> --blocks <질문 메시지 ID>",
+        "## 설계 완료 뒤",
+        "fullops dispatch <KEY> --role <역할> --agent <CLI> --model <모델> --effort <effort>",
+        "tester의 지시서는 구현 역할의 완료 보고를 병합한 뒤에 배정한다",
+        "`fullops env link`",
+    ] {
+        assert!(skill.contains(needle), "fullops-orca: `{needle}`가 없다");
+    }
+    assert!(read("plugin/skills/fullops-work/SKILL.md").contains("preamble의 `ask`로 묻는다"));
 }
 
 fn toml_of(path: &Path) -> toml::Table {

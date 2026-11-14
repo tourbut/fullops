@@ -47,6 +47,7 @@ fullops install --prune | --rollback | --remove-hooks
 
 ## fullops가 호스트 쪽에 하는 것과 하지 않는 것
 
+- caveman 스킬이 설치돼 있으면 hook이 새 세션(시작, `/clear`)마다 그 스킬을 적용하라는 안내를 붙인다. FullOps를 쓰지 않는 레포의 세션에도 붙는다(1.24.0과 같다). grok에는 붙지 않는다. 끄려면 그 세션에서 끄라고 말하거나 caveman 스킬을 지운다.
 - 호스트 CLI에는 설치와 목록 명령만 부른다. `--trust` 같은 신뢰 인자를 넘기지 않고 npm 전역 설치를 하지 않는다.
 - 호스트 쪽 폴더에 fullops가 직접 쓰는 파일은 하나다: grok의 전역 hook 폴더의 `<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`. 계획과 결과에 경로가 나오고 `fullops install --remove-hooks`가 지운다. 이미 있는 호스트 설정 파일은 고치지 않는다.
 - 플러그인 제거는 사람이 호스트의 명령으로 한다. grok은 플러그인을 지워도 hook 등록 파일이 남으므로 `fullops install --remove-hooks`를 함께 실행한다.

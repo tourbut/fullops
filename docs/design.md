@@ -673,19 +673,20 @@ token, 이슈 본문, 댓글, 프롬프트는 넣지 않는다. 필드는 두 �
 
 3번은 lead 체크아웃의 파일을 본다. 그래서 `ready()`는 lead 문맥에서만 계산하고, 그 밖의 호출은 `status.json`의 `ready`를 건드리지 않는다(6.2.3절).
 
-**세션이 만든 변경** `changed()`: X-01과 `done`이 같은 함수를 쓴다.
+**세션이 만든 변경** `changed()`: X-01·X-02, `done`, `lint`의 `--from` 기본값이 같은 함수를 쓴다(`fullops::hook::changes`. 10.2절).
 
-1. 시작점: 이 워크트리의 역할 인박스가 있으면 그 `base`, 없으면 세션의 `anchor`. dev 직접 작업은 항상 `anchor`.
+1. 시작점: 이 워크트리의 역할 인박스가 있으면 그 `base`, 없으면 세션의 `anchor`. dev 직접 작업은 항상 `anchor`. 후보가 없으면(인박스도 `anchor`도 없다) 바닥을 쓴다. 바닥도 구하지 못하면 hook은 판정하지 않는다(`Unknown`, 통과). 후보가 `HEAD`와 같으면 바닥을 계산하지 않는다.
 2. 바닥: `merge-base(HEAD, 통합 기준 ref)`. 시작점이 바닥의 조상이면 시작점을 바닥으로 바꾼다. 통합 기준 ref가 없으면 그대로 둔다.
 3. 시작점이 `HEAD`의 조상이 아니면(amend·rebase) 바닥을 쓴다.
-4. 대상: `git diff --name-only -z <시작점> HEAD`와 `git status --porcelain -z --untracked-files=all`의 합집합 가운데 코드 파일(8.11절 `is_code`). dev 직접 작업은 확장자와 무관하게 lint 제외에 안 걸리는 모든 파일이다. 기록 경로는 항상 뺀다.
+4. 대상: `git diff --name-only -z <시작점> HEAD`와 `git status --porcelain -z --untracked-files=all`의 합집합 가운데 코드 파일(8.11절 `is_code`). dev 직접 작업은 확장자와 무관하게 lint 제외에 안 걸리는 모든 파일이다. 기록 경로는 항상 뺀다. 코드 파일 판정의 기준은 시작점 커밋의 `fullops.toml`(`[code]`)과 `lint.json`(`exclude`)이다(6.1.1절. 브랜치가 스스로 기준을 느슨하게 하지 못한다). hook이 호출 상한 때문에 그 blob을 읽지 못하면 작업 트리의 설정으로 판정한다. 대상 후보가 하나도 없으면 blob을 읽지 않는다(깨끗한 lead의 Stop은 git 1회다).
+   - lead 좌석에서는 통합 위치가 `PushLeft`인 통합 대기 completion의 SHA가 바꾼 파일(`git diff --name-only <시작점> <SHA>`)을 diff 쪽 대상에서 뺀다(`changes::merged_in`). 병합으로 들어온 커밋은 이 세션이 만든 변경이 아니고 X-06이 맡는다(12.2절 J1의 둘째 경우). 파일 단위로 빼므로 lead가 병합 뒤에 같은 파일을 직접 고쳐 커밋한 변경은 놓친다(여는 쪽. 검증 보고 R1-7, 16.1절). 호출 상한을 넘으면 `changed()`가 `Unknown`이 되어 X-01은 통과하고 X-06이 남는다.
 5. 기록 경로: `.fullops-squad/handovers/`, `.fullops-squad/docs/evaluations/`, `.fullops-squad/routes/`, `.fullops-squad/reviews/`, `.fullops-squad/PLANS.md`.
 
 **lint 통과 인정** `pass_covers(head)`: `lint/pass.json`이 있고, `pass.head == head`이거나 `pass.head`가 `head`의 조상이며 그 사이 diff가 기록 경로뿐이고, `pass.base`가 요구 시작점과 같거나 그 조상이다.
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
-- `changed()`의 코드 파일 판정(4번)은 기준 시점이 아니라 작업 트리의 `[code]`와 `lint.json`의 `exclude`(`lint_excludes`)를 쓴다. 기준 시점 설정을 적용하는 것은 `fullops lint`다(8.11절 3번, G3).
+- `changed()`·`pass_covers`·시작점 계산은 통합에서 `fullops/src/hook/changes.rs` 한 곳으로 모였다(`GitGate`, `start_candidate`, `start_point`, `merged_in`, `changed`, `pass_covers`). hook(`facts_real`)은 이벤트별 호출 상한을 준 `GitGate::hook`으로, `done`과 `lint`는 상한 없는 `GitGate::cli`로 부른다.
 - 기록 경로 다섯은 `fullops_core::derive::RECORD_PATHS`가 정본이다. `is_record_path`, `is_change_target`, `landing_of`가 같은 파일에 있고 hook과 CLI가 함께 쓴다.
 
 ### 6.7 지표
@@ -740,6 +741,7 @@ token, 이슈 본문, 댓글, 프롬프트는 넣지 않는다. 필드는 두 �
 2. stdin(최대 8MB)을 읽어 host::decode 한다. 실패하면 통과를 낸다.
 3. cwd에서 위로 올라가며 ".git"(디렉터리 또는 "gitdir:" 파일)과 ".fullops-squad/fullops.toml"을 찾는다.
    git 프로세스는 띄우지 않는다. 표식이 없으면 통과를 내고 끝낸다(추적도 쓰지 않는다).
+   예외는 하나다: SessionStart면 S-06의 조건(7.5절)만 보고, 걸리면 caveman 글만 Context로 낸 뒤 끝낸다.
 4. sessions/<sid>.seen/<이벤트>가 없으면 만든다(실행 근거).
 5. 도구 입력을 Intent·편집 대상으로 분류한다(7.4절). PreToolUse에서 규칙 후보가 없으면 통과를 내고 끝낸다.
 6. Facts를 지연 계산으로 만들고 core::decide(input, facts)를 부른다.
@@ -750,6 +752,8 @@ token, 이슈 본문, 댓글, 프롬프트는 넣지 않는다. 필드는 두 �
 ```
 
 효과 가운데 판정이 기대는 것(한 번 막기의 `blocks` 기록)은 7번 전에 쓴다. 나머지는 8번에서 쓴다.
+
+**비활성 레포의 SessionStart.** 3번에서 표식이 없어도 이벤트가 SessionStart이고 S-06의 조건(`source`가 `startup`·`clear`·`fork`, `context_at_start`가 참, caveman 스킬의 본문이 있다)이 맞으면 7.5절의 caveman 글만 `Context`로 낸다. 역할 안내(S-01)와 그 밖의 규칙은 돌지 않고, 세션 파일·실행 근거·추적을 만들지 않으며, git을 부르지 않는다(파일 읽기는 스킬 폴더 후보의 `metadata`와 찾은 파일 하나다). 이유: 1.24.0의 caveman 주입은 별도 SessionStart 등록이라 레포를 가리지 않았고, 레포 주인이 그 동작을 유지하기로 정했다(검증 보고 R6-5). 비활성 레포의 그 밖의 이벤트는 표식을 찾은 뒤 아무것도 읽지 않고 끝난다(2.2절의 비활성 레포 목표는 이 경로의 값이다). 조건과 읽기는 `rules::start_skill` 하나이고 S-06과 hook 진입이 함께 쓴다(10.2절).
 
 | 이벤트 | 내부 기한 | 등록 타임아웃 | git 호출 상한 | Orca 호출 상한 |
 |---|---|---|---|---|
@@ -1000,7 +1004,7 @@ pub static RULES: &[Rule];   // 표 순서가 평가 순서다
 | S-03 | lead | 항상 | 효과: 경로와 Git 등록이 모두 사라진 `active`·`creating` snapshot을 `missing`으로 닫는다. 6.8절의 세션 정리 |
 | S-04 | 전부 | `--in-place`가 아니고 플러그인 루트(7.1절)가 있으며, 고정 위치 실행본이 없거나 플러그인 루트의 `VERSION`이 고정 위치 실행본의 버전(`install.json`의 `version`)보다 높다 | 효과: 10.3절의 실행본 단계(`install --only runtime`과 같은 일). 플러그인 등록과 의존 설치는 하지 않는다. 이번 호출의 판정에는 영향이 없다 |
 | S-05 | 전부, `source`가 `compact` | 항상 | `Context`: 역할 한 줄과 현재 인박스 경로·과제 키. grok은 compaction 뒤 SessionStart가 오지 않고 agy는 `source`가 없어 이 규칙이 걸리지 않는다 |
-| S-06 | 전부, `source`가 `startup`·`clear`·`fork` | 설치된 caveman 스킬 파일이 있고 front matter 뒤 본문이 비어 있지 않다(아래) | `Context`: caveman 적용 안내를 S-01의 글 뒤에 붙인다. 파일이 없거나 읽지 못하면 아무것도 내지 않는다(경고도 없다). `context_at_start`가 거짓이면 파일을 찾지 않는다 |
+| S-06 | 전부, `source`가 `startup`·`clear`·`fork` | 설치된 caveman 스킬 파일이 있고 front matter 뒤 본문이 비어 있지 않다(아래) | `Context`: caveman 적용 안내를 S-01의 글 뒤에 붙인다. 파일이 없거나 읽지 못하면 아무것도 내지 않는다(경고도 없다). `context_at_start`가 거짓이면 파일을 찾지 않는다. 활성 표식이 없는 레포에서도 이 규칙만은 돈다(7.1절 "비활성 레포의 SessionStart") |
 
 여러 `Context`는 한 번의 출력에 표 순서대로 빈 줄을 사이에 두고 이어 붙인다. SessionStart의 프로세스는 하나다.
 
@@ -1131,11 +1135,12 @@ F-01의 `<오류 글>`은 `HookInput.error`(종류 이름)와 `HookInput.error_d
 - T-00: 모르는 도구(`ToolKind::Other`)는 정책 오류에서도 통과한다(7.8절의 '모르는 도구는 통과'가 먼저다).
 - T-05 (b)는 바뀐 뒤의 글을 모르는 편집(없는 인박스에 대한 Edit, 잘린 입력)에서는 걸지 않는다. T-10의 '차수 접미사를 뗀 것'은 접미사부터 끝까지 떼는 것이다(`A-1-R2-1` → `A-1`).
 - T-11: C의 `record_message`를 그대로 부른다. Run을 주지 않은 날것 `check`는 lead의 열린 Run이 하나일 때만 그 Run으로 기록한다.
-- S-04의 효과는 플러그인 루트의 실행본을 `install --only runtime` 인자로 띄우는 것이다(3초 제한. 실패는 추적에만 남는다). 같은 일을 프로세스 안에서 하는 진입점은 F의 `cmd::runtime_stage`다(10.2절).
+- S-04의 효과는 프로세스를 띄우지 않고 hook 프로세스 안에서 F의 `cmd::runtime_stage`(10.2절)를 부르는 것이다(통합에서 바꿨다. `install --only runtime`과 같은 함수다). 실패는 추적에만 남는다(`self_install`).
 - X-02의 `review_evidence`가 보는 '유효한' 기록은 형식과 `head`만이다. 두 해시의 검증은 `fullops review check`가 한다. 최근 기록 셋만 본다.
 - X-04의 '`handovers/logs/<KEY>.`로 시작하는 파일'은 지금 `<KEY>.<역할>.r0~r9.md`의 존재로 본다(`Facts`에 폴더 훑기가 없다. 차수가 10을 넘으면 놓친다).
 - Stop의 git 호출 상한 6을 지키려고 시작점이 바닥과 같으면 조상 확인을 생략하고, '그 커밋부터 HEAD까지 기록 경로만 바뀌었는가'를 lint 통과와 리뷰 증거가 함께 쓴다. 그래도 넘으면 X-02는 기준 시점 설정 대신 작업 트리의 설정으로 판정하고 그 밖의 사실은 `Unknown`(통과)이다.
-- 열린 문제(12.2절 J1의 둘째 경우): lead가 날것 `git merge`로 로컬 기본 브랜치에만 병합하면 6.6절 `changed()`의 바닥이 통합 기준 ref(원격)라서 병합된 코드가 '세션이 만든 변경'으로 잡힌다. 그래서 첫 차단은 X-01이고 X-06은 '함께 남은 것'에 붙는다. lead의 X-01에서 병합으로 들어온 커밋을 뺄지는 정하지 않았다.
+- 12.2절 J1의 둘째 경우(lead가 날것 `git merge`로 로컬 기본 브랜치에만 병합)는 통합에서 정했다: lead의 `changed()`가 통합 위치 `PushLeft`인 통합 대기 보고의 SHA가 바꾼 파일을 뺀다(6.6절 4번). 그래서 그 경우의 차단은 X-01이 아니라 X-06이다.
+- X-05 (a)는 lead의 Run에서 completion의 통합 위치가 `Landed`인 통합 대기 보고의 메시지를 미처리로 세지 않는다(같은 호출의 X-06 효과가 처리 표시를 쓴다). 미처리 메시지가 있는 통합 대기 보고에서는 첫 Stop이 X-05 (a)이고 X-06은 '함께 남은 것'에 붙는다. X-05는 한 번만 막으므로 다음 Stop이 X-06이다(12.2절 I4·J2·J4·L5·R4).
 
 ### 7.6 한 번 막기의 정의
 
@@ -1152,8 +1157,8 @@ F-01의 `<오류 글>`은 `HookInput.error`(종류 이름)와 `HookInput.error_d
 
 | 받는 쪽 | 내용 |
 |---|---|
-| 전부 | 역할 안내 5종 가운데 하나(dev 주 담당, coordinator, 설계 역할 또는 split의 제품 기획자, tester, worker). 좌석 `Other`·`Reviewer`는 한 줄(이 체크아웃에는 역할 규칙이 적용되지 않는다 / 읽기 전용 리뷰 사본이다) |
-| 전부 | 테스트 레벨의 요약과 병렬 방침 문구(`parallel_brief(parallel, 이 호스트, Session)`. 8.15절). 인박스 규칙 한 문단(현재 과제는 인박스 하나, 다음 과제는 `PLANS.md` 대기, 끝나면 `fullops done`) |
+| 전부 | 역할 안내 5종 가운데 하나(dev 주 담당, coordinator, 설계 역할 또는 split의 제품 기획자, tester, worker). 담는 항목은 아래 "역할 안내의 항목" 표다. 좌석 `Other`·`Reviewer`는 한 줄(이 체크아웃에는 역할 규칙이 적용되지 않는다 / 읽기 전용 리뷰 사본이다) |
+| 전부 | 테스트 레벨의 범위 한 문단(1.24.0 `TEST_BRIEF`의 레벨별 글)과 모든 레벨에 붙는 문장(보안·데이터 손실 방지와 프로젝트 필수 검사는 유지, 통과하면 인계하고 새 변경·실패가 있을 때만 재검증, 같은 과제의 재검증은 기존 `report.md`에 덧붙이고 커밋하는 캡처는 보고서가 링크하는 것만). 병렬 방침 문구(`parallel_brief(parallel, 이 호스트, Session)`. 8.15절). 인박스 규칙 한 문단(현재 과제는 인박스 하나, 다음 과제는 `PLANS.md` 대기, 끝나면 `fullops done`) |
 | 하위 worker(`sub`) | worker 안내 뒤에 한 문장: "하위 worker다. 커밋·lint·`fullops done`은 부모가 한다. 맡은 범위를 끝내면 preamble의 `worker_done`을 보낸다" |
 | 전부 | lint 게이트: 코드를 바꾸면 커밋하고 `fullops lint --from <기준>`을 통과시킨다. 통과 기록이 없으면 종료가 한 번 막힌다(dev 직접 작업은 계속 막힌다) |
 | 전부 | 현재 인박스가 있으면 그 경로와 과제 키 |
@@ -1170,7 +1175,22 @@ F-01의 `<오류 글>`은 `HookInput.error`(종류 이름)와 `HookInput.error_d
 | lead | `state.json`을 못 읽었거나 `PLANS.md`에 문법 오류가 있으면 한 문장(7.8절의 세션당 한 번 알림) |
 | coor 모드에서 dispatch가 묶인 기본 브랜치 세션 | 맡은 역할을 알 수 없으므로 역할 안내 대신 '역할 규칙이 적용되지 않는다' 한 줄 |
 
-효과로 하던 `.env*` 연결은 `dispatch`와 `task recover`가 한다(8.5절).
+효과로 하던 `.env*` 연결은 `dispatch`와 `task recover`가 한다(8.5절). 손으로 연결할 때는 그 워크트리에서 `fullops env link`를 쓴다(스킬 `fullops-orca`의 bootstrap 절).
+
+**역할 안내의 항목.** 1.24.0의 `BRIEF`·`PRODUCT_BRIEF`가 역할마다 말하던 것 가운데 지금도 유효한 것을 담는다(검증 보고 R6-3). 에이전트가 이 글만 보고 다음 명령을 알 수 있어야 하므로 Python 스크립트 이름 자리에 `fullops` 명령을 적는다. 문구는 `messages::hook::role_guide(guide, sub, split)`이고 `split`은 `routing = "split"`이다. S-05와 P-01도 같은 글을 쓰므로 한 역할의 글은 1,500자를 넘지 않는다(단위 시험이 본다).
+
+| 역할 | 항목 |
+|---|---|
+| dev 주 담당 | 사용자와 직접 기술 계획·구현·검증. 다른 역할에 맡길 일은 `route` → `task new` → `dispatch`. 제품 범위 변경은 사용자에게 확인. 직접 작업은 dispatch·`worker_done` 없이 커밋, lint, `fullops done`. 리뷰 기준을 넘으면(`fullops review need`) 다른 세션의 독립 리뷰 |
+| coordinator | 직접 구현하지 않는다. 새 개발 요청은 과제 키를 정해 `fullops route`로 먼저 분류. `direct`는 `task new`와 `dispatch`, `design`은 설계 역할에 배정. 운영 작업(설치·설정 갱신, 워크트리 동기화, 병합)은 분류 없이 직접. worker의 운영 질문은 `orca orchestration reply --id <메시지 ID> --body "<답>"`으로 직접 답하고 설계·범위·공유 계약 질문은 설계 역할에 넘긴다. 묶음 작업은 `docs/planning/intents/<묶음 키>.md`를 쓰고 사용자 승인 뒤 배정 |
+| coordinator(split) | 위와 같되 `direct`의 지시서는 목표·규칙·범위·완료 조건·정본 링크로 짧게 인계하고(기술 계획·분석·구현·테스트는 담당 worker의 같은 과제), `product`만 제품 기획자에게 배정하며, `unresolved`는 근거를 확인해 `--force --class`로 정한다. 제품 규칙·범위 질문만 제품 기획자에게 넘긴다 |
+| 설계 역할 | 설계 문서와 역할별 지시서만 쓰고 코드 파일은 고치지 않는다. 구현은 `fullops task new --role <구현 역할> --key <KEY> --goal …`로 만든 지시서로 넘긴다. 되돌릴 수 있는 디자인·연출·문구·배치 선택과 버그 수정 여부는 사용자 결정으로 올리지 않고 직접 정해 산출물에 선택과 되돌리는 방법을 적는다. 완료 보고 본문의 꼴(`[설계] <KEY> \| … \| 지시서: <경로>`) |
+| 제품 기획자(split의 설계 좌석) | 제품 목표, 규칙·수치, 화면·아트 방향, 우선순위, 사용자 완료 조건과 모호한 공유 제품 기준을 정한다. 기술 계획, 구조·API, 버그 수정 방법은 구현 역할의 책임. 나머지는 설계 역할과 같다 |
+| tester | 검증 범위를 테스트 레벨에 맞춰 확인. 제품 코드는 고치지 않고 테스트 코드·시나리오·검증 증거만 만든다. 도구와 순서는 `fullops-test` 스킬, 결과는 `qa-reports/<KEY>-test/report.md`. 실패는 재현 절차와 증거로 보고하고 직접 고치지 않는다 |
+| worker | 인박스의 과제 하나를 완료 기준까지 구현. 되돌릴 수 있는 선택과 버그 수정 여부는 묻지 않고 추천안으로 진행하고 완료 보고에 선택과 되돌리는 방법을 적는다. 설계·범위·공유 계약·되돌릴 수 없는 일은 추측하지 않고 preamble의 `ask`로 묻는다. split이면 코드 파악·짧은 기술 계획·구현·테스트·기술 문서 갱신을 같은 과제에서 하고 제품 규칙 변경·범위 확대·공유 제품 기준이 불명확한 것만 묻는다 |
+| 설계 역할·tester·worker 공통(하위 worker 제외) | 끝나면 커밋하고 `fullops done`이 출력한 본문으로 preamble의 `worker_done`을 한 번 보낸다. 보내지 않고 끝내면 종료가 한 번 막힌다(X-03) |
+
+1.24.0의 항목 가운데 넣지 않은 것: 현황판 단계(`board.json`) 갱신(버린 기능이다. 11.3절), "병합하는 SHA는 독립 리뷰한 SHA다"(`merge`의 M-04가 강제한다), 로그 재독 간격(`wait`가 흡수한다).
 
 **분량 한도.** SessionStart의 `Context` 전체(S-01 + S-06, 또는 S-05)는 9,000자를 넘지 않는다. 근거: Claude Code의 `additionalContext` 한도가 10,000자이고 넘으면 파일로 빠져 모델은 앞 2,000자만 받는다. Codex의 기본 한도는 약 2,500 토큰이므로 Codex의 SessionStart 등록에 `"additionalContextLimit": 20000`을 준다(10.4절. 한글 9,000자가 들어가도록 단위를 토큰으로 보고 잡은 값이다. 실제 단위와 상한은 미정-M2). grok은 SessionStart의 `Context`를 내지 않으므로 한도가 없다. agy는 `injectSteps`의 한도가 문서에 없어 같은 9,000자를 쓴다(미정-M11). `messages`는 글자 수(유니코드 스칼라 값)를 세어, 넘으면 아래 순서로 하나씩 줄이고 다시 센다.
 
@@ -1188,7 +1208,7 @@ F-01의 `<오류 글>`은 `HookInput.error`(종류 이름)와 `HookInput.error_d
 
 | 상황 | hook | CLI |
 |---|---|---|
-| 활성 표식 없음 | `{}` | "활성 레포가 아닙니다", 종료 코드 2 (`init`·`install`·`doctor`·`migrate`·`rules` 제외) |
+| 활성 표식 없음 | `{}`. SessionStart에서 S-06의 조건이 맞으면 caveman 글의 `Context`(7.1절) | "활성 레포가 아닙니다", 종료 코드 2 (`init`·`install`·`doctor`·`migrate`·`rules` 제외) |
 | stdin 해석 실패, 모르는 이벤트, 모르는 도구, 모르는 호스트 인자 | 통과의 글(7.1절), 추적. 모르는 호스트 인자는 `{}` | - |
 | hook 프로세스를 띄우지 못함(실행 파일 없음, 셸 없음) | 호스트가 정한다. Claude Code는 등록의 `"onFailure": "continue"`로 진행한다. Codex는 PreToolUse의 오류·시간 초과가 도구를 막지 않는다. grok은 실패를 통과로 처리한다(문서). agy는 미정-M11이다. 막는 것으로 확인되면 agy 패키지에서 `hooks.json`을 뺀다(10.4절) | - |
 | panic, 입출력 오류, 내부 기한 초과 | 통과의 글, 추적. 같은 오류 종류는 세션당 한 번 `Warn`(사용자에게만 보인다. 낼 수 있는 호스트와 이벤트에서만. 7.2절) | 종료 코드 1 |
@@ -1462,7 +1482,7 @@ Orca의 사실 넷이 이 명령의 모양을 정한다(`docs/contracts/orca.md`
    - 역할 브랜치의 로컬 ref(`refs/heads/<역할 브랜치>`) tip → `sha_source = "branch_tip"`. lead에게 "보고에 SHA가 없어 브랜치 tip을 썼다"를 알린다. 로컬 ref를 쓰는 이유: 같은 Git 공용 디렉터리라 worker의 커밋이 push 없이도 보이고, 원격 tip보다 보고 시점에 가깝다.
    - 그래도 없으면 `sha = null`.
 6. `outcome == failed`면 completion은 만들되 통합 대기로 세지 않는다.
-7. 형식 알림(차단이 아니다): 본문에 브랜치가 없거나, `reported.lint_head`가 `sha`를 덮지 못하면 반환값의 `notes`에 적는다.
+7. 형식 알림(차단이 아니다): 본문에 브랜치가 없거나, `reported.lint_head`가 `sha`를 덮지 못하면 반환값의 `notes`에 적는다. `reported.lint_head`가 없는 성공 보고에는 "lint 통과 기록이 없는 보고다(코드 변경이 없거나 `--no-checks`). 병합 때 `fullops merge`가 확인한다"를 적는다. `lint_head`는 `--no-checks`뿐 아니라 코드 변경이 없는 보고에서도 비므로 까닭을 단정하지 않는다. 실패 보고(`outcome == failed`)에는 적지 않는다(검증 보고 R6-8).
 
 반환(JSON):
 
@@ -1488,7 +1508,7 @@ Orca의 사실 넷이 이 명령의 모양을 정한다(`docs/contracts/orca.md`
 
 - 열린 Run이 여럿인데 `--run`이 없으면 `FullOps[wait]`로 거절한다(종료 코드 2).
 - `--max-minutes 0`이어도 한 번의 기다림은 최소 1초다(`--timeout-ms 0`의 뜻을 Orca에서 모른다. 미정-M3). 기다린 뒤에 만료를 보므로 0분이어도 `--peek --wait`를 한 번 부른다. Orca 실행 파일이 없으면 30초 재시도 없이 바로 종료 코드 4다.
-- `record_message`가 본문의 SHA를 고를 때 여럿이면 지금은 역할 브랜치 tip과 같은 것을 고르고, 없으면 브랜치 tip으로 내려간다(시그니처에 조상 판정 인자가 없다).
+- `record_message(state, run, msg, at, resolve, branch_tip, is_ancestor)`는 받은 시각(`at`)과 조상 판정(`is_ancestor(older, newer)`)을 인자로 받는다(통합에서 바꿨다. core는 시계와 git을 읽지 않는다). 본문의 SHA가 여럿이면 5번대로 나머지를 모두 조상으로 가지는 하나를 고르고, 그런 것이 없으면 브랜치 tip으로 내려간다. 부르는 쪽은 `wait`(C)와 T-11의 효과(B)다.
 
 ### 8.7 `done`
 
@@ -1662,7 +1682,7 @@ fullops decision list [--open]
 fullops lint [--from <ref>] [--level <레벨>] [--out <경로>]
 ```
 
-1. 작업 트리가 깨끗해야 한다(아니면 `FullOps[LINT]`, 종료 코드 2). `--from` 기본값은 `changed()`의 시작점(6.6절 1~3번: 역할 인박스의 `base`, 없으면 세션 anchor, 바닥은 통합 기준 ref와의 merge-base)이다. 인박스도 anchor도 없으면 바닥을 쓰고, 바닥도 없으면 `--from`을 요구한다(종료 코드 1).
+1. 작업 트리가 깨끗해야 한다(아니면 `FullOps[LINT]`, 종료 코드 2). 기록 경로(6.6절 5번의 다섯 경로)의 미커밋 변경은 세지 않는다(M-03과 같은 예외다. 리뷰 뒤의 lead 체크아웃에는 미커밋 리뷰 파일이 있고 M-07이 그 상태에서 lint를 돌린다. lint는 커밋된 차이만 검사하므로 결과는 달라지지 않는다). `--from` 기본값은 `changed()`의 시작점(6.6절 1~3번: 역할 인박스의 `base`, 없으면 세션 anchor, 바닥은 통합 기준 ref와의 merge-base)이다. 인박스도 anchor도 없으면 바닥을 쓰고, 바닥도 없으면 `--from`을 요구한다(종료 코드 1).
 2. `lint/lock`을 잡는다(못 잡으면 종료 코드 1). 이전 `result.json`·`pass.json`을 지운다.
 3. `mb = merge-base(from, HEAD)`. 설정은 `mb` 시점의 `lint/lint.json`과 `fullops.toml`이다. 한 번의 `git cat-file --batch`로 읽는다. `mb`에 `lint.json`이 없으면 바이너리에 내장한 템플릿의 `lint/lint.json`을 쓴다(1.24.0과 같다). 제외 목록은 `lint_excludes`(10.2절) 하나가 만들고 `lint`·`changed()`·`review_need`·탐색 색인이 함께 쓴다. `HEAD`의 `lint.json`이 `mb`와 다르면 LINT-001 경고를 낸다.
 4. 바뀐 파일: `git diff --name-status -z mb HEAD`에서 `exclude` glob에 안 맞는 것. 추가된 줄은 `git diff -U0 mb HEAD`에서 얻는다. 다만 6번의 `paths` 맞춤은 `exclude`와 무관하게 바뀐 경로 전부(이름 변경은 앞뒤 모두)로 한다(1.24.0과 같다. 제외 경로만 바꾼 변경에서 명령이 건너뛰어 게이트가 약해지지 않게 한다).
@@ -1713,7 +1733,7 @@ fullops lint [--from <ref>] [--level <레벨>] [--out <경로>]
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
-- `config_sha256`은 기준 시점 `lint.json` blob 바이트의 sha256이다. 기준 시점에 파일이 없으면 내장 템플릿 글의 sha256이다. `fullops.toml`은 넣지 않는다.
+- `config_sha256`은 기준 시점 `lint.json` blob 바이트의 sha256이다. 기준 시점에 파일이 없으면 내장 템플릿 글의 sha256이다. `fullops.toml`은 넣지 않는다. 계산은 `fullops_core::lint_rules::config_sha256(lint_json: Option<&[u8]>, template_lint_json: &str) -> String` 하나이고 `lint`와 `review check` 9번이 함께 쓴다(통합에서 모았다). 9번의 '기준 시점 설정'은 리뷰 base(`targets.json`의 `base`) 시점의 `lint.json` blob이다.
 - 코드 파일의 기준은 5번대로 기준 시점 `[code].extensions`의 `is_code`다(SIZE-001, DOC-001, ANTI-003, '코드 변경 없음' 판정). DOC-001은 주석 문법을 아는 내장 확장자에만 건다. 내장 목록에 없는 확장자의 줄 수는 C 계열 주석 규칙으로 센다.
 - Python의 코드 줄 수는 줄 머리의 삼중 따옴표를 docstring으로 보는 줄 훑기로 센다(1.24.0은 tokenize를 썼다. 코드 줄 끝 주석 안의 삼중 따옴표 같은 드문 경우에 어긋날 수 있다).
 - DOC-003은 표의 제외 범위 그대로다. 그래서 인덱스 `docs/deliverables/README.md`, `project.md`, `contexts/*.md`, 리뷰 `report.md`, QA 보고서는 바뀌면 공통 front matter가 있어야 한다. 명령이 만드는 Markdown은 공통 front matter를 쓰거나 `fullops doc stamp`를 거쳐야 한다. 기록 경로만 바뀌는 커밋(`done`의 완료 기록 커밋)은 lint를 다시 돌리지 않으므로 영향이 없다.
@@ -2086,14 +2106,14 @@ fullops가 관리하는 세션(lead와 worker)은 나눌 수 있는 일을 서�
 - 한 번의 명령이 쓰는 호출 수의 상한: `route` 1번, `find`는 `--max-calls`(기본 12, 최대 40), `context`는 후보 수(최대 20). 상한에 닿으면 남은 것은 묻지 않고 결과에 `partial`로 남긴다. 금액 한도는 두지 않는다(응답의 비용 값이 제공자마다 없을 수 있다).
 - 보내기 전에 요청 본문 전체를 8.14절의 글 규칙으로 한 번 더 본다. 걸리면 보내지 않고 실패로 처리한다(폴백).
 - 키가 없거나 오프라인이면: `route`는 폴백 분류(8.3절), `find`는 로컬 후보, `context`는 전부 `keep`이다. 셋 다 종료 코드 0이다.
-- 엔드포인트: `TYPESAFE_API_KEY`가 있으면 `https://api.typesafe.ai/v1/systemone`(model `jev-latest`), 없고 `OPENROUTER_API_KEY`가 있으면 `https://openrouter.ai/api/v1/systemone`(model `~typesafe/jev-latest`). 키를 찾는 순서는 `--env-file` → 환경 변수 → `.fullops-squad/.env`. env 파일은 키 줄만 읽는다.
+- 엔드포인트: `TYPESAFE_API_KEY`가 있으면 `https://api.typesafe.ai/v1/systemone`(model `jev-latest`), 없고 `OPENROUTER_API_KEY`가 있으면 `https://openrouter.ai/api/v1/systemone`(model `~typesafe/jev-latest`). 키를 찾는 순서는 `--env-file` → 환경 변수 → `.fullops-squad/.env`. env 파일은 키 줄만 읽는다: `<이름>=<값>` 줄이고(`export` 접두어는 읽지 않는다) 값은 따옴표를 뗀 `[A-Za-z0-9._-]+`다(1.24.0과 같다. curl 설정 글을 깨지 않는 글자다). 환경 변수의 키도 같은 글자 규칙을 통과해야 키로 본다.
 - 전송은 `curl` 프로세스다. 키와 본문은 `curl --config -`의 표준입력으로 넘기고 명령행 인자에 두지 않는다. 연결 5초, 전체 20초. HTTP 라이브러리를 바이너리에 링크하지 않는 이유: hook 실행 파일을 작게 유지하고 TLS 빌드 의존을 없앤다. curl은 Windows 10 이상·macOS·Linux에 기본으로 있다.
 - 캐시: 요청 본문의 sha256으로 `~/.fullops/cache/jev/`에 둔다. `FULLOPS_JEV_CACHE_BYPASS=1`이면 읽지 않는다.
 - `FULLOPS_OFFLINE=1` 또는 `FULLOPS_JEV_ENABLED=0`이면 호출과 캐시 읽기를 모두 건너뛰고 폴백한다. 오프라인에서는 탐색이 부르는 git에 `GIT_ALLOW_PROTOCOL=`(빈 값)을 더해 Git 프로토콜도 막는다.
 - 응답 검증: Choice는 `probabilities`의 키가 선택지와 정확히 같고 값이 0~1이며 합이 0.98~1.02이고 `choice`의 확률이 최댓값에서 0.02 안이어야 한다. Noul은 0~1의 수여야 한다. `usage.input_tokens`·`output_tokens`는 0 이상의 정수여야 한다(TypeSafe 문서는 없을 수 있다고 적으므로 없거나 `null`이면 0으로 본다. 있는데 정수가 아니면 실패다). 공식 API는 비용을 주지 않아 `cost`는 없음이다. 하나라도 어기면 그 호출은 실패다.
 - 요청·응답의 전송 스키마는 묶음 C가 TypeSafe System One HTTP API 형식으로 확정했다(미정-M6을 닫았다. 공식 문서와 1.24.0의 호출 코드로 확인했고 실제 엔드포인트는 부르지 않았다). `POST <엔드포인트>`, 요청은 `{model, state: 객체, questions: {<id>: {type: "choice", instructions, criteria: {<선택지>: null}} | {type: "noul", instructions}}}`, 응답은 `{model, answers: {<id>: {type, choice, probabilities, confidence} | {type, noul}}, usage: {input_tokens, output_tokens, cost?}}`다. `Judge`의 Choice에는 선택지 설명 자리가 없어 `criteria`의 값은 `null`로 보내고, 역할 설명(`about`)은 `state`의 `roles`에 싣는다. `Judge` trait의 타입(10.2절)은 그대로다.
 - `curl`은 이름만으로 띄우지 않는다. PATH에서 처음 찾은 `curl`의 전체 경로를 실행한다(Windows의 프로세스 생성은 이름만 준 실행 파일을 PATH보다 System32에서 먼저 찾는다. 시험 중 PATH 앞의 `fake-curl` 대신 실제 curl이 가짜 키로 나간 사고가 있었다). 호스트 CLI와 스킬 도구도 같은 규칙이다(`fullops_ext::hosts::find_program`).
-- `--env-file`과 `--repo`를 지키는 구현은 `fullops_ext::jev::JevCurl::at(repo_root, env_file)`(→ `JevCurlAt`)이다. 단위 구조체 `JevCurl`은 환경 변수, 그다음 작업 디렉터리에서 위로 찾은 `.fullops-squad/.env` 순으로 키를 찾는다. 결과의 `options.provider`는 `JevCurlAt::provider()`가 돌려준다.
+- `--env-file`과 `--repo`를 지키는 구현은 `fullops_ext::jev::JevCurl::at(repo_root, env_file)`(→ `JevCurlAt`)이다. 단위 구조체 `JevCurl`은 환경 변수, 그다음 작업 디렉터리에서 위로 찾은 `.fullops-squad/.env` 순으로 키를 찾는다. 결과의 `options.provider`는 `JevCurlAt::provider()`가 돌려준다. 통합에서 키 찾는 순서와 제공자 결정을 `JevCurlAt` 한 곳으로 모았고 `route`·`find`·`context`가 모두 `JevCurl::at`으로 만든 `Judge`를 쓴다(find·context가 따로 두던 env 파일 읽기는 지웠다). `JevCurlAt::ask`는 보내기 전에 요청 본문 전체를 `explore::sendable_text`로 본다(보낼 수 있는 글 규칙도 이 함수 하나다).
 
 ### 9.4 gh, GitHub
 
@@ -2238,9 +2258,10 @@ pub fn check_dispatch(req: &DispatchRequest, facts: &mut dyn Facts) -> Vec<Refus
         // DispatchRequest { key, role, purpose, run, terminal, tuple, sha, reason, brief, sub }. sub는 하위 배정이다(호출자가 dispatch가 묶인 세션이다).
         // 부르는 쪽(cmd/dispatch.rs)이 Ctx::caller의 결과로 채운다. 참이면 D-04·D-08·D-09·D-13만 본다
 pub fn check_task_new(req: &TaskNewRequest, facts: &mut dyn Facts) -> Vec<Refusal>;       // H-01~H-04
-pub fn record_message(state: &mut State, run: &RunId, msg: &OrcaMessage, resolve: &mut dyn FnMut(&str) -> Option<Sha>,
-                      branch_tip: &mut dyn FnMut(&RoleId) -> Option<Sha>) -> MessageNote;
-        // 8.6절 6단계와 completion 기록 규칙. MessageNote { absorbed: bool, completion: Option<CompletionNote>, notes: Vec<String> }
+pub fn record_message(state: &mut State, run: &RunId, msg: &OrcaMessage, at: i64,
+                      resolve: &mut dyn FnMut(&str) -> Option<Sha>, branch_tip: &mut dyn FnMut(&RoleId) -> Option<Sha>,
+                      is_ancestor: &mut dyn FnMut(&Sha, &Sha) -> bool) -> MessageNote;
+        // 8.6절 6단계와 completion 기록 규칙. at은 받은 시각, is_ancestor(older, newer)는 조상 판정이다(core는 시계와 git을 읽지 않는다). MessageNote { absorbed: bool, completion: Option<CompletionNote>, notes: Vec<String> }
         // CompletionNote { key: Option<TaskKey>, role: Option<RoleId>, sha: Option<Sha>, sha_source: Option<ShaSource>, outcome: Option<WorkOutcome> }: completion을 만들었을 때의 기록
 pub fn metrics(turns: &[Turn], state: &State, archive: &[ArchiveLine]) -> Metrics;
 // 아래 넷은 model.rs에 둔다(A가 완성본을 넣는다)
@@ -2387,7 +2408,7 @@ pub trait Git {   // 구현: GitCli { repo_root, timeout }. A가 메서드 전�
     fn ls_tree(&self, rev: &str) -> Known<Vec<TreeEntry>>;                              // 탐색. ls-tree -r -z 한 번
         // fullops_core::model::TreeEntry다. store의 update_index도 받으므로 ext가 아니라 core에 둔다
         // pub struct TreeEntry { pub mode: String /* "100644" 등 */, pub kind: String /* "blob"|"commit" */, pub oid: String, pub path: String }
-    fn blob_prefixes(&self, oids: &[String], max: usize) -> Known<Vec<Option<(u64, Vec<u8>)>>>;  // 탐색. cat-file --batch 하나. (크기, 앞 max 바이트)
+    fn blob_prefixes(&self, oids: &[String], max: usize) -> Known<Vec<Option<(u64, Vec<u8>)>>>;  // 탐색. cat-file --batch-check로 크기를 먼저 묻고 크기 합 16MiB마다 cat-file --batch 하나. (크기, 앞 max 바이트)
     fn grep_files(&self, rev: &str, literals: &[String]) -> Known<Vec<String>>;         // 탐색. grep -F -l -z --full-name
     fn commit_only(&self, paths: &[String], message: &str) -> Result<Option<Sha>, ExtError>;
         // 준 경로 가운데 바뀐 것(새 파일·삭제 포함)만 add -A로 인덱스에 넣고 commit --only. 바뀐 것이 없으면 None(9.1절)
@@ -2493,9 +2514,25 @@ pub fn rebuild_packet(repo: &Repo, key: &TaskKey, role: &RoleId, extra_seeds: &[
 - `fullops::cmd::runtime_stage(plugin_root: Option<&Path>) -> io::Result<Runtime>`(F): 10.3절의 실행본 단계다. `install --only runtime`과 S-04가 같은 일을 한다.
 - `fullops_core::explore::build_packet_from(input, template)`(J)과 `fullops_ext::jev::JevCurl::at(repo_root, env_file) -> JevCurlAt`(C)를 더했다. 10.2절의 시그니처는 바꾸지 않았다.
 - `install_plan`은 순수 함수라 통합 패키지 폴더, grok hook 등록 파일의 경로, 고정 위치 실행본의 경로를 모른다. 그래서 `Assemble`·`HookFile` 단계의 argv에 자리표시자(`deps::PACKAGE_ROOT`, `GROK_HOOK_FILE`, `FIXED_BIN`)를 넣고 `cmd/install.rs`가 `Plan::bind(package_root, grok_hook_file, fixed_bin)`로 실제 경로를 채운다.
-- `proc::run`은 D가 프로세스 트리 종료를 더하면서 셋이 더 바뀌었다. (1) 종료 상태를 2ms마다 폴링하지 않고 출력의 EOF를 먼저 기다린다. (2) 직접 띄운 프로세스가 끝났는데 자손이 파이프를 쥐고 있으면 제한 시간에 `TimedOut`이 된다. (3) `TimedOut`의 stdout·stderr에 끝내기 전까지의 출력이 남는다.
+- `proc::run`은 D가 프로세스 트리 종료를 더하면서 셋이 더 바뀌었다. (1) 종료 상태를 2ms마다 폴링하지 않고 출력의 EOF를 먼저 기다린다. (2) 직접 띄운 프로세스가 끝났는데 자손이 파이프를 쥐고 있으면 200ms만 더 읽고 `Exited(코드)`와 그때까지의 출력을 돌려준다(통합에서 바꿨다. 처음에는 제한 시간에 `TimedOut`이 됐다. git·orca 호출이 남의 데몬 때문에 제한 시간까지 매달리지 않게 한다). 그 자손은 끝내지 않는다. (3) `TimedOut`의 stdout·stderr에 끝내기 전까지의 출력이 남는다.
 - `Git` trait에 없는 호출은 `fullops_ext::run`으로 git을 직접 부른다(E: `git commit --no-edit`, `git log --ancestry-path`, `git status --ignored`, `git rev-list --count`).
-- 표에 없이 따로 구현된 채 남은 것(통합 단계에서 하나로 모을 대상이다): `changed()`·`pass_covers`·시작점 계산이 `hook/facts_real.rs`(B), `cmd/done.rs`(C), `cmd/lint.rs`의 `default_start`(D)에 따로 있다. 통합 확인 뒤의 처리(`mark_landed`·`archive_done` 등)는 `cmd/hold.rs`에 `pub(super)`로 있다.
+
+**통합이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 8절). 묶음마다 따로 구현했던 것을 하나로 모았다. 아래 함수는 위 표에 더하는 것이다(한 묶음이 두고 다른 묶음이 부른다).
+
+| 함수 | 자리 | 둔 묶음 | 부르는 쪽 |
+|---|---|---|---|
+| `GitGate`, `start_candidate`, `start_point`, `merged_in`, `changed`, `pass_covers` | `fullops::hook::changes` | B | B(`facts_real`의 X-01·X-02), C(`done`의 R-03), D(`lint`의 `--from` 기본값) |
+| `accepted` | `fullops::cmd`(리뷰 수락 기록 읽기) | E | B(X-02의 리뷰 증거) |
+| `runtime_stage` | `fullops::cmd` | F | B(S-04의 효과. 프로세스를 띄우지 않는다), F(`install --only runtime`) |
+| `config_sha256` | `fullops-core::lint_rules` | D | D(`lint`), E(`review check` 9번) |
+| `JevCurl::at` → `JevCurlAt`(`ask`, `provider`) | `fullops-ext::jev` | C | C(`route`), J(`find`·`context`) |
+| `sendable_text` | `fullops-core::explore` | J | J, C(`JevCurlAt::ask`가 보내기 전에 본문 전체를 본다. ext → core) |
+| `mark_landed`, `archive_done` | `fullops::cmd::hold`(`pub(super)`) | E | E(`settle`, `merge`), C(`status`가 통합이 확인된 보고에 `landed_at`과 `drift`를 쓸 때) |
+| `start_skill` | `fullops-core::rules` | B | B(S-06, hook 진입의 비활성 레포 SessionStart. 7.1절) |
+
+- 변경 계산(`changed()`·`pass_covers`·시작점)이 `hook/changes.rs` 하나가 되면서 `cmd/done.rs`와 `cmd/lint.rs`의 `default_start`에 따로 있던 구현은 없어졌다(6.6절).
+- `status`가 통합이 확인된 보고를 닫을 때 `settle`과 같은 `mark_landed`를 쓴다(`landed_at`과 `drift`를 쓰고 보류를 풀고 그 보고의 메시지에 처리 표시를 한다). 과제를 `archive.jsonl`로 옮기는 일(`archive_done`)은 `settle`과 `merge`만 한다.
+- 아직 따로 남은 것: `dispatch` 4단계의 대상 워크트리 동기화(C)와 `sync_role`(E). 위에 적은 까닭 그대로다.
 
 ### 10.3 실행본 위치와 설치
 
@@ -2576,6 +2613,14 @@ fullops install --prune | --rollback | --remove-hooks
 - `install --check`: 플러그인 목록을 읽지 못하면(모름) 빠졌다고 하지 않는다. grok·agy는 로컬 경로로 설치해 목록의 id에 마켓플레이스가 없을 수 있으므로 이름(`fullops`)만 맞아도 있는 것으로 본다. `FULLOPS_OFFLINE=1`이면 호스트 CLI를 부르지 않는다(8.1절).
 - 실행본 단계: 플러그인 루트가 없고 이미 고정 위치의 실행본으로 실행했으면 자기 자신을 복사하지 않는다(`install.json`의 버전과 `source`를 잇는다).
 - grok·agy 패키지를 다시 조립할 때 옛 폴더는 `~/.fullops/package/<버전>/<호스트>.old-<시각>/`으로 옮긴다.
+
+**통합이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 8절).
+
+- `--prune`·`--rollback`·`--remove-hooks`는 `--dry-run`·`--check`와 함께 주면 사용법 오류(종료 코드 1)다.
+- `--dry-run` 계획에는 fullops가 호스트 쪽에 쓰는 것뿐 아니라 사용자 홈에 쓰는 파일(`~/.fullops/deps.toml`, `install.json`, `skill-backups/`, `deps-state.json`)의 경로도 나온다.
+- 스킬 백업: 이름이 `*`인 묶음은 대상 호스트의 스킬 폴더에 있는 `*/SKILL.md` 폴더를 모두 백업한다(1.24.0과 같다). 백업에 실패한 묶음은 설치하지 않고 그 단계의 `what`을 대상 호스트의 `failed`에 넣는다. 백업은 `<앞 12자>.new-<pid>`에 복사한 뒤 이름을 바꾼다.
+- 옛 실행본 이름 `fullops.old-<시각>`의 시각은 같은 이름이 있으면 1초씩 올린 값이다.
+- `claude`·`codex`의 플러그인 명령(9.5절 표)은 계약 문서에 없고 1.24.0의 `deps.py`가 부르던 명령과 같다는 것만 확인했다(미정-M12).
 
 ### 10.4 패키지 배치와 hook 등록
 
@@ -2816,7 +2861,7 @@ grok과 agy에 ponytail을 스킬로 넣는 줄은 1.24.0의 `portable_skills`�
 | SessionStart 사라진 snapshot 닫기 | S-03 | v1 |
 | SessionStart `.env*` 연결 | `dispatch` 6단계, `task recover`, `env link` | v1, 위치 이동 |
 | SessionStart 필수 CLI 누락 알림 | S-01(git·orca) | v1 |
-| SessionStart caveman 스킬 주입 | S-06. 별도 프로세스가 아니라 같은 SessionStart 호출의 출력에 붙인다. 스킬이 없으면 조용히 지나간다 | v1, 방법 변경(DF-12) |
+| SessionStart caveman 스킬 주입 | S-06. 별도 프로세스가 아니라 같은 SessionStart 호출의 출력에 붙인다. 스킬이 없으면 조용히 지나간다. 1.24.0처럼 활성 표식이 없는 레포의 새 세션에도 붙인다(7.1절) | v1, 방법 변경(DF-12) |
 | SessionStart python3·orca 전체 경로 안내 | - | 버림. 스킬이 `fullops`만 부른다 |
 | SessionStart 이슈 모드 세션·터미널 결합 기록 | 세션 파일의 `terminal` | v1(이슈 모드용 기록은 나중) |
 | UserPromptSubmit dispatch 인식, dev 역할 안내 | P-01 | v1 |
@@ -2936,6 +2981,7 @@ grok과 agy에 ponytail을 스킬로 넣는 줄은 1.24.0의 `portable_skills`�
 
 - 내장 자산에 싣지 않은 것(버린 기능의 문서다): `docs/evaluations/scenarios/README.md`(웹·Unity 조작 시나리오 형식), `docs/evaluations/qa-reports/.gitignore`(Unity 로그), `board/`, `docs/agents/frontend.json`.
 - `init`이 `package.json`의 lint·test 스크립트를 `lint.json`에 자동으로 잇는 1.24.0의 동작은 넣지 않았다(setup 스킬이 손으로 잇는다).
+- 스킬 `fullops-orca`에 1.24.0의 절 둘을 `fullops` 표기로 되살렸다(검증 보고 R6-2·R6-4). "질문: lead가 전달한다": 운영 질문은 `orca orchestration reply --id <메시지 ID> --body "<답>"`으로 바로 답하고, 설계·범위 질문은 새 키의 설계 과제(`route <KEY>-Q<번호> --request … --class design --role <설계 역할>` 뒤 `dispatch`)로 설계 역할에 넘겨 받은 답을 그대로 `reply`하며, 사용자 결정은 `decision add --blocks <KEY> --blocks <메시지 ID>`로 연다. "설계 완료 뒤": 설계 보고를 병합한 뒤 들어온 지시서마다 `dispatch <KEY> --role <역할>`과 tuple로 배정하고 tester는 구현 병합 뒤에 배정한다. bootstrap 절에 `fullops env link`를 넣었다. 질문 전달 절차는 `route --request`의 글이 설계 역할의 spec에 실리는 것에 기댄다(16.1절 R6-1).
 
 ### 11.4 폐기·변경된 컨셉을 되살리지 않았다는 확인
 
@@ -3019,10 +3065,20 @@ expect = { verdict = "pass", flow = "continues" }
 - 시나리오 파일로 적을 수 없는 확인은 묶음의 Rust 통합 시험(10.1절의 시험 파일)이 같은 레포에서 본다: 실행 중에 정해지는 값(SHA, 패킷의 `input_sha256`, 리뷰 폴더의 head 12자)을 인자로 주는 단계, `state.json`·세션 파일·fake-orca 호출 기록에 대한 단언, 프로세스를 특정 단계에서 죽이는 경우(그 단계까지만 끝난 저장소 상태를 만들어 다시 실행한다), 결정 만료(시각을 돌릴 수 없다), 호스트의 날 입력, `cargo xtask`의 실행, 동시 실행.
 - `expect`에 '출력에 없어야 한다'가 없어서 lint의 비검출 사례는 요약 줄 `ERROR 0 / WARNING 0 / 실행 불가 0`을 `escape`로 단언한다(`escape`는 사람용 출력의 글을 보므로 `rs` 전용이다).
 - fake-host 방식의 전제('가짜를 놓지 않은 호스트는 없는 호스트')는 실제 CLI가 PATH에 있는 개발 PC에서 깨진다. 그래서 `Sandbox::command`가 PATH에서 실제 호스트 CLI·npx가 든 폴더를 빼고, install·doctor 단계는 `env = { PATH = "../bin" }`로 PATH를 가짜 폴더 하나로 좁힌다.
-- rs 구동기의 `lead_dispatches`·`worker_reports`·`lead_waits`는 단계의 `env`를 넘기지 않는다. 세션 핸들이 있는 lead는 `runs_fullops`와 `orca_replies`로 적는다.
-- `xtask compare`의 분류. 시나리오 형식에 DF를 적는 자리가 없으므로 차이는 그 ID의 12.2절 행에 적힌 DF(12.3절 목록에 있는 것), '더 나음', 1.24.0 칸의 `-`로 '의도한 차이'를 가린다(행 단위라 같은 행의 다른 단계에서 난 회귀가 가려질 수 있다). `session_starts`에서 py가 경고이고 rs가 이어지는 것은 DF-12로 본다. hook 동사는 판정 종류를, 흐름 동사는 흐름(이어짐·멈춤)만 견준다(py는 hook 판정 어휘, rs는 CLI 종료 코드 어휘다). `runs_fullops`, agy 호스트의 hook 단계, `runs_workflow`는 1.24.0에 대응이 없어 '기준선 없음'으로 센다. lint 미통과와 `doc check`의 문제 있음은 1.24.0이 종료 코드 1, 새 판이 2이고 둘 다 '통과 아님'으로 옮긴다.
+- (통합에서 바뀌었다. 아래 '통합이 정한 것') rs 구동기의 흐름 동사는 단계의 `env`를 받는다.
+- `xtask compare`의 분류. 시나리오 형식에 DF를 적는 자리가 없으므로 차이는 그 ID의 12.2절 행에 적힌 DF(12.3절 목록에 있는 것), '더 나음', 1.24.0 칸의 `-`로 '의도한 차이'를 가린다(행 단위라 같은 행의 다른 단계에서 난 회귀가 가려질 수 있다). (통합 뒤에는 단계의 `df` 키로 단계 단위로 가린다. 아래 '통합이 정한 것'.) `session_starts`에서 py가 경고이고 rs가 이어지는 것은 DF-12로 본다. hook 동사는 판정 종류를, 흐름 동사는 흐름(이어짐·멈춤)만 견준다(py는 hook 판정 어휘, rs는 CLI 종료 코드 어휘다). `runs_fullops`, agy 호스트의 hook 단계, `runs_workflow`는 1.24.0에 대응이 없어 '기준선 없음'으로 센다. lint 미통과와 `doc check`의 문제 있음은 1.24.0이 종료 코드 1, 새 판이 2이고 둘 다 '통과 아님'으로 옮긴다.
 - `scenarios/report.md`는 아홉 열 표 앞에 합격 점검 표(회귀, rs 기대와 다름, pending, 시나리오 없는 ID)와 '끝까지 간 정도' 표를 둔다.
 - py 구동기의 대응. `lead_routes`는 fake-curl에 Jev의 답을 걸고 가짜 키로 그 한 호출만 온라인처럼 돌린다(1.24.0의 분류는 설계 역할이 등록돼 있어야 돌므로 setup에 design 역할이 없으면 워크트리 없는 `architecture`를 등록한다). 배정한 worker의 상태를 `worker-list` 규칙 하나로 유지한다(1.24.0의 lead Stop이 `worker-list`를 묻는다). 1.24.0에 없는 준비 커밋·동기화·병합은 `lead_dispatches`·`lead_merges`가 스킬 절차대로 셸 도구 호출로 수행하고 `lead_plans`는 `PLANS.md`를 쓰기 도구로 고친다. 편집·셸 단계의 판정은 PreToolUse의 것이고 PostToolUse의 알림(DF-2)은 판정에 넣지 않는다. Stop이 막힌 세션에는 다음 사용자 입력 전까지 `stop_hook_active`를 참으로 싣는다(DF-11).
+
+**통합이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 8절).
+
+- 단계 키 셋을 더했다(`docs/formats.md` 9.3절). `hook_args`: hook을 부르는 동사가 등록 인자 뒤에 붙이는 문자열 배열(rs 구동기만 쓴다). `df`: 그 단계의 판정 차이를 설명하는 12.3절 ID(`"DF-n"`. `xtask compare`만 읽는다). `py`: py 구동기가 그 단계에서 내야 하는 판정(`xtask compare`만 읽는다). 두 구동기는 모르는 단계 키를 무시한다.
+- `xtask compare`의 가림은 단계 단위다: `df`를 쓴 시나리오 파일은 그 단계만 가리고, 안 쓴 파일은 12.2절 행의 DF로 가리며 결과 칸에 "12.2절 <ID> 행:"이라고 적는다. 합격 점검 표에 "py 구동기가 끝까지 돌지 못한 시나리오" 줄이 있고 0이 아니면 compare가 실패로 끝난다. 둘째 줄은 "시나리오의 기대와 다른 단계(rs의 `expect`, py의 `py`)"다.
+- py 구동기는 `raw`인 `fullops migrate …` 단계를 새 판 실행본으로 실제로 돌린다(1.24.0에 대응이 없어 판정은 n/a다). 이것으로 N3의 '되돌린 레포에서 py 구동기로 판정 확인'이 성립한다.
+- `lead_routes`·`lead_writes_task`·`lead_dispatches`·`lead_waits`·`worker_subdispatches`·`worker_reports`가 단계의 `env`를 받는다(위의 '넘기지 않는다'는 통합 전의 서술이다). `worker_reports`는 인박스의 완료 보고 절을 채워 커밋한다. 환경 변수 `FULLOPS_TESTKIT_BIN_DIR`로 바이너리 폴더를 줄 수 있다.
+- 하위 worker는 부모와 같은 워크트리의 다른 호스트 세션이다. CLI의 호출자 판정은 `current.json`의 세션을 먼저 보므로 하위 worker의 CLI는 그 세션의 hook이 지나간 뒤에 하위 worker로 읽힌다(R3·R4). R4의 '세션 핸들이 없다'는 세션 파일의 `terminal`이 `null`이라는 뜻이다.
+- J5: `done` 없이 온 보고는 SHA를 브랜치 tip으로 채우지만 병합까지 가려면 M-05 때문에 worker 워크트리에 lint 통과 기록이 있어야 한다. `done --no-checks`만으로 끝낸 보고도 `merge --accept-missing-lint` 없이는 M-05에 걸린다. '사람 손 없이 병합까지'는 lint를 통과시킨 경우에만 성립한다.
+- 시나리오 형식으로 적지 못해 Rust 통합 시험이 잇는 것: I2의 셋째 경우(백그라운드 대기), B4의 리뷰 사본 세션과 S-03, I4의 리뷰 보고와 '구현 보고와 수락 리뷰 보고가 함께 있을 때 `merge` 뒤 Stop', G5의 수락 리뷰 경우(`tests/hook.rs`). P1·P4·P5·P9·P11과 P7·P8·P13의 fake-curl 호출 수·요청 본문(`tests/explore.rs`). P3의 '대상 워크트리에서 전달 항목의 원문이 바뀜'은 '그 변경이 기본 브랜치에 들어가 동기화로 대상 워크트리에 닿음'으로 구현했다.
 
 ### 12.2 시나리오 목록
 
@@ -3150,7 +3206,7 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 | DF-9 | 인박스 생성은 `task new`만 한다. Write로 만든 인박스는 거부한다 | front matter를 명령만 쓰게 해 과제 키 판독을 확정한다 |
 | DF-10 | Stop에 여러 사유가 걸리면 하나의 차단에 모아 낸다 | Stop 프로세스가 하나다. 에이전트가 한 턴에 다 처리한다 |
 | DF-11 | 재시도 판정이 `stop_hook_active`가 아니라 턴 기준이다 | 호스트 차이를 없앤다(7.6절). 결과는 같다 |
-| DF-12 | python3·orca 경로 안내와 긴 출력 줄이기가 없다. caveman 주입은 있되 (1) 별도 hook 프로세스가 아니고 (2) 본문은 앞 3,000자까지이며 (3) 스킬이 없을 때 경고를 내지 않는다 | SessionStart의 프로세스를 하나로 두고 문맥 한도를 지킨다. 빠진 스킬은 `doctor`가 알린다 |
+| DF-12 | python3·orca 경로 안내와 긴 출력 줄이기가 없다. caveman 주입은 있되 (1) 별도 hook 프로세스가 아니고 (2) 본문은 앞 3,000자까지이며 (3) 스킬이 없을 때 경고를 내지 않는다. 레포를 가리지 않는 것(비활성 레포의 새 세션에도 붙인다)과 `resume`·`compact`에 붙이지 않는 것은 1.24.0과 같다 | SessionStart의 프로세스를 하나로 두고 문맥 한도를 지킨다. 빠진 스킬은 `doctor`가 알린다 |
 | DF-13 | 새 lead 세션도 열린 Run의 대기 의무를 진다(I5). 기준선이 낡은 워크트리는 `dispatch`가 동기화한다(D4). SHA 없는 보고를 스스로 채운다(J5) | 흐름이 더 이어진다 |
 | DF-14 | 탐색 색인이 정의를 Python AST가 아니라 모든 언어 공통의 줄 훑기로 뽑고 docstring을 담지 않는다 | 실행 중 Python이 없다. 지도의 설명 글이 조금 달라질 뿐이고 결과는 추천이다 |
 | DF-15 | worker가 실행 중이어도, Run을 연 세션이 Orca가 깨울 수 있는 세션이면 대기 프로세스 없이 Stop을 통과시킨다(I2·I3). 1.24.0은 막고 `orca_wait`를 걸게 했다 | 현재 Orca는 조율자가 턴을 끝내면 메일이 올 때 깨운다. 그 위에 폴링을 겹치면 스크립트의 소비형 `check`가 조율자의 메일을 가져간다. Codex·grok lead도 포그라운드로 턴을 잡고 있지 않아도 된다 |
@@ -3239,7 +3295,7 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 
 ### 13.3 `fullops migrate --rollback`
 
-전제: 인박스가 비어 있고 통합 대기가 없다. 7 → 6 순으로 되돌린다. 전환 뒤 생긴 열린 결정과 hold를 화면에 낸다(사람이 Python판의 `decision.py add`·`integration.py hold`로 옮긴다). `state.json`은 그대로 남겨 둔다(Python판은 읽지 않는다). `fullops.toml`은 `.fullops-squad/fullops.toml.rolled-back`으로 이름만 바꿔 남긴다: 그대로 두면 새 판의 활성 표식이 살아 두 판의 hook이 함께 돌고(T-01이 Python판의 날것 `worker-start`를 막는다) '되돌리면 Python판이 바로 돈다'가 깨지기 때문이다(17절 H18). `migrate`가 지운 빈 인박스 파일은 다시 만든다. 커밋은 사람이 한다. 인박스의 front matter 인박스 전용 필드는 Python판이 무시한다.
+전제: 인박스가 비어 있고 통합 대기가 없다. 7 → 6 순으로 되돌린다. 전환 뒤 생긴 열린 결정과 hold를 화면에 낸다(사람이 Python판의 `decision.py add`·`integration.py hold`로 옮긴다). `state.json`은 그대로 남겨 둔다(Python판은 읽지 않는다). `fullops.toml`은 `.fullops-squad/fullops.toml.rolled-back`으로 이름만 바꿔 남긴다: 그대로 두면 새 판의 활성 표식이 살아 두 판의 hook이 함께 돌고(T-01이 Python판의 날것 `worker-start`를 막는다) '되돌리면 Python판이 바로 돈다'가 깨지기 때문이다(17절 H18). `migrate`가 지운 빈 인박스 파일은 다시 만든다. 커밋은 사람이 한다. 인박스의 front matter 인박스 전용 필드는 Python판이 무시한다. `--rollback`에 `--dry-run`을 함께 주면 실행하지 않고 사용법을 낸다(되돌리기에는 미리 보기가 없다).
 
 ### 13.4 jevpet 전환 순서
 
@@ -3319,6 +3375,93 @@ Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 묶음 0b(`docs/contracts/grok.md`·`agy.md`·`hosts-delta.md`)로 확정돼 내린 것: grok과 agy 모두 hook이 있다. grok은 Claude Code 형식의 등록 파일을 읽고 snake_case 별칭을 주며 StopFailure가 있고, 실패한 hook은 통과이며, SessionStart·UserPromptSubmit의 출력은 모델에게 가지 않는다. agy는 플러그인 루트의 `hooks.json`만 읽고 입력에 이벤트 이름이 없으며 UserPromptSubmit과 StopFailure가 없고 PreToolUse·Stop의 출력에 `decision`이 필수다. PowerShell은 확장자 없는 런처 옆의 `.exe`를 실행하지 못하고 `cmd.exe`는 실행한다. Orca의 에이전트 ID는 `grok`과 `antigravity`다. 두 호스트 모두 원격 HTTP MCP를 받고 로컬 폴더로 플러그인을 설치하며 설치한 폴더를 자기 자리로 복사한다. 울트라코드의 `ultracode` 키워드는 사람이 직접 친 프롬프트에서만 opt-in이다(Claude Code 공식 문서).
 
 미정 항목이 가정과 다르게 확정돼도 5~8절의 타입·상태 형식·규칙 표·CLI 표면은 바뀌지 않도록 경계를 잡았다. 바뀌는 곳은 표의 "결과로" 뒤에 적은 파일이다. 함수나 상수 하나로 좁힌 것은 넷이다: M1에서 Windows의 Claude Code가 맨 이름을 풀지 못할 때의 `spec_command`, M5에서 Orca가 깨우지 않는 것으로 확인될 때의 `orca_wakes`, M11에서 agy의 통과 값이 바뀔 때의 `host_agy.rs` 상수, M13에서 Orca가 `ultracode`를 넘기지 않거나 worker가 승인 창에서 멈출 때의 `orca_effort`. 넷 다 있는 타입과 형식을 바꾸지 않는다.
+
+### 16.1 검증에서 드러난 것 (2026-11-14)
+
+구현에 관여하지 않은 검증자 여섯이 통합이 끝난 실제 바이너리로 결함을 찾았다(보고 R1~R6). 아래는 그 가운데 설계 자체에 구멍이 있거나 설계의 서술이 실제로 성립하지 않은 것이다. 구현만 틀린 것(문법 처리, 줄바꿈, BOM 등)은 맨 아래에 묶어 적었다. "상태"가 "수정 단계"인 것은 영역별 수정 담당이 고치는 중이고, 고친 방식(새 거절, 새 규칙 ID, 바뀐 탈출구)은 다음 문서 맞추기 단계에서 이 표와 해당 절에 채운다. 이 문서의 해당 절은 그때까지 처음 설계대로 적혀 있다.
+
+**병합 게이트(8.8절, 8.9절, 8.10절, 8.11절).**
+
+| 보고 | 드러난 것 | 닿는 절 | 상태 |
+|---|---|---|---|
+| R1-1 | `lint --from HEAD`가 만든 빈 통과 기록(바뀐 파일 0개, 브랜치 자신의 설정)을 M-05와 `review check` 9번이 받는다. M-05의 lint 증거 조건에 `pass.base`와 `config_sha256`이 없다(`pass_covers`에는 `base` 조건이 있다) | 6.6절 `pass_covers`, 8.8절 M-05, 8.9절 9번 | 수정 단계 |
+| R1-2 | lint의 추가 줄이 `git diff` 글에서 나와 `.gitattributes`(`-diff`, `binary`)와 `diff.noprefix` 같은 설정 하나로 추가 줄 검사(ANTI·SEC·레포 규칙)가 전부 꺼진다. 1.24.0은 blob을 직접 비교했다 | 8.11절 9번 | 수정 단계 |
+| R1-3 | 기본 브랜치에 들어간 `-diff` 속성이 `review need`의 줄 수를 0으로 만든다. `.gitattributes`만 바꾼 과제는 코드 변경이 아니라 lint 증거도 리뷰도 없이 병합된다 | 8.9절 `review_need`, 8.8절 M-04·M-05 | 수정 단계 |
+| R1-4 | 날것 `git merge` 뒤의 `fullops merge`가 '이미 병합된 SHA'로 보고 리뷰·lint 게이트를 건너뛴 채 push한다. '다시 실행'의 판정이 그 병합을 `fullops merge`가 했는지를 가리지 않는다 | 8.8절 '다시 실행의 판정' | 수정 단계 |
+| R1-5 | 결정의 답에 사람 증거가 없다. M-04가 연 리뷰 결정을 lead 에이전트가 스스로 `decision answer`로 닫고 `review waive`가 `decided_by: "user"`로 면제를 쓴다(1.24.0도 같은 약점이다) | 8.10절, 8.8절 M-04, 8.9절 `waive` | 수정 단계 |
+| R1-6 | 구현자 세션을 모르면(hook이 돌지 않은 worker, 채팅 방식 worker) 같은 세션의 리뷰도 `review check` 4번을 통과한다. 비교 대상이 리뷰어가 쓰는 `result.json`이다 | 8.9절 check 4번 | 수정 단계 |
+| R1-7 | lead의 `changed()`가 병합으로 들어온 파일을 경로 단위로 빼서, lead가 그 파일을 직접 고친 변경을 X-01이 놓친다 | 6.6절 `changed()` 4번 | 수정 단계 |
+| R1-8 | push 전에 원격이 먼저 나아가면 `merge` 다시 실행이 M-03의 ff-only에서 종료 코드 4로 멈춘 채 이어지지 않는다. 탈출구 안내가 없다 | 8.8절 M-03·M-09 | 수정 단계 |
+| R1-9 | 기준 시점 내용에 NUL이 있던 파일(UTF-16 소스)을 고치면 그 파일의 lint 검사를 통째로 건너뛴다(1.24.0도 같다) | 8.11절 9번 | 수정 단계 |
+| R1(미확인) | 서명 없는 로컬 증거 파일(`lint/pass.json`, 리뷰 폴더의 `accepted.json`·`waiver.json`)을 손으로 만들면 M-04·M-05를 통과한다. 코드 파일이 아닌 것만 바꾼 과제(`package.json`의 test 스크립트, CI 설정)는 lint 증거도 리뷰도 없이 병합된다. 기록 경로 판정이 접두어 매칭이다. `--accept-missing-lint`를 lead 에이전트가 사람 없이 쓸 수 있다 | 8.8절, 6.6절 5번 | 열림(1.24.0과 같은 구조다. 정하지 않았다) |
+
+**커밋된 값과 바깥으로 나가는 글(6.1.1절, 8.3절, 8.14절, 9.1절, 9.3절).**
+
+| 보고 | 드러난 것 | 닿는 절 | 상태 |
+|---|---|---|---|
+| R2-1 | 커밋된 설정 값의 검증이 없다. `fullops.toml`의 `[git].remote`와 `base`가 형식 검사 없이 `git fetch`·`push`의 인자로 가서 `-`로 시작하는 값이 git 옵션으로 읽힌다(임의 명령 실행). 6.1.1절의 검증 규칙은 '`remote`가 빈 문자열이 아님'뿐이다 | 6.1.1절, 9.1절 | 수정 단계 |
+| R2-2 | Windows의 별칭 이름(끝 점·공백, `::$DATA`, 8.3 이름)이 보낼 수 있는 경로 규칙을 지나 비밀 파일의 내용이 Jev로 간다(1.24.0은 실제 이름을 다시 봤다) | 8.14절 경로 규칙 | 수정 단계 |
+| R2-3 | 보낼 수 있는 글 규칙이 흔한 비밀 꼴(JSON·YAML의 따옴표 키, 접미어가 붙은 이름, 토큰 접두어, URL 안의 자격 증명)을 놓친다 | 8.14절 글 규칙 | 수정 단계 |
+| R2-4 | `route --request-file`이 경로 규칙 없이 레포 밖의 파일도 읽어 요청 글로 보낸다(1.24.0에는 파일 입력이 없었다) | 8.3절 | 수정 단계 |
+| R2-5 | 필수 문서가 하나라도 없는 레포에서 만든 패킷은 배정이 J-12(D-12)로 계속 막히고 문구의 탈출구(`packet build --force`)가 같은 결과로 돌아온다. '패킷은 선택이고 흐름을 막지 않는다'와 어긋난다(통합 담당 I3도 같은 것을 확인했다) | 8.14절 J-12, 8.5절 D-12 | 수정 단계 |
+| R2-6, R2-7, R2-8 | `.env`의 BOM이 키를 가린다. PATH의 상대 항목(`.`)에서 레포 안의 `curl`·`git`이 실행된다. `route`에 `--env-file`이 없다(9.3절의 키 찾는 순서와 어긋난다) | 9.3절, 8.3절 | 수정 단계 |
+
+**hook(7.4절, 7.5절).**
+
+| 보고 | 드러난 것 | 닿는 절 | 상태 |
+|---|---|---|---|
+| R3-1 | 키도 SHA도 없는 완료 보고가 있으면 X-06(BlockAlways)이 lead의 Stop을 계속 막는데, 표의 탈출구(`merge <KEY>`, `hold <KEY>`)는 키로만 찾아서 거절된다. 유일한 길인 `completion set-sha <메시지 ID>`의 메시지 ID가 문구에 없다 | 7.5절 X-06, 7.6절, 8.8절 | 수정 단계 |
+| R3-2 | Windows에서 대소문자가 다른 경로나 junction을 거친 경로가 T-05·T-06·T-10을 지난다(7.4절은 Windows에서 대소문자를 가리지 않는다고 적었다) | 7.4절 경로 맞추기 | 수정 단계 |
+| R3-3 | 셸 분류가 서브셸, 제어 낱말, 접두 명령(`env`, `command`, `sudo` 등), 겹친 셸, PowerShell의 `Start-Process`를 풀지 않아 날것 `worker-start`와 터미널 주입이 T-01·T-02를 지난다(1.24.0도 같은 한계다) | 7.4절 분류 규칙 | 수정 단계 |
+| R3-4, R3-5, R3-6 | `git commit -m<글>`을 `-a`로 읽는다. T-08이 `Purpose : research`(콜론 앞 공백)를 못 읽는다. agy는 `--event`로 이벤트를 미리 아는데 stdin을 읽는 동안의 기한이 12초라 등록 타임아웃 8초보다 길다 | 7.4절 9번, 7.5절 T-08, 7.1절 | 수정 단계 |
+| (F6) | 분류하고 배정해 병합까지 끝난 과제가 인박스 없는 설계 과제(설계 문서만 만든 과제, 질문 전달 과제)면 같은 세션의 다음 Stop에서 X-04가 '분류만 하고 배정하지 않은 과제'로 한 번 막는다. X-04의 면제 조건(dispatch, `PLANS.md` 행, 인박스, `handovers/logs/`의 기록)이 병합으로 archive에 옮겨진 인박스 없는 과제를 덮지 못한다. 스킬의 질문 전달 절차를 돌려 보다 찾았다 | 7.5절 X-04 | 열림(hook 담당에게 넘겼다) |
+
+**흐름 명령(6.6절, 8.3절~8.8절, 8.13절).**
+
+| 보고 | 드러난 것 | 닿는 절 | 상태 |
+|---|---|---|---|
+| R4-1 | 병합 전 수정 배정이 막힌다. 리뷰 reject와 M-07 실패의 탈출구인 `task reopen`이 병합 전에는 H-03·H-04로 거절되고(완료 기록이 역할 브랜치에만 있다), 그 거절들의 탈출구가 서로를 가리킨다. 통과하는 길(lead에 남은 인박스로 fix 배정)은 수정 지시를 전달하지 못하고 이전 차수의 완료 기록을 건드린다 | 8.4절 reopen 조건, 8.8절 M-04·M-07, 5절 불변식 | 수정 단계 |
+| R4-2 | `wait`가 미리 보기 기록 뒤 소비 전에 끝나면, 이미 병합해 archive로 옮긴 보고가 새 통합 대기로 다시 기록돼 다음 배정이 D-03에 막힌다 | 8.6절 기록 규칙 | 수정 단계 |
+| R4-3 | 같은 키를 다시 보고하면 `wait`의 안내(`merge <KEY>`)가 M-02 거절로 이어지고, 새 SHA를 병합한 뒤에도 조상 SHA의 completion이 통합 대기로 남는다 | 8.6절, 8.8절 M-02·M-10 | 수정 단계 |
+| R4-4 | 성공한 `dispatch`를 다시 실행하면 같은 워크트리에 worker가 하나 더 뜬다. '다시 실행해도 안전하다'는 예약 기록이 남아 있을 때만 성립한다 | 8.5절 8·9단계 | 수정 단계 |
+| R4-5 | 인박스 front matter가 문법 오류면 `done`이 인박스를 없는 것으로 보고 R-04·R-10·R-06을 건너뛴 채 통과한다 | 8.7절 | 수정 단계 |
+| R6-1 | `route --request "<글>"`은 요청 글을 저장하지 않는다(`request_sha256`만 남는다). 그래서 인박스 없이 설계 역할에 배정하면 spec에 요청이 실리지 않는다(D-02의 예외는 '요청 파일 경로를 넣는다'고 적었다). 스킬의 질문 전달 절차도 이 길에 기댄다 | 8.3절, 8.5절 D-02 | 수정 단계 |
+| R6-2 | 설계 완료를 병합한 뒤 설계 역할이 만든 구현 인박스를 배정하라는 안내도 차단도 없다(`merge`는 "다음: 없음", Stop은 통과). 스킬에는 절차를 다시 적었다(11.3절) | 8.8절 M-13, 7.5절 X-04·X-07 | 수정 단계(스킬은 고쳤다) |
+| R6-6 | lead의 `status`가 worker 소유 Run(`owner = dispatch:<ID>`)까지 '이어받을 Run'으로 보여 주고, `wait --run`은 소유를 보지 않고 Run을 호출 세션에 다시 묶는다. S-01은 lead 소유만 보여 준다 | 8.13절, 8.6절, 8.15절 | 수정 단계 |
+| R6-7 | 실패 보고(`done --failed`)를 처리 표시하면 그 과제가 `Reported`로 남아 재배정·보류 안내 없이 Stop이 통과하고, 그 과제를 선행으로 둔 행이 준비된 행이 된다(`ready()` 4번이 실패도 '보고됨'으로 친다) | 6.6절 `stage_of`·`ready()` | 수정 단계 |
+
+**설치와 이행(10.3절, 10.6절, 13절).**
+
+| 보고 | 드러난 것 | 닿는 절 | 상태 |
+|---|---|---|---|
+| R5-1 | `migrate --from-python`이 중간에 실패하면 두 판의 활성 표식이 함께 남고 다시 실행도 되돌리기도 거절된다. 13.2절의 '1~6은 Python판 동작에 영향이 없다'가 성립하지 않는다(새 판의 표식을 2단계에서 쓴다) | 13.2절 | 수정 단계 |
+| R5-2 | `install --rollback`으로 되돌린 실행본을 다음 SessionStart의 S-04가 바로 다시 올린다 | 10.3절, 7.5절 S-04 | 수정 단계 |
+| R5-3, R5-6 | `migrate`가 심볼릭 링크인 엔트리 문서를 일반 파일로 바꾼다(`init`은 건너뛴다). 끝 표식이 빠진 관리 블록에 `init`을 두 번 돌리면 그 사이 사람이 쓴 글이 지워진다 | 10.6절, 13.2절 | 수정 단계 |
+| R5-4 | 전환 뒤에도 1.24.0의 기본 템플릿(`FULLOPS.md`, `lint/README.md` 등)이 Python 명령을 그대로 안내한다. 13.2절은 `delegation.md`만 바꾼다 | 13.2절 | 수정 단계 |
+| R5-5 | Python판(`fullops.json`) 레포에서 `fullops init`을 거절하지 않아 두 판의 hook이 함께 활성이 된다(`migrate`의 전제 검사를 건너뛰는 길이다) | 10.6절, 13.1절 | 수정 단계 |
+| R5-7~R5-10 | 되돌린 뒤 Python판에서 닫은 결정이 다시 전환할 때 열린 채 남는다. `--dry-run` 보고서에 `PLANS.md` 문법 오류가 없다. 새 결정 번호가 Python판의 닫힌 결정 번호와 겹친다. 되돌린 엔트리 문서가 원본과 바이트가 다르다 | 13.2절, 13.3절 | 수정 단계 |
+
+**안내 문구·스킬·문서(이번 단계에서 고쳤다).**
+
+| 보고 | 드러난 것 | 고친 방식 | 절 |
+|---|---|---|---|
+| R6-3 | S-01의 역할 안내가 1.24.0보다 약했다(묻는 기준, `worker_done`, 설계 보고 형식, 제품 기획자, 테스트 레벨 문장) | 역할 안내에 1.24.0 `BRIEF`·`PRODUCT_BRIEF`의 항목을 `fullops` 명령으로 되살리고 split 변형을 넣었다. 테스트 레벨 문구를 `TEST_BRIEF` 수준으로 되돌렸다 | 7.7절 |
+| R6-4 | worker 질문에 답하는 길(`orca orchestration reply --id`)과 설계 질문을 설계 역할로 넘기는 절차가 스킬과 안내에 없었다 | 스킬 `fullops-orca`에 "질문: lead가 전달한다" 절을 넣고 coordinator의 역할 안내에 `reply` 명령을 넣었다. `wait`의 다음 안내 문구는 흐름 담당의 몫으로 남겼다 | 7.7절, 11.3절 |
+| R6-5 | caveman 주입이 비활성 레포에서 사라졌다 | 비활성 레포의 SessionStart에서도 S-06만은 돈다 | 7.1절, 7.5절 S-06 |
+| R6-8 | `--no-checks`를 쓰지 않은 보고에도 "lint 없이 끝낸 보고다(`--no-checks`)"를 냈다 | 까닭을 단정하지 않는 문구로 바꾸고 실패 보고에는 내지 않는다. 문서만 바꾼 보고와 `--no-checks` 보고를 가르려면 `reported`에 사유 필드가 필요하다(하지 않았다) | 8.6절 7번 |
+| R6-9, R1-10 | 설계와 형식 문서에 통합 전 상태가 남아 있었다(`changed()`가 세 곳, `record_message`의 시그니처, 코드 파일 판정 기준, '지금은 통합 단계다') | 문서를 통합 뒤 코드에 맞췄다 | 6.6절, 8.6절, 10.2절, 18.4절, `docs/formats.md` 8절 |
+
+**구현만 틀린 것**(설계는 그대로다): R4-6(`plan add`·`set`이 CRLF를 LF로 바꾼다), R4-7(BOM으로 시작하는 `PLANS.md`의 첫 표를 못 읽는다), R4-8(`state.json`의 모르는 enum 값 하나로 상태 전체를 격리한다. 6.5절의 파손 처리와 닿는다).
+
+**통합에서 넘어온 채 열려 있는 것**(통합 담당의 보고. 코드는 설계대로 두었다).
+
+- 지도에만 있는 65,536바이트 초과 파일 하나로 패킷이 partial이 되어 완료 때마다 J-16이 `uncertainty_review`를 요구한다. 8.14절의 '크기' 행과 `packet build` 4번이 서로 다르게 읽힌다.
+- D-12(J-12)의 탈출구 `packet build … --write-inbox`가 통하지 않는 경우가 둘 있다: 역할 브랜치에만 있는 커밋이 전달 항목을 바꾼 경우, `task recover`의 패킷 갱신 커밋 뒤 lead가 같은 키의 패킷을 다시 만든 경우. 둘 다 `fullops task recover`는 통한다. 문구와 8.5절 표의 탈출구를 둘로 나눌지 정하지 않았다.
+- 부모 worker와 하위 worker가 같은 워크트리의 `current.json`을 함께 쓴다. hook이 돌지 않는 호스트의 하위 worker나 hook 없이 부른 CLI는 10분 안의 `current.json`이 가리키는 부모 세션으로 판정된다(하위 worker의 `done`이 R-01에 안 걸릴 수 있다. 8.1절).
+- 번호 없는 단계 이름 일곱(`publish`, `sync`, `wait`, `LINT`, `install`, `migrate`, `packet`)이 `FullOps[<규칙>]` 자리에 나온다.
+- `doc stamp`의 `updated`, 배정 기록, 인박스의 날짜가 UTC다(한국에서는 09시 전까지 어제 날짜다).
+- lead가 coordinator 브랜치에 있는 배치에서는 lead 체크아웃의 리뷰 파일이 병합 기록 커밋에 들어가지 않는다(M-08). X-04는 `handovers/logs/`의 r0~r9만 본다. 내장 산출물 인덱스 템플릿에 front matter가 없다.
+- 1.24.0은 lead 체크아웃에 기록 경로의 미커밋 파일이 있으면 병합을 거부하고 새 판은 통과한다(M-03의 예외). 12.3절에 DF로 올리지 않았다. 12.2절 D3 행의 1.24.0 칸('같은 키의 수정 배정은 통과')은 py 구동기에서 거부로 나왔다(표가 틀렸는지 구동기의 대응이 다른지 확인하지 않았다).
 
 ## 17. 사람이 정해야 하는 것
 
@@ -3409,7 +3552,9 @@ Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 ### 18.4 지금 상태 (2026-11-14)
 
 - 여덟 묶음(B, C, D, E, F, G, H, J)이 각자의 워크트리에서 끝나 한 브랜치에 합쳐졌다. 묶음마다 자기 시나리오와 통합 시험이 통과한 상태로 합쳤고, 다른 묶음에 기대는 시나리오 단계는 `pending`으로 남아 있었다(합친 시점에 B 20, C 177, D 15, E 14단계).
-- 지금은 통합 단계다: `pending`을 풀고, 묶음마다 따로 구현한 곳(10.2절 끝의 목록)과 서로의 가정이 어긋난 곳을 맞춰 시나리오가 처음부터 끝까지 돌게 한다. 그 뒤에 G의 전체 비교와 성능 측정(18.3절 4번)을 다시 돌린다. 12.4절의 합격(회귀 0건, 성능 표, `pending` 0건)은 아직 확인되지 않았다.
-- 구현 묶음이 설계의 빈 곳을 정한 것은 `docs/design-changes.md` 7절에 건별로 있고 이 문서의 해당 절에 '구현 묶음이 정한 것'으로 적었다.
+- 통합이 끝났다: `pending`을 모두 풀었고, 묶음마다 따로 구현한 곳(변경 계산, `record_message`의 시각·조상 판정, `config_sha256`, Jev 호출, lint의 기록 경로 예외, `status`의 drift, S-04의 실행본 단계)을 하나로 모았다(10.2절 '통합이 정한 것', `docs/design-changes.md` 8절). 과제 3개가 배정부터 병합까지 이어지는 K4가 돌고 시험 211건이 통과했다.
+- 검증을 했다: 구현에 관여하지 않은 검증자 여섯이 실제 바이너리로 결함을 찾았다(critical 1건, high 다수 포함). 드러난 것은 16.1절에 있다.
+- 지금은 수정 단계다: 영역별 수정 담당이 16.1절의 결함을 고친다. 안내 문구·스킬·문서 영역(R6-3, R6-4, R6-5, R6-8, R6-9)은 고쳤다. 다른 영역이 고친 방식은 다음 문서 맞추기에서 해당 절과 16.1절에 채운다. 그 뒤에 G의 전체 비교와 성능 측정(18.3절 4번)을 다시 돌린다. 12.4절의 합격(회귀 0건, 성능 표)은 아직 확인되지 않았다.
+- 구현 묶음이 설계의 빈 곳을 정한 것은 `docs/design-changes.md` 7절에, 통합이 정한 것은 8절에 건별로 있고 이 문서의 해당 절에 '구현 묶음이 정한 것'·'통합이 정한 것'으로 적었다.
 - 확인되지 않은 것: 실제 호스트 CLI(Claude Code, Codex, grok, agy)와 실제 Orca에서의 실행은 한 번도 하지 않았다(시험은 testkit의 가짜 실행 파일로만 했다). macOS와 Linux에서는 실행하지 않았다(두 타깃의 `cargo check`만 통과했다). 실제 Jev 엔드포인트도 부르지 않았다. 패널의 `orca plugin validate`·`check`와 Orca 안의 화면도 확인하지 않았다(미리보기 캡처와 `node --test`만 했다). 남은 확인은 12.4절의 실환경 점검과 16절에 있다.
 - 전환(13.4절)은 합격과 실환경 점검 뒤 사람 승인을 받아서 한다. 17절의 열린 결정(H14~H18 포함)도 그 전에 정한다.

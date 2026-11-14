@@ -124,30 +124,68 @@ pub enum RoleGuide<'a> {
     Other,
 }
 
-pub fn role_guide(guide: &RoleGuide, sub: bool) -> String {
+/// 묻는 기준(1.24.0 BRIEF). 설계 역할·worker가 함께 쓴다.
+const OWN_CHOICE: &str = "되돌릴 수 있는 디자인·연출·문구·배치 선택과 버그 수정 여부는";
+/// 완료 보고를 보내는 법. 하위 worker에게는 내지 않는다(`fullops done`은 부모가 한다).
+const SEND_DONE: &str = " 끝나면 커밋하고 `fullops done`이 출력한 본문으로 preamble의 `worker_done`을 한 번 보낸다. 보내지 않고 끝내면 종료가 한 번 막힌다.";
+
+/// `split`은 `routing = "split"`(제품 기획과 기술 계획을 나눈 구조)이다.
+pub fn role_guide(guide: &RoleGuide, sub: bool, split: bool) -> String {
     let mut out = match guide {
-        RoleGuide::DevPrimary => "FullOps 역할: dev 모드의 주 담당이다. 요청을 직접 구현하고, 다른 역할에 맡길 일은 `fullops route` → `fullops task new` → `fullops dispatch`로 배정한다.".to_string(),
-        RoleGuide::Coordinator => "FullOps 역할: coordinator(lead)다. 직접 구현하지 않는다. `PLANS.md`의 과제를 `fullops route` → `fullops task new` → `fullops dispatch`로 역할에 배정하고 완료 보고를 통합한다.".to_string(),
-        RoleGuide::Role { id, kind: RoleKind::Design } => format!("FullOps 역할: 설계 역할 `{id}`다. 설계 문서와 지시서를 만들고 코드 파일은 고치지 않는다. 구현은 지시서에 적어 구현 역할에 넘긴다."),
-        RoleGuide::Role { id, kind: RoleKind::Tester } => format!("FullOps 역할: tester `{id}`다. 인박스의 검증 범위를 테스트 레벨에 맞춰 확인하고 결과를 `qa-reports/<과제 폴더>/report.md`에 남긴다."),
-        RoleGuide::Role { id, .. } => format!("FullOps 역할: worker `{id}`다. 인박스의 과제 하나를 구현한다."),
+        RoleGuide::DevPrimary => "FullOps 역할: dev 모드의 주 담당이다. 사용자와 직접 기술 계획·구현·검증을 한다. 다른 역할에 맡길 일은 `fullops route` → `fullops task new` → `fullops dispatch`로 배정하고 완료 보고를 통합한다. 제품 범위를 바꾸는 일은 사용자에게 확인한다. 직접 작업은 dispatch나 `worker_done` 없이 커밋하고 lint를 통과시킨 뒤 `fullops done`으로 완료를 기록한다. 변경이 리뷰 기준을 넘으면(`fullops review need`) 다른 세션의 독립 리뷰를 받는다.".to_string(),
+        RoleGuide::Coordinator => format!(
+            "FullOps 역할: coordinator(lead)다. 직접 구현하지 않는다. 새 개발 요청은 과제 키를 정해 `fullops route <KEY> --request \"<요청>\"`으로 먼저 분류한다. {} 운영 작업(설치·설정 갱신, 워크트리 동기화, 병합)은 분류하지 않고 직접 처리한다. worker의 질문 가운데 경로·순서·재시도 같은 운영 문제는 `orca orchestration reply --id <메시지 ID> --body \"<답>\"`으로 직접 답하고, {} 과제나 역할이 둘 이상인 묶음은 `docs/planning/intents/<묶음 키>.md`를 쓰고 사용자 승인을 받은 뒤 배정한다.",
+            if split {
+                "`direct`면 `fullops task new`로 그 역할의 인박스를 만들어 목표·규칙·범위·완료 조건·정본 링크를 짧게 적고 `fullops dispatch <KEY>`로 배정한다. 기술 계획·분석·구현·테스트는 담당 worker의 같은 과제다. `product`(제품 규칙·범위·공유 제품 기준)만 제품 기획자에게 배정하고(`fullops dispatch <KEY> --role <기획 역할>`), `unresolved`는 근거를 확인해 `--force --class`로 정한다."
+            } else {
+                "`direct`면 `fullops task new`로 그 역할의 인박스를 만들어 `fullops dispatch <KEY>`로 배정하고, `design`이면 설계 역할에 배정한다(`fullops dispatch <KEY> --role <설계 역할>`)."
+            },
+            if split {
+                "제품 규칙·범위 질문은 직접 답하지 않고 제품 기획자에게 넘긴다(기술 질문은 구현 담당에게 돌려준다)."
+            } else {
+                "설계·범위·공유 계약 질문은 직접 답하지 않고 설계 역할에 넘긴다."
+            }
+        ),
+        RoleGuide::Role { id, kind: RoleKind::Design } => format!(
+            "FullOps 역할: {} 코드 파일은 고치지 않는다. 구현은 `fullops task new --role <구현 역할> --key <KEY> --goal \"<목표>\"`로 만든 지시서에 적어 넘긴다. {OWN_CHOICE} 사용자 결정으로 올리지 않고 직접 정해 산출물에 선택과 되돌리는 방법을 적는다. 완료 보고의 본문은 `[설계] <KEY> | … | 지시서: <만든 인박스 경로>` 꼴이다.",
+            if split {
+                format!("제품 기획자 `{id}`다. 제품 목표, 규칙·수치, 화면·아트 방향, 우선순위, 사용자 완료 조건과 모호한 공유 제품 기준을 정한다. 기술 계획, 구조·API, 버그 수정 방법은 구현 역할의 책임이다.")
+            } else {
+                format!("설계 역할 `{id}`다. 설계 문서와 역할별 지시서만 쓴다.")
+            }
+        ),
+        RoleGuide::Role { id, kind: RoleKind::Tester } => format!("FullOps 역할: tester `{id}`다. 인박스의 검증 범위를 테스트 레벨에 맞춰 확인한다. 제품 코드는 고치지 않고 테스트 코드·시나리오·검증 증거만 만든다. 도구와 순서는 `fullops-test` 스킬을 따르고 결과는 `qa-reports/<KEY>-test/report.md`에 남긴다. 실패는 재현 절차와 증거로 보고하고 직접 고치지 않는다."),
+        RoleGuide::Role { id, .. } => format!(
+            "FullOps 역할: worker `{id}`다. 인박스의 과제 하나를 완료 기준까지 구현한다. {} {OWN_CHOICE} 묻지 않고 추천안으로 진행하고 완료 보고에 선택과 되돌리는 방법을 적는다.",
+            if split {
+                "코드 파악, 짧은 기술 계획, 구현, 테스트와 기술 문서 갱신을 같은 과제에서 한다. 기술 판단은 직접 해결하고, 제품 규칙 변경·범위 확대·공유 제품 기준이 불명확한 것만 추측하지 않고 preamble의 `ask`로 묻는다."
+            } else {
+                "설계·범위·공유 계약·되돌릴 수 없는 일은 추측하지 않고 preamble의 `ask`로 묻는다."
+            }
+        ),
         RoleGuide::Reviewer => "FullOps: 읽기 전용 리뷰 사본이다. 파일을 고치지 않고 리뷰 결과만 남긴다.".to_string(),
         RoleGuide::Other => "FullOps: 이 체크아웃에는 역할 규칙이 적용되지 않는다.".to_string(),
     };
     if sub {
         out.push_str(" 하위 worker다. 커밋·lint·`fullops done`은 부모가 한다. 맡은 범위를 끝내면 preamble의 `worker_done`을 보낸다.");
+    } else if matches!(guide, RoleGuide::Role { .. }) {
+        out.push_str(SEND_DONE);
     }
     out
 }
 
-pub fn test_level(level: TestLevel) -> &'static str {
-    match level {
-        TestLevel::Minimal => "테스트 레벨 minimal: 바뀐 동작의 핵심 경로 하나만 확인한다.",
-        TestLevel::Lite => "테스트 레벨 lite: 바뀐 동작과 바로 닿는 회귀만 표적으로 확인한다.",
-        TestLevel::Standard => "테스트 레벨 standard: 바뀐 동작, 경계 조건, 닿는 회귀를 확인한다.",
-        TestLevel::Full => "테스트 레벨 full: 기능 전체 시나리오와 회귀를 확인한다.",
-        TestLevel::Exhaustive => "테스트 레벨 exhaustive: 가능한 조합과 장애 경우까지 확인한다.",
-    }
+/// 모든 레벨에 붙는 문장(1.24.0 `test_brief`).
+const TEST_COMMON: &str = "보안·데이터 손실 방지와 프로젝트 필수 검사는 모든 레벨에서 유지한다. 검사가 통과하면 인계하고, 새 변경·실패·근거 결함이 있을 때만 재검증한다. 같은 과제의 수정·재검증은 기존 `qa-reports/<KEY>-test/report.md`에 절을 덧붙이고, 커밋하는 캡처는 `report.md`가 링크하는 것만이다.";
+
+pub fn test_level(level: TestLevel) -> String {
+    let scope = match level {
+        TestLevel::Minimal => "minimal: 기동과 변경 경로의 스모크 검사만 한다. 통합 후보의 주요 흐름은 `rules/common/testing.md`의 `담당과 반복 범위`대로 한 번 돌린다. 별도 tester·designer 검수 차수를 만들지 않는다. 개발 과제는 lint와 변경 동작 테스트로 검증하고 보고용 캡처를 만들지 않는다.",
+        TestLevel::Lite => "lite: 변경한 핵심 동작과 필요한 실패 경계만 짧게 검증한다. 사소한 문구 변경에는 새 테스트를 만들지 않는다. 개발 과제는 lint와 변경 동작 테스트로 검증하고 보고용 캡처를 만들지 않는다. tester 독립 QA와 designer 시각 검수는 새 화면·새 흐름·통합 후보에서만 배정한다.",
+        TestLevel::Standard => "standard: 변경 동작·실패 경계와 영향을 받는 연동의 회귀를 검증한다.",
+        TestLevel::Full => "full: 안정된 통합 후보에서 전체 자동 회귀와 필요한 통합·수락 검사를 담당자별로 한 번 수행한다.",
+        TestLevel::Exhaustive => "exhaustive: full 범위에 프로젝트에 필요한 E2E·성능·장시간·환경 검수를 더해 안정된 후보에서 한 번 수행한다.",
+    };
+    format!("테스트 레벨 {scope} {TEST_COMMON}")
 }
 
 pub const INBOX_RULE: &str = "인박스 규칙: 현재 과제는 역할 인박스(`.fullops-squad/handovers/to_<역할>.md`) 하나다. 다음 과제는 `PLANS.md`에 대기로 둔다. 끝나면 `fullops done`을 실행한다.";
@@ -266,6 +304,33 @@ pub fn session_context(brief: &Brief, skill: Option<&SkillText>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn role_guides_fit_the_prompt_limit_and_sub_workers_do_not_run_done() {
+        use RoleKind::*;
+        let guides = [
+            RoleGuide::DevPrimary,
+            RoleGuide::Coordinator,
+            RoleGuide::Role { id: "r", kind: Design },
+            RoleGuide::Role { id: "r", kind: Tester },
+            RoleGuide::Role { id: "r", kind: Worker },
+        ];
+        for guide in &guides {
+            for split in [false, true] {
+                // P-01과 S-05도 이 글을 쓴다. UserPromptSubmit의 Context는 2,000자 이하다(설계 7.7절)
+                assert!(role_guide(guide, true, split).chars().count() < 1500);
+            }
+        }
+        let worker = RoleGuide::Role { id: "r", kind: Worker };
+        assert!(role_guide(&worker, false, false).contains("`fullops done`이 출력한 본문으로"));
+        let sub = role_guide(&worker, true, false);
+        assert!(sub.contains("`fullops done`은 부모가 한다") && !sub.contains("이 출력한 본문"));
+        // lead는 완료 보고를 보내지 않는다
+        assert!(!role_guide(&RoleGuide::Coordinator, false, false).contains("worker_done"));
+        for level in [TestLevel::Minimal, TestLevel::Exhaustive] {
+            assert!(test_level(level).contains("모든 레벨에서 유지한다"));
+        }
+    }
 
     #[test]
     fn session_context_shrinks_in_design_order() {

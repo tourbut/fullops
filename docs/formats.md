@@ -790,11 +790,11 @@ CLI의 거절 ID(`Refusal.rule`)는 hook 규칙 ID와 겹치지 않는다: `rout
 | `DispatchRequest` | `key`, `role`, `purpose`, `run`, `terminal`, `tuple`, `sha`, `reason`, `brief`(`--brief`의 글), `sub`(하위 배정이다: 호출자가 dispatch가 묶인 세션이다. 부르는 쪽이 `Ctx::caller`의 결과로 채운다) | `check_dispatch`(C). `--task`는 없다 |
 | `TaskNewRequest` | `role`, `key`, `goal`, `reopen` | `check_task_new`(C) |
 | `OrcaMessage` | `id`, `kind`(Orca의 `type`. 없으면 `status`), `from`, `subject`, `body`, `task_id`, `dispatch_id`, `outcome`(넷은 `payload`가 객체일 때만) | `OrcaCli::check` → `record_message` |
-| `MessageNote` | `absorbed`(`heartbeat`·`status`라 세기만 했다), `completion: Option<CompletionNote>`, `notes` | `record_message(state, run, msg, resolve, branch_tip)`(C)의 결과 |
+| `MessageNote` | `absorbed`(`heartbeat`·`status`라 세기만 했다), `completion: Option<CompletionNote>`, `notes` | `record_message(state, run, msg, at, resolve, branch_tip, is_ancestor)`(C)의 결과. `at`은 받은 시각, `is_ancestor(older, newer)`는 조상 판정이다. 부르는 쪽은 `wait`(C)와 T-11의 효과(B)다 |
 | `CompletionNote` | `key`, `role`, `sha`, `sha_source`, `outcome` | completion을 만들었을 때의 기록 |
 | `Baseline` | `review`, `code`, `test_level`, `fell_back` | 3.1절 |
 | `BriefAt` | `Session` \| `Spec { command, key, sub }`(`command`는 spec에 적는 실행 명령, `key`는 과제 키, `sub`는 하위 배정인가) | `parallel_brief` |
-| `SkillText` | `path`, `body` | `Facts::user_skill`(S-06) |
+| `SkillText` | `path`, `body` | `Facts::user_skill`(S-06). 조건과 읽기는 `rules::start_skill(input, caps, read)`이고 hook 진입이 비활성 레포의 SessionStart에서도 부른다(설계 7.1절) |
 | `TreeEntry` | `mode`, `kind`(`blob` \| `commit`), `oid`, `path` | `Git::ls_tree`, `update_index`. store도 받으므로 ext가 아니라 core에 둔다 |
 | `PacketCheck` | `Delivery` \| `Completion` | `check_packet` |
 
@@ -829,7 +829,7 @@ spec에 적는 실행 명령은 `fullops_core::messages::spec_command(host: Opti
 
 | 대상 | 내용 |
 |---|---|
-| `run(argv, cwd, timeout, env, stdin) -> ProcResult` | `ProcResult { status: Exited(i32) \| TimedOut \| NotFound, stdout, stderr }`. 제한 시간이 지나면 프로세스 트리를 끝낸다(묶음 D): Windows는 `taskkill /T /F /PID`(직접 띄운 프로세스가 먼저 끝난 뒤 남은 손자는 찾지 못한다. 그때도 5초만 더 기다린다), POSIX는 `process_group(0)`으로 띄운 그룹에 `kill -KILL -- -<pgid>`. 출력의 EOF를 먼저 기다리고, 자손이 파이프를 쥔 채 남으면 제한 시간에 `TimedOut`이며, `TimedOut`의 stdout·stderr에는 끝내기 전까지의 출력이 남는다. `run`으로 띄우는 모든 프로세스(git·orca·curl 포함)가 자기 프로세스 그룹을 가진다 |
+| `run(argv, cwd, timeout, env, stdin) -> ProcResult` | `ProcResult { status: Exited(i32) \| TimedOut \| NotFound, stdout, stderr }`. 제한 시간이 지나면 프로세스 트리를 끝낸다(묶음 D): Windows는 `taskkill /T /F /PID`(직접 띄운 프로세스가 먼저 끝난 뒤 남은 손자는 찾지 못한다. 그때도 5초만 더 기다린다), POSIX는 `process_group(0)`으로 띄운 그룹에 `kill -KILL -- -<pgid>`. 출력의 EOF를 먼저 기다리고, 직접 띄운 프로세스가 끝났는데 자손이 파이프를 쥔 채 남으면 200ms만 더 읽고 `Exited(코드)`와 그때까지의 출력을 돌려주며(그 자손은 끝내지 않는다), `TimedOut`의 stdout·stderr에는 끝내기 전까지의 출력이 남는다. `run`으로 띄우는 모든 프로세스(git·orca·curl 포함)가 자기 프로세스 그룹을 가진다 |
 | `ExtError` | `NotFound`, `TimedOut`, `Failed { code, stderr }`, `Parse(글)` |
 | `GitCli { repo_root, timeout }` | `GitCli::hook(root)`(호출당 2초), `GitCli::cli(root)`(30초. `fetch`·`push`·`merge`는 120초). 모든 호출에 `GIT_TERMINAL_PROMPT=0`, `GIT_NO_LAZY_FETCH=1`, `LC_ALL=C`, `-c core.quotepath=false`. 읽기는 실패하면 `Known::Unknown("git")`이다. 탐색용 읽기(`ls_tree`·`blob_prefixes`·`grep_files`)는 오프라인(`FULLOPS_OFFLINE=1` 또는 `FULLOPS_JEV_ENABLED=0`)이면 `GIT_ALLOW_PROTOCOL=`을 더한다 |
 | `Git`의 읽기 | `is_ancestor`, `merge_base`, `rev_parse`(`rev-parse --verify`. 커밋으로 풀려면 `<rev>^{commit}`), `diff_names`·`numstat`(`--no-renames`. 이름 변경은 삭제와 추가로 낸다), `status(pathspec)`(`--untracked-files=all`), `show_blobs(&[(rev, path)])`, `worktrees`, `ls_tree`, `blob_prefixes(oids, max)`, `grep_files(rev, literals)`, `name_status`(`NameStatus { status, path, old_path }`. 이름 변경을 찾는다), `diff_u0` |
@@ -909,6 +909,9 @@ fake-orca의 우편함: `mail.jsonl`의 줄은 `{"run":"<Run>","message":{…}}`
 | `[[step]] act` | 글 | 동사(9.4절) |
 | `[[step]] <인자>` | | 동사의 인자 |
 | `[[step]] env` | 표(이름 → 글) | hook과 CLI를 부르는 동사에 더할 환경 변수 |
+| `[[step]] hook_args` | 문자열 배열 | hook을 부르는 동사가 등록 인자 뒤에 붙인다. `rs` 구동기만 쓴다 |
+| `[[step]] df` | 글(`"DF-n"`) | 그 단계의 판정 차이를 설명하는 설계 12.3절 ID. `xtask compare`만 읽는다 |
+| `[[step]] py` | 글 | `py` 구동기가 그 단계에서 내야 하는 판정. `xtask compare`만 읽는다. 두 구동기는 모르는 단계 키를 무시한다 |
 | `[[step]] pending` | 글 | 그 단계가 기대는 다른 묶음의 글자. 있으면 구동기가 그 단계를 실행하지 않고 판정 `pending`("보류")으로 적는다. G가 마지막에 0건인지 확인한다 |
 | `[[step]] expect` | 표 | 적은 항목만 비교한다. 모르는 키는 오류다 |
 | `expect.verdict` | 글 | hook: `pass`·`context`·`warn`·`deny`·`block`. CLI: `pass`(0)·`deny`(2)·`human`(3)·`external`(4)·`error`(그 밖). 호스트마다 다른 출력 글은 `host_shapes::verdict_of`가 이 어휘로 옮긴다 |
@@ -957,4 +960,4 @@ fake-orca의 우편함: `mail.jsonl`의 줄은 `{"run":"<Run>","message":{…}}`
 | `lead_waits` | run?, ack?, no_wait? | `fullops wait --run <R> [--ack <메시지 ID>]… [--no-wait]` |
 | `lead_merges` | key | `fullops merge <KEY>` |
 
-에이전트가 실행하는 `fullops` 명령은 실제 흐름처럼 셸 도구의 PreToolUse hook(T-12가 `current.json`을 쓴다)을 먼저 거친다. 흐름 동사(`lead_*`, `worker_*`)는 아직 하지 않은 앞 단계를 스스로 먼저 한다. `lead_dispatches`·`worker_reports`·`lead_waits`는 단계의 `env`를 넘기지 않는다(세션 핸들이 있는 lead는 `runs_fullops`와 `orca_replies`로 적는다).
+에이전트가 실행하는 `fullops` 명령은 실제 흐름처럼 셸 도구의 PreToolUse hook(T-12가 `current.json`을 쓴다)을 먼저 거친다. 흐름 동사(`lead_*`, `worker_*`)는 아직 하지 않은 앞 단계를 스스로 먼저 한다. `lead_routes`·`lead_writes_task`·`lead_dispatches`·`lead_waits`·`worker_subdispatches`·`worker_reports`는 단계의 `env`를 받는다(통합에서 바꿨다). `worker_reports`는 인박스의 완료 보고 절을 채워 커밋한다. 바이너리 폴더는 환경 변수 `FULLOPS_TESTKIT_BIN_DIR`로 줄 수 있다.

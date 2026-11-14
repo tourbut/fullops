@@ -12,6 +12,7 @@ mod tool;
 
 pub use call::{NO_SESSION, Scene};
 pub use decide::{decide, decide_in};
+pub use session::start_skill;
 
 use crate::facts::Facts;
 use crate::messages::MsgId;

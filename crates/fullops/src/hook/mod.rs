@@ -14,7 +14,7 @@ use fullops_core::model::{
     Caps, Dialect, EditOp, EventKind, HookInput, HostId, Intent, SessionId, ToolCall, ToolKind,
     TraceLine, Verdict, caps_of,
 };
-use fullops_core::rules::{Outcome, Scene, decide_in};
+use fullops_core::rules::{Outcome, Scene, decide_in, start_skill};
 use fullops_store::Repo;
 use serde_json::{Value, json};
 use std::ffi::OsString;
@@ -404,11 +404,18 @@ fn handle(args: &HookArgs, started: Instant) -> Result<(), &'static str> {
     let registered = args.event.as_deref().and_then(EventKind::parse);
     let timed = registered.unwrap_or(input.event);
     DEADLINE_MS.store(deadline_ms(timed), Ordering::Relaxed);
-    // 활성 표식이 없으면 통과하고 끝낸다(추적도 쓰지 않는다)
+    let host = args.host.id();
+    // 활성 표식이 없으면 통과하고 끝낸다(추적도 쓰지 않는다). 새 세션의 caveman 주입(S-06)만은 레포를 가리지 않는다
     let Some(repo) = fullops_store::discover(&input.cwd).map_err(|_| "io")? else {
+        if input.event == EventKind::SessionStart {
+            let read = |name: &str| facts_real::RealFacts::skill_of(host, name);
+            if let Some(skill) = start_skill(&input, args.host.caps(), read) {
+                let text = messages::hook::session_context(&Default::default(), Some(&skill));
+                emit(&args.host.encode(input.event, &Verdict::Context(text)));
+            }
+        }
         return Ok(());
     };
-    let host = args.host.id();
     *RUNNING.lock().unwrap_or_else(|e| e.into_inner()) = Some(Running {
         repo: repo.clone(),
         sid: input.sid.clone(),

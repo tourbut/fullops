@@ -777,3 +777,61 @@ hook 규칙 표(`RULES`)는 34개가 된다: 뼈대의 32개에 S-06과 T-13을 
 | 10 | C·J | `cmd/find.rs`의 `jev_curl`, `fullops-ext/src/jev.rs`의 `unsafe_text` | `find`·`context`가 `JevCurl::default()`를 불러 `--env-file`로 준 키가 실제 호출에 닿지 않는다. 키 찾는 순서와 본문 글 검사가 두 곳에 따로 있다 | 9.3절: 키를 찾는 순서는 `--env-file`이 먼저. 구현은 `fullops-ext::jev` 하나 |
 | 11 | D·F | `crates/fullops/assets/repo/docs/deliverables/README.md` | 내장 인덱스 템플릿에 front matter가 없어, 인덱스의 상태 칸을 고친 커밋이 DOC-003에 걸린다 | 8.11절 DOC-003, 8.12절(인덱스 상태는 사람이 고친다) |
 | 12 | F | `crates/fullops/assets/repo/lint/lint.json` | 버린 기능의 `.fullops-squad/board/**` exclude가 남아 있다 | 17절 H6 |
+
+## 8. 통합과 검증 뒤 수정에서 바뀐 것 (2026-11-14)
+
+여덟 묶음을 합친 뒤 통합 담당 다섯(I1 hook, I2 설치·비교, I3 탐색, I4 hook 쪽 확인, I5 흐름·리뷰·lint)이 묶음마다 따로 구현한 곳을 하나로 모으고 `pending` 단계를 풀었다. 그 뒤 검증자 여섯이 실제 바이너리로 결함을 찾았고(R1~R6), 영역별 수정 담당이 고치고 있다. 이 절은 (1) 통합이 정한 것, (2) 7.4절의 코드 문제 12건이 어떻게 됐는가, (3) 안내 문구·스킬·문서 영역(F6)이 이번에 고친 것을 적는다. 다른 영역이 고친 방식은 다음 문서 맞추기에서 더한다. 검증에서 드러난 설계의 구멍은 `docs/design.md` 16.1절에 있다.
+
+### 8.1 통합이 정한 것
+
+| # | 무엇을 | 어떻게 정했나 | 절 |
+|---|---|---|---|
+| 1 | 변경 계산이 세 곳에 따로 있었다 | `fullops/src/hook/changes.rs` 하나로 모았다(`GitGate`, `start_candidate`, `start_point`, `merged_in`, `changed`, `pass_covers`). hook은 호출 상한을 준 창구로, `done`과 `lint`는 상한 없는 창구로 부른다 | 6.6, 10.2 |
+| 2 | `changed()`의 코드 파일 판정 기준 | 시작점 커밋의 `[code]`와 `lint.json`의 `exclude`. hook이 상한 때문에 그 blob을 읽지 못하면 작업 트리의 설정. 대상 후보가 없으면 blob을 읽지 않는다(7.1번 표의 B 행 서술을 뒤집었다. 검증 보고 R1-10) | 6.6 |
+| 3 | 시작점 후보가 없을 때 | hook은 판정하지 않고(Unknown, 통과) CLI(`done`, `lint`)는 바닥을 쓴다. 후보가 `HEAD`와 같으면 바닥을 계산하지 않는다 | 6.6 |
+| 4 | 12.2절 J1의 둘째 경우(로컬 기본 브랜치에만 병합. 7.3절에 열린 문제로 적었던 것) | lead의 `changed()`가 통합 위치 `PushLeft`인 통합 대기 보고의 SHA가 바꾼 파일을 뺀다. 그 경우의 차단은 X-06이다. 파일 단위라 lead가 같은 파일을 병합 뒤에 고친 변경은 놓친다(검증 보고 R1-7로 다시 올라왔다) | 6.6, 7.5 |
+| 5 | X-05 (a)와 X-06의 순서 | lead의 Run에서 통합 위치가 `Landed`인 통합 대기 보고의 메시지는 미처리로 세지 않는다. 미처리 메시지가 있는 통합 대기 보고는 첫 Stop이 X-05 (a), 다음 Stop이 X-06이다 | 7.5 |
+| 6 | S-04의 효과 | 프로세스를 띄우지 않고 hook 프로세스 안에서 `cmd::runtime_stage`를 부른다. 프로세스 방식은 다른 빌드가 도는 PC에서 SessionStart가 0.9~1.9초 걸렸고, 플러그인 루트에 이 OS의 바이너리가 없으면 조용히 실패했다 | 7.5, 10.2 |
+| 7 | `record_message`의 시그니처 | `(state, run, msg, at, resolve, branch_tip, is_ancestor)`. core가 시계를 읽지 않고, 본문의 SHA가 여럿이면 나머지를 모두 조상으로 가지는 하나를 고른다 | 8.6, 10.2, formats 8 |
+| 8 | `config_sha256` 계산 | `fullops_core::lint_rules::config_sha256` 하나. `review check` 9번이 리뷰 base 시점의 `lint.json` blob으로 비교한다 | 8.9, 8.11, 10.2 |
+| 9 | lint의 깨끗함 검사 | 기록 경로의 미커밋 변경은 세지 않는다(M-03과 같은 예외). 미커밋 리뷰 파일이 있는 기본 워크트리에서 M-07의 lint가 거절되던 것을 고쳤다 | 8.11 |
+| 10 | `status`가 통합이 확인된 보고를 닫을 때 | `settle`과 같은 `mark_landed`를 써서 `landed_at`과 `drift`를 함께 쓴다 | 8.8, 10.2 |
+| 11 | Jev 호출의 키 찾기와 제공자 결정 | `JevCurlAt` 한 곳. `find`·`context`도 `JevCurl::at`으로 만든 `Judge`를 쓴다. 보내기 전 글 규칙은 `explore::sendable_text` 하나다. env 파일의 줄 형식을 적었다 | 9.3, 10.2 |
+| 12 | `GitCli::blob_prefixes` | 크기를 먼저 묻고(`cat-file --batch-check`) 크기 합 16MiB마다 `cat-file --batch` 하나로 읽는다. P11의 '요청 1건'은 읽은 blob 수로 센다 | 10.2 |
+| 13 | `proc::run`: 직접 띄운 프로세스가 끝났는데 자손이 파이프를 쥐고 있을 때 | 200ms만 더 읽고 `Exited(코드)`를 돌려준다(묶음 D는 제한 시간에 `TimedOut`으로 정했었다) | 10.2, formats 8 |
+| 14 | 시나리오의 단계 키 `hook_args`·`df`·`py`, 흐름 동사의 `env`, `FULLOPS_TESTKIT_BIN_DIR` | 12.1절 '통합이 정한 것'과 formats 9.3·9.4절에 적었다. `xtask compare`는 단계 단위로 가리고 py 구동기가 끝까지 돌지 못한 시나리오를 실패로 센다 | 12.1, formats 9 |
+| 15 | 내장 `lint/lint.json`의 exclude | 버린 기능의 `.fullops-squad/board/**`를 지웠다 | 11.3 |
+| 16 | `install`의 인자 조합과 계획 | `--prune`·`--rollback`·`--remove-hooks`는 `--dry-run`·`--check`와 함께 주면 사용법 오류다. `--dry-run` 계획에 사용자 홈에 쓰는 파일(`deps.toml`, `install.json`, `skill-backups/`, `deps-state.json`)도 나온다. 스킬 백업에 실패한 묶음은 설치하지 않는다 | 10.3 |
+| 17 | `migrate --rollback --dry-run` | 실행하지 않고 사용법을 낸다(되돌리기에는 미리 보기가 없다) | 13.3 |
+
+통합 담당이 확인만 하고 코드를 설계대로 둔 것(열린 채 남은 것)은 `docs/design.md` 16.1절의 '통합에서 넘어온 채 열려 있는 것'에 있다.
+
+### 8.2 7.4절의 코드 문제 12건
+
+| # | 문제 | 지금 |
+|---|---|---|
+| 1 | `record_message`가 시계를 직접 읽는다 | 고쳤다(8.1의 7) |
+| 2 | 본문의 SHA가 여럿일 때 조상 판정이 없다 | 고쳤다(8.1의 7) |
+| 3 | 변경 계산이 세 곳에 따로 있다 | 고쳤다(8.1의 1) |
+| 4 | `review check` 9번의 `config_sha256` 비교가 없다 | 고쳤다(8.1의 8) |
+| 5 | lead가 coordinator 브랜치에 있으면 리뷰 파일이 병합 기록 커밋에 들어가지 않는다 | 남았다(`cmd/merge.rs`의 shortcut 주석) |
+| 6 | `status`가 `drift`를 세지 않는다 | 고쳤다(8.1의 10) |
+| 7 | X-04가 `logs/`의 r0~r9만 본다 | 남았다(`rules/stop.rs`의 shortcut 주석) |
+| 8 | `doc stamp`의 `updated`가 UTC 날짜다 | 남았다(`cmd/doc.rs`의 shortcut 주석) |
+| 9 | `lint`의 깨끗함 검사에 기록 경로 예외가 없다 | 고쳤다(8.1의 9) |
+| 10 | `find`·`context`의 `--env-file` 키가 실제 호출에 닿지 않는다 | 고쳤다(8.1의 11) |
+| 11 | 내장 산출물 인덱스 템플릿에 front matter가 없다 | 남았다 |
+| 12 | 내장 `lint.json`에 `board/**` exclude가 남았다 | 고쳤다(8.1의 15) |
+
+### 8.3 안내 문구·스킬·문서 영역(F6)이 고친 것
+
+| 보고 | 무엇을 | 어떻게 | 절 |
+|---|---|---|---|
+| R6-3 | S-01의 역할 안내가 1.24.0보다 약했다 | `messages::hook::role_guide(guide, sub, split)`에 1.24.0 `BRIEF`·`PRODUCT_BRIEF`의 항목을 `fullops` 명령으로 되살렸다(묻는 기준, `ask`, `worker_done` 한 번과 종료 차단, 설계 보고 형식, tester의 제품 코드 금지, coordinator의 질문 위임과 묶음 승인, dev 주 담당의 범위 확인과 리뷰). `routing = "split"`이면 설계 좌석은 제품 기획자의 글을, coordinator와 worker는 책임 분리의 글을 받는다. 테스트 레벨 문구를 `TEST_BRIEF` 수준으로 되돌렸다. 넣지 않은 것: 현황판 단계(버린 기능), 병합 SHA는 리뷰한 SHA(M-04가 강제), 로그 재독 간격(`wait`가 흡수) | 7.7 |
+| R6-4 | worker 질문에 답하는 길이 스킬과 안내에 없었다 | 스킬 `fullops-orca`에 "질문: lead가 전달한다" 절을 넣었다: `orca orchestration reply --id <메시지 ID> --body "<답>"`(계약 `docs/contracts/orca.md` 6절의 꼴), 설계·범위 질문은 새 키의 설계 과제로 설계 역할에 넘김, 사용자 결정은 `decision add --blocks <KEY> --blocks <메시지 ID>`. coordinator의 역할 안내에도 `reply` 명령을 넣었다. `wait`의 다음 안내 문구는 흐름 담당의 파일이라 고치지 않았다 | 7.7, 11.3 |
+| R6-5 | caveman 주입이 비활성 레포에서 사라졌다 | 레포 주인이 1.24.0의 동작을 유지하기로 정했다. hook 진입이 표식이 없는 레포의 SessionStart에서 `rules::start_skill`(S-06의 조건과 읽기)만 부르고 caveman 글만 낸다. 그 밖의 이벤트는 그대로 아무것도 읽지 않는다 | 7.1, 7.5, 7.8, 11.1, 12.3 DF-12 |
+| R6-8 | lint 기록이 없는 보고의 알림이 까닭을 `--no-checks`로 단정했다 | "lint 통과 기록이 없는 보고다(코드 변경이 없거나 `--no-checks`). 병합 때 `fullops merge`가 확인한다"로 바꾸고 실패 보고에는 내지 않는다. 문서만 바꾼 보고와 `--no-checks` 보고를 가르지는 않았다(`reported`에 사유 필드가 필요하다) | 8.6 |
+| R6-9, R1-10 | 설계와 형식 문서에 통합 전 상태가 남아 있었다 | 8.1의 표대로 고쳤다. `fullops env link`를 스킬 `fullops-orca`의 bootstrap 절에 넣었다 | 6.6, 8.6, 10.2, 18.4 |
+| R6-2(스킬 몫) | 설계 완료 뒤 구현 인박스를 배정하는 절차가 스킬에 없었다 | 스킬 `fullops-orca`에 "설계 완료 뒤" 절을 넣었다(병합 → 들어온 지시서마다 `dispatch <KEY> --role <역할> --agent … --model … --effort …`, tester는 구현 병합 뒤). `merge`와 Stop의 안내는 흐름·hook 담당의 몫이다 | 11.3 |
+
+스킬 문서가 말하는 `fullops` 명령과 옵션은 인자 해석기와 다시 대조했다(없는 명령·옵션 0건). `crates/fullops/tests/bundle_f.rs`의 `skill_docs_name_real_commands_and_skills`가 옵션 이름까지 본다.

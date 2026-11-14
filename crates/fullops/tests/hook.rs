@@ -1297,6 +1297,174 @@ fn self_install_follows_the_plugin_root() {
 
 /// B4·S-03: 실제 `review snapshot`이 만든 사본 안의 세션은 `Reviewer`이고(사본 폴더 이름이 무작위라 시나리오로 적지 못한다),
 /// 사본이 사라지면 lead의 SessionStart가 그 기록을 닫는다.
+/// 세션 시작 안내의 역할 글(설계 7.7절): 이 글만 보고 다음 명령을 알 수 있다(1.24.0 BRIEF·PRODUCT_BRIEF의 항목).
+#[test]
+fn session_start_role_guides_carry_the_next_command() {
+    let roles = |list: &[(&str, &str)]| {
+        list.iter()
+            .map(|(id, kind)| (id.to_string(), kind.to_string()))
+            .collect()
+    };
+    let guide = |h: &Hooks, who: &str| {
+        let out = h.claude(who, who, "SessionStart", json!({"source": "startup"}), &[]);
+        let text = out["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(text.chars().count() <= 9000, "{who}: 한도를 넘는다");
+        text
+    };
+    let has = |text: &str, needles: &[&str]| {
+        for needle in needles {
+            assert!(text.contains(needle), "`{needle}`가 없다:\n{text}");
+        }
+    };
+
+    let h = Hooks::new(&Setup {
+        roles: roles(&[("dev", "worker"), ("qa", "tester"), ("arch", "design")]),
+        ..Setup::default()
+    });
+    has(
+        &guide(&h, "lead"),
+        &[
+            "coordinator(lead)",
+            "`fullops route <KEY> --request",
+            "`fullops dispatch <KEY> --role <설계 역할>`",
+            "`orca orchestration reply --id <메시지 ID> --body",
+            "설계·범위·공유 계약 질문은 직접 답하지 않고 설계 역할에 넘긴다",
+            "`docs/planning/intents/<묶음 키>.md`",
+            "보안·데이터 손실 방지와 프로젝트 필수 검사는 모든 레벨에서 유지한다",
+            "보고용 캡처를 만들지 않는다",
+        ],
+    );
+    // 안내가 시키는 답하기 명령은 hook에 걸리지 않는다(긴 `terminal send`는 T-03이 거부한다)
+    let reply = "orca orchestration reply --id msg_3 --body \"공개 API는 바꾸지 않는다. 내부 함수만 고친다\"";
+    assert_eq!(h.bash("lead", "lead", reply), json!({}));
+    let worker = guide(&h, "dev");
+    has(
+        &worker,
+        &[
+            "worker `dev`",
+            "묻지 않고 추천안으로 진행하고 완료 보고에 선택과 되돌리는 방법을 적는다",
+            "추측하지 않고 preamble의 `ask`로 묻는다",
+            "`fullops done`이 출력한 본문으로 preamble의 `worker_done`을 한 번 보낸다",
+            "보내지 않고 끝내면 종료가 한 번 막힌다",
+        ],
+    );
+    has(
+        &guide(&h, "qa"),
+        &[
+            "tester `qa`",
+            "제품 코드는 고치지 않고",
+            "실패는 재현 절차와 증거로 보고하고 직접 고치지 않는다",
+            "`worker_done`을 한 번 보낸다",
+        ],
+    );
+    has(
+        &guide(&h, "arch"),
+        &[
+            "설계 역할 `arch`",
+            "코드 파일은 고치지 않는다",
+            "`fullops task new --role <구현 역할> --key <KEY> --goal",
+            "사용자 결정으로 올리지 않고 직접 정해",
+            "`[설계] <KEY> | … | 지시서: <만든 인박스 경로>`",
+            "`worker_done`을 한 번 보낸다",
+        ],
+    );
+
+    // split: 설계 좌석은 제품 기획자이고, worker는 제품 규칙·범위만 묻는다
+    let h = Hooks::new(&Setup {
+        roles: roles(&[("dev", "worker"), ("plan", "design")]),
+        routing: "split".into(),
+        tech_plan_role: Some("dev".into()),
+        ..Setup::default()
+    });
+    let planner = guide(&h, "plan");
+    has(
+        &planner,
+        &[
+            "제품 기획자 `plan`",
+            "기술 계획, 구조·API, 버그 수정 방법은 구현 역할의 책임이다",
+        ],
+    );
+    assert!(!planner.contains("설계 역할 `plan`"));
+    has(
+        &guide(&h, "dev"),
+        &["제품 규칙 변경·범위 확대·공유 제품 기준이 불명확한 것만"],
+    );
+    has(
+        &guide(&h, "lead"),
+        &["`product`(제품 규칙·범위·공유 제품 기준)만 제품 기획자에게 배정하고"],
+    );
+
+    // dev 모드의 주 담당
+    let h = Hooks::new(&Setup {
+        mode: "dev".into(),
+        primary_role: Some("dev".into()),
+        ..Setup::default()
+    });
+    has(
+        &guide(&h, "lead"),
+        &[
+            "dev 모드의 주 담당",
+            "제품 범위를 바꾸는 일은 사용자에게 확인한다",
+            "`fullops review need`",
+        ],
+    );
+}
+
+/// 활성 표식이 없는 레포에서도 새 세션의 caveman 주입(S-06)만은 돈다(1.24.0의 caveman 주입은 레포를 가리지 않았다).
+/// 그 밖의 이벤트와 이어 가는 세션은 아무것도 만들지 않고 통과만 낸다.
+#[test]
+fn inactive_repo_gets_only_the_caveman_skill() {
+    let h = Hooks {
+        sb: Sandbox::empty(),
+    };
+    let repo = h.sb.init_repo("plain");
+    let event = |host: &str, name: &str, more: Value| {
+        let mut input = json!({"hook_event_name": name, "session_id": "s1", "cwd": repo});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(more.as_object().unwrap().clone());
+        h.call(&[host], &[], &input)
+    };
+    let start = |host: &str, source: &str| event(host, "SessionStart", json!({"source": source}));
+    // 스킬이 없으면 아무 말도 하지 않는다
+    assert_eq!(start("claude", "startup"), json!({}));
+    h.sb.write(
+        &h.sb.home.join(".agents/skills/caveman/SKILL.md"),
+        "---\nname: caveman\n---\n군말 없이 답부터 말한다.\n",
+    );
+    for (host, source) in [
+        ("claude", "startup"),
+        ("claude", "clear"),
+        ("codex", "startup"),
+    ] {
+        let out = start(host, source);
+        let text = out["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{host} {source}: {out}"));
+        assert!(text.starts_with("설치된 caveman 스킬을 이 새 세션에 full 강도로 적용한다"));
+        assert!(text.ends_with("군말 없이 답부터 말한다."));
+        // 역할 안내(S-01)는 붙지 않는다
+        assert!(!text.contains("FullOps"), "{text}");
+    }
+    assert_eq!(start("claude", "resume"), json!({}));
+    // SessionStart의 Context가 모델에게 가지 않는 호스트
+    assert_eq!(start("grok", "startup"), json!({}));
+    let bash = json!({"tool_name": "Bash", "tool_input": {"command": "ls"}});
+    for (name, more) in [
+        ("UserPromptSubmit", json!({"prompt": "안녕"})),
+        ("PreToolUse", bash),
+        ("Stop", json!({})),
+    ] {
+        assert_eq!(event("claude", name, more), json!({}), "{name}");
+    }
+    // 표식이 없는 레포에는 세션 파일도 추적도 남기지 않는다
+    assert!(!repo.join(".git/fullops").exists());
+}
+
 #[test]
 fn snapshot_session_is_a_reviewer() {
     let h = Hooks::new(&Setup::default());
