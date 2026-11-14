@@ -9,7 +9,9 @@ use serde_json::json;
 
 /// 표 줄의 칸들(바이트 범위). `\|`는 구분자가 아니다. `|`로 시작하지 않으면 표 줄이 아니다.
 fn cell_ranges(line: &str) -> Option<Vec<(usize, usize)>> {
-    let lead = line.len() - line.trim_start().len();
+    // 파일 머리의 BOM은 공백처럼 넘긴다
+    let blank = |c: char| c.is_whitespace() || c == '\u{feff}';
+    let lead = line.len() - line.trim_start_matches(blank).len();
     if !line[lead..].starts_with('|') {
         return None;
     }
@@ -25,7 +27,8 @@ fn cell_ranges(line: &str) -> Option<Vec<(usize, usize)>> {
         escaped = c == '\\' && !escaped;
     }
     if !line[start..].trim().is_empty() {
-        out.push((start, line.len()));
+        // 줄 끝 표기는 칸에 넣지 않는다
+        out.push((start, line.trim_end_matches(['\r', '\n']).len()));
     }
     Some(out)
 }
@@ -112,14 +115,15 @@ fn cell_text(text: &str) -> String {
     text.replace('|', "\\|").replace(['\n', '\r'], " ")
 }
 
-fn write_plan(ctx: &Ctx, lines: &[String], had_newline: bool) -> Result<(), CliError> {
-    let mut text = lines.join("\n");
-    if had_newline {
-        text.push('\n');
-    }
+/// 줄 끝 표기(`\r\n`·`\n`)를 그대로 둔 줄들. 고치지 않는 줄은 바이트가 바뀌지 않는다.
+fn split_lines(text: &str) -> Vec<String> {
+    text.split_inclusive('\n').map(str::to_string).collect()
+}
+
+fn write_plan(ctx: &Ctx, lines: &[String]) -> Result<(), CliError> {
     Ok(fullops_store::write_atomic(
         &ctx.repo()?.plan_path(),
-        text.as_bytes(),
+        lines.concat().as_bytes(),
     )?)
 }
 
@@ -219,7 +223,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
                         .join(" ")
                 ));
             }
-            let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+            let mut lines = split_lines(&text);
             let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
             let Some((cols, last)) = tables(&refs).pop() else {
                 return Err(usage(
@@ -237,8 +241,17 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             put(cols.goal, &goal);
             put(cols.role, &role);
             put(cols.source, &source);
-            lines.insert(last + 1, format!("| {} |", cells.join(" | ")));
-            write_plan(ctx, &lines, text.ends_with('\n') || text.is_empty())?;
+            // 새 행은 파일의 줄 끝 표기를 따른다. 표 마지막 줄이 줄바꿈 없이 끝나면 줄바꿈을 그 줄에 붙인다
+            let row = format!("| {} |", cells.join(" | "));
+            let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+            match lines.get_mut(last) {
+                Some(line) if !line.ends_with('\n') => {
+                    line.push_str(eol);
+                    lines.insert(last + 1, row);
+                }
+                _ => lines.insert(last + 1, format!("{row}{eol}")),
+            }
+            write_plan(ctx, &lines)?;
             ctx.print(
                 &format!("PLANS.md에 `{key}` 행을 더했다."),
                 json!({ "key": key }),
@@ -254,7 +267,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             let Some(row) = plan.rows.iter().find(|r| r.key.as_str() == key) else {
                 return Err(usage(format!("PLANS.md에 `{key}` 행이 없다.")));
             };
-            let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+            let mut lines = split_lines(&text);
             let at = (row.line as usize).saturating_sub(1);
             let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
             let cols = tables(&refs)
@@ -270,7 +283,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
                 )));
             };
             line.replace_range(a..b, &format!(" {} ", cell_text(&status)));
-            write_plan(ctx, &lines, text.ends_with('\n'))?;
+            write_plan(ctx, &lines)?;
             ctx.print(
                 &format!("`{key}`의 상태를 바꿨다: {status}"),
                 json!({"key": key, "status": status}),

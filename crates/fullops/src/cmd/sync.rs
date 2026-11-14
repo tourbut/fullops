@@ -18,26 +18,36 @@ pub(super) enum Synced {
 }
 
 /// 기본 브랜치를 그 워크트리에 반영한다: ff, 아니면 병합 커밋. 강제 reset과 삭제는 쓰지 않는다.
-fn merge_base_into(worktree: &Path, base_tip: &Sha) -> Synced {
+fn merge_base_into(worktree: &Path, role: Option<&RoleId>, base_tip: &Sha) -> Synced {
     let git = GitCli::cli(worktree.to_path_buf());
-    if git
-        .merge(worktree, base_tip.as_str(), MergeMode::FfOnly)
-        .is_ok()
-    {
-        return Synced::Done;
-    }
-    match git.merge(worktree, base_tip.as_str(), MergeMode::NoEdit) {
-        Ok(MergeOutcome::Done) => Synced::Done,
-        Ok(MergeOutcome::Conflict) => {
-            let _ = git.merge_abort(worktree);
-            Synced::Conflict
+    // 역할 워크트리는 dispatch의 4단계와 같은 순서로 병합한다(병합 전 재오픈이 옮긴 커밋이 먼저다)
+    let steps = match role {
+        Some(role) => super::dispatch::merge_steps(worktree, role, base_tip),
+        None => vec![base_tip.to_string()],
+    };
+    for rev in &steps {
+        if git.merge(worktree, rev, MergeMode::FfOnly).is_ok() {
+            continue;
         }
-        Err(_) => Synced::Pending("기본 브랜치를 병합하지 못했다"),
+        match git.merge(worktree, rev, MergeMode::NoEdit) {
+            Ok(MergeOutcome::Done) => {}
+            Ok(MergeOutcome::Conflict) => {
+                let _ = git.merge_abort(worktree);
+                return Synced::Conflict;
+            }
+            Err(_) => return Synced::Pending("기본 브랜치를 병합하지 못했다"),
+        }
     }
+    Synced::Done
 }
 
 /// 역할 워크트리 하나의 동기화(M-11). 정산되지 않은 dispatch가 있거나 깨끗하지 않으면 예약으로 남긴다.
-pub(super) fn sync_role(state: &State, worktree: &Worktree, base_tip: &Sha) -> Synced {
+pub(super) fn sync_role(
+    state: &State,
+    role: &RoleId,
+    worktree: &Worktree,
+    base_tip: &Sha,
+) -> Synced {
     let path = path_text(&worktree.path);
     let working = |d: &fullops_core::model::Dispatch| {
         d.settled.is_none() && !d.is_reservation() && same_path(&d.worktree, &path)
@@ -46,7 +56,9 @@ pub(super) fn sync_role(state: &State, worktree: &Worktree, base_tip: &Sha) -> S
         return Synced::Pending("정산되지 않은 dispatch가 있다");
     }
     match GitCli::cli(worktree.path.clone()).status(None).yes() {
-        Some(changes) if changes.is_empty() => merge_base_into(&worktree.path, base_tip),
+        Some(changes) if changes.is_empty() => {
+            merge_base_into(&worktree.path, Some(role), base_tip)
+        }
         Some(_) => Synced::Pending("커밋하지 않은 변경이 있다"),
         None => Synced::Pending("워크트리 상태를 읽지 못했다"),
     }
@@ -90,7 +102,7 @@ pub(super) fn sync_roles(
         let Some(worktree) = worktrees.iter().find(checkout) else {
             continue;
         };
-        match sync_role(&state, worktree, &base_tip) {
+        match sync_role(&state, role, worktree, &base_tip) {
             Synced::Done => report.done.push(role.clone()),
             Synced::Pending(why) => report.pending.push((role.clone(), why)),
             Synced::Conflict => report.conflict.push(role.clone()),
@@ -127,7 +139,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             git.rev_parse(&format!("refs/heads/{}", config.base)),
             "기본 브랜치 tip",
         )?;
-        return match merge_base_into(&repo.root, &base_tip) {
+        return match merge_base_into(&repo.root, None, &base_tip) {
             Synced::Done => {
                 ctx.print(
                     "이 체크아웃에 기본 브랜치를 반영했습니다.",

@@ -1,6 +1,8 @@
 //! 유도값(설계 6.6절). 저장하지 않고 계산한다. `changed`·`pass_covers`·`landing`의 git 호출은 `facts_real`이 하고 순수 부분만 여기에 둔다.
 
-use crate::model::{Plan, PlanStatus, RoleId, SnapshotState, Stage, State, TaskKey, WorkOutcome};
+use crate::model::{
+    Completion, Plan, PlanStatus, RoleId, SnapshotState, Stage, State, TaskKey, WorkOutcome,
+};
 use std::collections::BTreeSet;
 
 /// 과제 단계. `archive`는 `archive.jsonl`에서 `landed_at`이 있는 줄의 키, `routed`는 `routes/<KEY>.json`의 존재다.
@@ -52,6 +54,34 @@ pub fn stage_of(key: &TaskKey, state: &State, archive: &BTreeSet<TaskKey>, route
     if routed { Stage::Routed } else { Stage::None }
 }
 
+/// 그 과제의 가장 늦은 보고가 실패면 그 보고. 실패한 과제는 선행 조건을 채우지 못하고 lead에게 다시 알린다.
+/// 같은 배정에 성공 보고가 있으면 실패가 뒤에 와도 실패로 보지 않는다(도착 순서로 결과가 갈리지 않게 한다. `dispatch`의 D-02와 같다).
+/// 같은 키·역할에서 같은 차수를 보낸 다른 배정의 성공 보고도 그렇다(끝난 차수의 재배정이 실패해도 그 차수는 끝났다).
+pub fn last_failed<'a>(key: &TaskKey, state: &'a State) -> Option<&'a Completion> {
+    let round = |c: &Completion| {
+        c.dispatch
+            .as_ref()
+            .and_then(|id| state.dispatch(id))
+            .and_then(|d| d.round)
+    };
+    let succeeded = |c: &Completion| {
+        state.completions.iter().any(|s| {
+            s.outcome == WorkOutcome::Succeeded
+                && ((c.dispatch.is_some() && s.dispatch == c.dispatch)
+                    || (s.key == c.key
+                        && s.role == c.role
+                        && round(c).is_some()
+                        && round(s) == round(c)))
+        })
+    };
+    state
+        .completions
+        .iter()
+        .filter(|c| c.key.as_ref() == Some(key))
+        .max_by_key(|c| c.received_at)
+        .filter(|c| c.outcome == WorkOutcome::Failed && !succeeded(c))
+}
+
 /// 준비된 행의 키를 표 순서대로 돌려준다. `inbox_exists`는 lead 체크아웃에 그 역할의 인박스가 있는지다.
 pub fn ready(
     plan: &Plan,
@@ -67,7 +97,10 @@ pub fn ready(
             row.status == PlanStatus::Ready
                 && !row.source.is_empty()
                 && !row.role.as_ref().is_some_and(inbox_exists)
-                && row.after.iter().all(|k| stage(k) >= Stage::Reported)
+                && row
+                    .after
+                    .iter()
+                    .all(|k| stage(k) >= Stage::Reported && last_failed(k, state).is_none())
                 && stage(&row.key) < Stage::Assigned
         })
         .map(|row| row.key.clone())

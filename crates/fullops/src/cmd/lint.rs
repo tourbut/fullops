@@ -6,8 +6,8 @@ use fullops_core::config::is_code;
 use fullops_core::lint_rules::{self as rules, FileChange, LintCommand, LintConfig};
 use fullops_core::messages::lint as msg;
 use fullops_core::model::{
-    Known, LintCommandResult, LintPass, LintResult, LintStatus, Refusal, Severity, Sha, TestLevel,
-    path_text,
+    Known, LintCommandResult, LintPass, LintResult, LintStatus, Refusal, RoleKind, Severity, Sha,
+    TestLevel, path_text,
 };
 use fullops_ext::{Git, GitCli, ProcStatus};
 use fullops_store::StoreError;
@@ -36,10 +36,14 @@ fn tenths(elapsed: Duration) -> f64 {
 
 /// `--from`이 없을 때의 시작점: `changed()`의 시작점과 같은 함수다(설계 6.6절 1~3번).
 fn default_start(ctx: &Ctx, head: &Sha) -> Result<Sha, CliError> {
-    use crate::hook::changes::{GitGate, start_candidate, start_point};
+    use crate::hook::changes::{GitGate, own_role, start_candidate, start_point};
     let (repo, config) = (ctx.repo()?, ctx.config()?);
     let caller = ctx.caller()?;
-    let anchor = caller.session.and_then(|s| s.anchor);
+    let design = own_role(config, &caller.actor)
+        .and_then(|r| config.roles.get(&r))
+        .is_some_and(|r| r.kind == RoleKind::Design);
+    // 설계 역할의 보고는 바닥부터 리뷰된다(RV-09): 다시 배정된 세션의 anchor로 좁히면 반려된 앞 세션의 커밋을 덮지 못한다
+    let anchor = caller.session.and_then(|s| s.anchor).filter(|_| !design);
     let candidate = start_candidate(repo, config, &caller.actor, anchor);
     let mut gate = GitGate::cli(repo.root.clone());
     start_point(&mut gate, head, &config.base_ref(), candidate)

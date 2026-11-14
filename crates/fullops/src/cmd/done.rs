@@ -7,9 +7,9 @@ use crate::hook::changes::{self, GitGate};
 use fullops_core::flow::refusal;
 use fullops_core::messages;
 use fullops_core::model::{
-    Completion, Config, Dispatch, Extra, Followup, HeadRef, LintResult, MessageId, PacketCheck,
-    Reported, RoleId, RoleKind, Seat, ShaSource, State, TaskKey, TestLevel, WorkOutcome, path_text,
-    same_path,
+    Completion, Config, Dispatch, Extra, Followup, HeadRef, Known, LintResult, MessageId,
+    PacketCheck, Reported, RoleId, RoleKind, Seat, ShaSource, State, TaskKey, TestLevel,
+    WorkOutcome, path_text, same_path,
 };
 use fullops_ext::{Git, GitCli};
 use fullops_store::Repo;
@@ -129,7 +129,19 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         .is_some_and(|r| r.kind == RoleKind::Design);
 
     // 이 과제의 키: 묶인 dispatch → 자기 인박스 → 이미 남긴 완료 기록 커밋
-    let inbox = fullops_store::read_inbox(repo, &role).yes().flatten();
+    // 읽지 못한 인박스를 '없음'으로 내리면 R-04·R-10·R-06을 건너뛴다. 실패 보고만 그대로 보낸다
+    let inbox = match fullops_store::read_inbox(repo, &role) {
+        Known::Yes(inbox) => inbox,
+        Known::Unknown(_) if failed.is_some() => None,
+        Known::Unknown(_) => {
+            return Err(CliError::Refused(vec![refusal(
+                "R-04",
+                &["syntax", role.as_str()],
+                "front matter의 `key`·`role`·`goal`·`base`·`route`·`from`·`round`·`budget`·`test_level`·`parallel`을 `fullops task new`가 쓴 형식으로 되돌리고 커밋한다",
+                2,
+            )]));
+        }
+    };
     let record = logged(repo).filter(|(_, r)| r == &role).map(|(key, _)| key);
     let bound = actor.dispatch.as_ref().and_then(|id| state.dispatch(id));
     let key = bound
@@ -198,11 +210,12 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
                 }
                 None => ctx.note("변경 범위를 계산하지 못해 lint 통과 기록을 확인하지 않았다."),
             }
-            if let Some(text) = inbox.as_ref().and_then(|_| {
-                fullops_store::read_text(&repo.inbox_path(&role))
+            if inbox.is_some() {
+                // 읽지 못한 본문은 빈 완료 보고로 본다(R-04가 거절한다)
+                let text = fullops_store::read_text(&repo.inbox_path(&role))
                     .yes()
                     .flatten()
-            }) {
+                    .unwrap_or_default();
                 // R-04
                 let template = report_lines(HANDOVER_TEMPLATE);
                 if !report_lines(&text)
@@ -231,7 +244,10 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
                 let run = state
                     .runs
                     .iter()
-                    .find(|r| r.closed_at.is_none() && matches!(&r.owner, fullops_core::model::RunOwner::Dispatch(id) if id == &d.id))
+                    .find(|r| {
+                        r.closed_at.is_none()
+                            && state.owns(r, &fullops_core::model::RunOwner::Dispatch(d.id.clone()))
+                    })
                     .map_or("<R>".to_string(), |r| r.id.to_string());
                 refused.push(refusal(
                     "R-11",

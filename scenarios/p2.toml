@@ -198,10 +198,12 @@ act = "runs_fullops"
 args = ["packet", "check", "PAY-12", "--role", "dev"]
 expect = { verdict = "pass", exit = 0, flow = "continues" }
 
+# 첫 배정이 정산되기 전에 같은 배정을 다시 내는 것은 한도 재배정뿐이다(D-10)
 [[step]]
 act = "lead_dispatches"
 key = "PAY-12"
 role = "dev"
+reason = "limit"
 expect = { verdict = "pass", flow = "continues" }
 
 # 지시 본문을 고친다
@@ -221,6 +223,7 @@ expect = { verdict = "deny", rule = "J-10", flow = "stopped", escape = "packet b
 act = "lead_dispatches"
 key = "PAY-12"
 role = "dev"
+reason = "limit"
 expect = { verdict = "deny", rule = "D-12", flow = "stopped", escape = "J-10" }
 
 # 입력이 달라졌다. 말없이 덮어쓰지 않는다
@@ -244,4 +247,5 @@ expect = { verdict = "pass", exit = 0, flow = "continues" }
 act = "lead_dispatches"
 key = "PAY-12"
 role = "dev"
+reason = "limit"
 expect = { verdict = "pass", flow = "continues" }

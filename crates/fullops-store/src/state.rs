@@ -12,16 +12,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 fn parse(text: &str) -> Result<State, &'static str> {
-    #[derive(serde::Deserialize)]
-    struct Version {
-        v: u32,
-    }
     match serde_json::from_str::<State>(text) {
         Ok(state) if state.v > STATE_V => Err("state_newer"),
         Ok(state) => Ok(state),
-        // 새 형식이라 못 읽은 것과 파손을 가른다
-        Err(_) => Err(match serde_json::from_str::<Version>(text) {
-            Ok(version) if version.v > STATE_V => "state_newer",
+        // 새 형식이라 못 읽은 것과 파손을 가른다. JSON 문법이 맞으면 파손이 아니다:
+        // `v`를 올리지 않고 값만 더한 새 실행본의 파일일 수 있어 옮기지 않는다
+        Err(_) => Err(match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(value) if value.is_object() => "state_newer",
             _ => "state_broken",
         }),
     }

@@ -28,6 +28,11 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
             a(1),
             a(2)
         ),
+        ("H-03", "brief") => format!(
+            "`{}` 역할의 이전 차수를 기록으로 가져오기 전에 설계 역할의 지시서 보고 `{}`가 병합되지 않았다. 지금 가져오면 그 보고의 병합이 완료 기록과 지시서를 섞는다.",
+            a(1),
+            a(2)
+        ),
         ("H-03", _) => format!(
             "`{}` 역할의 인박스가 이미 있다. 역할당 인박스는 하나다.",
             a(0)
@@ -41,6 +46,20 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
 
         ("D-01", _) => format!("과제 `{}`의 분류 기록이 없거나 unresolved다.", a(0)),
         ("D-02", "syntax") => format!("`{}` 역할의 인박스 front matter를 읽을 수 없다.", a(1)),
+        ("D-02", "request") => format!(
+            "과제 `{}`의 분류 기록에 요청 글이 없어 인박스 없이 받는 `{}` 역할이 할 일을 알 수 없다.",
+            a(2),
+            a(1)
+        ),
+        ("D-02", "done") => format!(
+            "lead 체크아웃의 `{}` 인박스({}차)는 이미 완료 기록으로 옮겨진 차수다. 그대로 배정하면 worker에게 지시서가 가지 않는다.",
+            a(1),
+            a(2)
+        ),
+        ("D-02", "target") => format!(
+            "동기화 뒤에도 대상 워크트리에 `{}` 역할의 인박스가 없다.",
+            a(1)
+        ),
         ("D-02", "key") => format!(
             "`{}` 역할의 인박스는 과제 `{}`의 것이다(배정하려는 과제는 `{}`).",
             a(1),
@@ -67,6 +86,12 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
         ("D-07", _) => "한도 재배정은 직전과 같은 agent·model·effort로만 한다.".into(),
         ("D-08", _) => format!("병렬 방침 `{}`가 이 위임을 허용하지 않는다.", a(0)),
         ("D-09", _) => "agent·model·effort를 정할 수 없다.".into(),
+        ("D-10", "same") => format!(
+            "`{}` 역할에 과제 `{}`의 같은 배정(`{}`)이 이미 실행 중이다.",
+            a(1),
+            a(2),
+            a(3)
+        ),
         ("D-10", _) => format!(
             "`{}` 역할에 끝나지 않은 다른 과제 `{}`의 배정이 있다.",
             a(0),
@@ -92,10 +117,51 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
         ("R-01", _) => "`fullops done`은 역할 워크트리의 worker나 dev 주 담당이 실행한다.".into(),
         ("R-02", _) => format!("작업 트리에 커밋하지 않은 변경이 {}건 있다.", a(0)),
         ("R-03", _) => format!("코드 변경 {}건에 대한 lint 통과 기록이 없다.", a(0)),
+        ("R-04", "syntax") => format!(
+            "`{}` 역할의 인박스 front matter를 읽을 수 없어 완료 보고와 완료 기록을 확인하지 못한다.",
+            a(1)
+        ),
         ("R-04", _) => "인박스의 `## 완료 보고` 절이 비어 있다.".into(),
         ("R-11", _) => "하위 worker의 보고를 아직 받아 처리하지 않았다.".into(),
         _ => return None,
     })
+}
+
+/// 같은 과제의 수정 배정 명령(리뷰 reject, M-07, RT-02가 함께 가리킨다). 병합 전에도 통한다.
+/// 수정은 lead가 연 구현 역할의 다음 차수다(설계 과제도 같다). 배정에도 역할을 적는다: 설계 과제의 route 역할은 설계 역할이다.
+/// `design`(그 과제의 route class)이 있으면 반려된 보고가 설계 역할 자신의 것이다: 설계 역할은 인박스 없이 받으므로
+/// 반려 사유를 요청 글로 남기고 다시 배정한다(reopen·`--purpose fix`는 설계 역할에 통하지 않는다).
+pub fn fix_round(key: &str, role: Option<&str>, design: Option<&str>) -> String {
+    let role = role.unwrap_or("<구현 역할>");
+    if let Some(class) = design {
+        return format!(
+            "`fullops route {key} --force --request \"<반려 사유를 담은 재작업 글>\" --class {class} --role {role}` → `fullops dispatch {key} --role {role}`"
+        );
+    }
+    format!(
+        "`fullops task reopen --role {role} --key {key} --goal \"<수정 목표>\"` → `fullops dispatch {key} --role {role} --purpose fix`"
+    )
+}
+
+/// 배정되지 않은 지시서 한 건의 안내(`leftover`).
+pub fn unassigned_inbox(key: &crate::model::TaskKey, role: &crate::model::RoleId) -> String {
+    format!(
+        "{key}(`{role}` 지시서가 배정되지 않았다: `fullops dispatch {key} --role {role} --agent … --model … --effort …`)"
+    )
+}
+
+/// 실패한 채 남은 과제 한 건의 안내(`leftover`).
+/// `fix`면 실패한 차수가 수정 배정이었다: reopen 출력과 같은 명령을 낸다.
+pub fn failed_task(
+    key: &crate::model::TaskKey,
+    role: Option<&crate::model::RoleId>,
+    fix: bool,
+) -> String {
+    let role = role.map(|r| format!(" --role {r}")).unwrap_or_default();
+    let purpose = if fix { " --purpose fix" } else { "" };
+    format!(
+        "{key}(실패 보고 뒤 멈췄다: 원인을 고쳐 `fullops dispatch {key}{role}{purpose}`로 다시 배정하거나 `fullops plan set {key} \"보류(<사유>)\"`로 미룬다. 행이 없으면 `fullops plan add {key} … --status \"보류(<사유>)\"`)"
+    )
 }
 
 /// `task reopen`이 예산을 넘었을 때의 알림(거절이 아니다. 설계 8.4절).

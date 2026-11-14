@@ -130,11 +130,32 @@ impl State {
                     .iter()
                     .any(|m| &m.run == run && m.acked_at.is_none())
         };
-        self.runs.iter().any(|r| {
-            r.closed_at.is_none()
-                && matches!(&r.owner, RunOwner::Dispatch(id) if id == parent)
-                && open(&r.id)
-        })
+        let parent = RunOwner::Dispatch(parent.clone());
+        self.runs
+            .iter()
+            .any(|r| r.closed_at.is_none() && self.owns(r, &parent) && open(&r.id))
+    }
+
+    /// 그 Run의 보고를 `owner`가 받는가. 소유한 dispatch가 한도·끊김으로 정산됐으면 같은 키·역할·워크트리에
+    /// 다시 낸 배정이 이어받는다(하위 배정은 이어받지 않는다). lead는 worker의 Run을 받지 않는다.
+    pub fn owns(&self, run: &Run, owner: &RunOwner) -> bool {
+        if &run.owner == owner {
+            return true;
+        }
+        let (RunOwner::Dispatch(was), RunOwner::Dispatch(now)) = (&run.owner, owner) else {
+            return false;
+        };
+        let (Some(was), Some(now)) = (self.dispatch(was), self.dispatch(now)) else {
+            return false;
+        };
+        was.settled
+            .as_ref()
+            .is_some_and(|s| s.how != SettledHow::Done)
+            && was.counts()
+            && now.counts()
+            && was.key == now.key
+            && was.role == now.role
+            && super::same_path(&was.worktree, &now.worktree)
     }
 }
 
@@ -178,6 +199,9 @@ pub struct Dispatch {
     pub settled: Option<Settled>,
     #[serde(default)]
     pub limit_escalated: bool,
+    /// 작업 배정이 보낸 인박스의 차수. 인박스 없이 받는 배정과 이 필드가 생기기 전의 기록은 `null`이다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub round: Option<u32>,
     #[serde(flatten)]
     pub extra: Extra,
 }

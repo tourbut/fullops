@@ -153,6 +153,7 @@ impl World {
                     extra: Default::default(),
                 }),
                 limit_escalated: false,
+                round: None,
                 extra: Default::default(),
             });
             if !settled {

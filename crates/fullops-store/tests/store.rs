@@ -558,6 +558,19 @@ fn broken_or_newer_state_is_unknown_and_recoverable() {
         "새 형식의 파일은 건드리지 않는다"
     );
 
+    // R4-8: `v`는 그대로인데 이 실행본이 모르는 값이 든 파일(JSON 문법은 맞다)도 옮기지 않는다
+    let unknown_value = r#"{"v": 1, "decisions": [{"id": "D-1", "status": "deferred"}]}"#;
+    std::fs::write(repo.state_path(), unknown_value).unwrap();
+    assert_eq!(read_state(&repo), Known::Unknown("state_newer"));
+    assert!(matches!(
+        update_state(&repo, CLI_WAIT, None, |_| ()),
+        Err(StoreError::Corrupt("state_newer"))
+    ));
+    assert_eq!(
+        std::fs::read_to_string(repo.state_path()).unwrap(),
+        unknown_value
+    );
+
     std::fs::write(repo.state_path(), "{ 쓰다 만").unwrap();
     assert_eq!(read_state(&repo), Known::Unknown("state_broken"));
     assert!(matches!(

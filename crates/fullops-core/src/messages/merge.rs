@@ -33,6 +33,8 @@ pub fn human(rule: &str, case: &str, args: &[&str]) -> String {
 /// (사유, 탈출구).
 fn text(id: &str, case: &str, a: &[&str]) -> Option<(String, String)> {
     let v = |i: usize| a.get(i).copied().unwrap_or_default();
+    // 수정 배정은 반려된 보고를 쓴 역할에 간다. 그 다음 값은 그 역할이 설계 역할일 때만 있는 route class다
+    let role = |i: usize| a.get(i).copied().filter(|r| !r.is_empty());
     let (reason, escape) = match (id, case) {
         ("M-01", _) => (
             format!("`fullops merge`는 lead만 실행합니다(호출자: {}).", v(0)),
@@ -90,7 +92,10 @@ fn text(id: &str, case: &str, a: &[&str]) -> Option<(String, String)> {
                 v(0),
                 v(1)
             ),
-            "수정 배정(`fullops task reopen`) 뒤 새 SHA로 다시 리뷰합니다.".into(),
+            format!(
+                "수정 배정({}) 뒤 새 SHA로 다시 리뷰합니다.",
+                super::flow::fix_round(v(0), role(2), role(3))
+            ),
         ),
         ("M-04", "unfinished") => (
             format!("{} {}의 리뷰 기록이 아직 수락되지 않았습니다.", v(0), v(1)),
@@ -157,7 +162,8 @@ fn text(id: &str, case: &str, a: &[&str]) -> Option<(String, String)> {
                 v(2)
             ),
             format!(
-                "수정 배정(`fullops task reopen`) 또는 `fullops hold {} --reason … --owner … --resume …`",
+                "수정 배정({}) 또는 `fullops hold {} --reason … --owner … --resume …`",
+                super::flow::fix_round(v(0), role(3), role(4)),
                 v(0)
             ),
         ),

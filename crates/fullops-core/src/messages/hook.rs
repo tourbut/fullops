@@ -74,7 +74,7 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
         "X-04" => format!("분류만 하고 배정하지 않은 과제가 있다: {}.", a(0)),
         "X-05" => args.join(" "),
         "X-06" => format!("통합되지 않은 완료 보고가 있다: {}.", a(0)),
-        "X-07" => format!("준비된 과제가 있다: {}.", a(0)),
+        "X-07" => format!("이어 갈 과제가 있다: {}.", a(0)),
         _ => return None,
     })
 }

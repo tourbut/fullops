@@ -7,9 +7,10 @@ use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::lint_rules::config_sha256;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
-    Accepted, Completion, HeadRef, Known, LintResult, Need, NeedAction, PacketCheck, Refusal,
-    RunOwner, Sha, Snapshot, SnapshotHold, SnapshotState, State, TaskKey, Waiver, WorkOutcome,
-    parse_packet, parse_packet_outcomes, path_text, same_path, sha256_hex,
+    Accepted, Completion, Config, HeadRef, Known, LintResult, Need, NeedAction, PacketCheck,
+    Refusal, RoleId, RoleKind, RunOwner, Sha, Snapshot, SnapshotHold, SnapshotState, State,
+    TaskKey, Waiver, WorkOutcome, parse_packet, parse_packet_outcomes, path_text, same_path,
+    sha256_hex,
 };
 use fullops_core::review::{
     ReviewResult, RuleFile, Targets, check_lint, check_result, result_skeleton, review_need,
@@ -209,10 +210,30 @@ pub(super) fn evidence(repo: &Repo, key: &TaskKey, base: &Sha, head: &Sha) -> Ev
     if !dir.join("result.json").exists() {
         return Evidence::None;
     }
-    match read::<ReviewResult>(&dir.join("result.json")) {
-        Some(r) if r.conclusion.as_deref() == Some("reject") || r.blocking() => Evidence::Rejected,
-        _ => Evidence::Unfinished,
+    if rejected(repo, key, head) {
+        Evidence::Rejected
+    } else {
+        Evidence::Unfinished
     }
+}
+
+/// 그 SHA의 리뷰 결론이 reject이거나 미해결 critical·high가 있다.
+pub(super) fn rejected(repo: &Repo, key: &TaskKey, head: &Sha) -> bool {
+    read::<ReviewResult>(&repo.review_dir(key, head).join("result.json"))
+        .is_some_and(|r| r.conclusion.as_deref() == Some("reject") || r.blocking())
+}
+
+/// 그 역할이 인박스 없이 받는 설계 역할이면 그 과제의 route class(수정 배정 안내가 설계 역할 재배정이 된다).
+pub(super) fn design_class(
+    repo: &Repo,
+    config: &Config,
+    key: &TaskKey,
+    role: Option<&RoleId>,
+) -> Option<String> {
+    role.and_then(|r| config.roles.get(r))
+        .filter(|r| r.kind == RoleKind::Design)?;
+    let route = fullops_store::read_route(repo, key).yes().flatten();
+    Some(route.map_or("<class>".into(), |r| r.class.to_string()))
 }
 
 pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
@@ -463,7 +484,6 @@ fn snapshot(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
 
 /// 10번: 패킷 조건이 참이면 리뷰 head 커밋의 패킷·처리 기록·지시서로 `check_packet`을 부른다.
 fn packet_failures(repo: &Repo, git: &GitCli, key: &TaskKey, subject: &Subject) -> Vec<Refusal> {
-    let route = fullops_store::read_route(repo, key).yes().flatten();
     let files = blobs(
         git,
         &subject.head,
@@ -474,6 +494,21 @@ fn packet_failures(repo: &Repo, git: &GitCli, key: &TaskKey, subject: &Subject) 
     );
     let packet = files[0].as_deref().and_then(parse_packet);
     let outcomes = files[1].as_deref().and_then(parse_packet_outcomes);
+    // 읽지 못한 기록을 '없음'으로 내리면 패킷 검사를 건너뛴다
+    let (Known::Yes(route), false, false) = (
+        fullops_store::read_route(repo, key),
+        files[0].is_some() && packet.is_none(),
+        files[1].is_some() && outcomes.is_none(),
+    ) else {
+        return vec![Refusal {
+            rule: "packet",
+            reason: format!(
+                "`routes/{key}.json`이나 리뷰 head의 `{key}-packet.json`, 패킷 처리 기록을 읽을 수 없다."
+            ),
+            escape: "기록 파일의 JSON을 고쳐 커밋한 뒤 다시 리뷰한다".into(),
+            exit: 2,
+        }];
+    };
     if packet.is_none() && !route.as_ref().is_some_and(|r| r.requires_packet) {
         return Vec::new();
     }
@@ -646,7 +681,16 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     let next = if accept {
         format!("accepted.json을 썼습니다. 다음: `fullops merge {key}`")
     } else {
-        "결론이 reject라 수락 기록을 쓰지 않았습니다. 다음: 수정 배정(`fullops task reopen`)".into()
+        let role = subject.completion.as_ref().and_then(|c| c.role.as_ref());
+        let design = design_class(repo, ctx.config()?, &key, role);
+        format!(
+            "결론이 reject라 수락 기록을 쓰지 않았습니다. 다음: 수정 배정({})",
+            fullops_core::messages::flow::fix_round(
+                key.as_str(),
+                role.map(|r| r.as_str()),
+                design.as_deref()
+            )
+        )
     };
     ctx.print(
         &format!(

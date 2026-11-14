@@ -5,8 +5,8 @@ use super::find::{path_refusal, repo_path};
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::flow::refusal;
 use fullops_core::model::{
-    Config, DecidedBy, Origin, RoleId, RoleKind, Route, RouteClass, RouteTuple, Routing, TaskKey,
-    sha256_hex,
+    Config, DecidedBy, Known, Origin, RoleId, RoleKind, Route, RouteClass, RouteTuple, Routing,
+    TaskKey, path_text, sha256_hex,
 };
 use fullops_ext::{Answer, JevCurl, Judge, Question, QuestionKind};
 use lexopt::prelude::*;
@@ -288,7 +288,12 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             );
         }
     };
-    let existing = fullops_store::read_route(repo, &key).yes().flatten();
+    // 읽지 못한 기록을 '없음'으로 보면 tuple·requires_packet·이력을 잃고 덮어쓴다
+    let Known::Yes(existing) = fullops_store::read_route(repo, &key) else {
+        return Err(usage(format!(
+            "`.fullops-squad/routes/{key}.json`을 읽을 수 없다. JSON을 고치거나 다른 이름으로 옮긴 뒤 다시 분류한다."
+        )));
+    };
     let blank = |class, role: Option<RoleId>, decided_by| Route {
         v: 1,
         key: key.clone(),
@@ -326,10 +331,73 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         && let Ok(base) = TaskKey::new(base)
         && repo.route_path(&base).is_file()
     {
+        // 수정은 lead가 연 구현 역할의 다음 차수다: 그 키를 보고한 구현 역할(tester·설계 역할이 아니다), 없으면 구현 역할인 route 역할
+        let state = fullops_store::read_state(repo).yes().unwrap_or_default();
+        let base_route = fullops_store::read_route(repo, &base).yes().flatten();
+        let implementer = |role: &&RoleId| {
+            config
+                .roles
+                .get(*role)
+                .is_some_and(|r| r.kind == RoleKind::Worker)
+        };
+        let role = state
+            .completions
+            .iter()
+            .filter(|c| c.key.as_ref() == Some(&base))
+            .filter_map(|c| {
+                c.role
+                    .as_ref()
+                    .filter(implementer)
+                    .map(|r| (c.received_at, r))
+            })
+            .max_by_key(|(at, _)| *at)
+            .map(|(_, r)| r)
+            // route 역할로 내려갈 때는 설계 역할만 뺀다(tester로 분류된 direct 과제는 그 역할이 고친다)
+            .or(base_route
+                .as_ref()
+                .and_then(|r| r.role.as_ref())
+                .filter(|role| {
+                    config
+                        .roles
+                        .get(*role)
+                        .is_some_and(|r| r.kind != RoleKind::Design)
+                }));
+        let mut fix =
+            fullops_core::messages::flow::fix_round(base.as_str(), role.map(|r| r.as_str()), None);
+        let brief = super::task::pending_brief(config, &state, &base);
+        // 리뷰가 반려한 설계 역할의 보고는 병합할 수 없다: 그 설계 역할에 다시 맡긴다
+        let rejected = brief.filter(|c| {
+            c.sha
+                .as_ref()
+                .is_some_and(|sha| super::review::rejected(repo, &base, sha))
+        });
+        if let Some(brief) = rejected {
+            let class = super::review::design_class(repo, config, &base, brief.role.as_ref());
+            fix = fullops_core::messages::flow::fix_round(
+                base.as_str(),
+                brief.role.as_ref().map(|r| r.as_str()),
+                class.as_deref(),
+            );
+        } else if let Some(brief) = brief {
+            // 설계 역할의 지시서 보고가 병합 전이면 그것을 먼저 병합한다(reopen이 이전 차수 기록을 가져오기 전에)
+            fix = format!(
+                "먼저 설계 역할의 지시서 보고를 병합(`fullops merge {base} --completion {}`)한 뒤 수정 배정({fix})",
+                brief.id
+            );
+        }
+        // 요청이 바뀌어 설계 자체를 다시 써야 할 때만 설계 역할에 다시 맡긴다
+        if let (None, Some(design), Some(r)) = (rejected, config.design_role(), &base_route)
+            && matches!(r.class, RouteClass::Design | RouteClass::Product)
+        {
+            fix.push_str(&format!(
+                ". 요청이 바뀌어 설계를 다시 써야 하면 `fullops route {base} --force --request \"<바뀐 요청>\" --class {} --role {design}` → `fullops dispatch {base} --role {design}`",
+                r.class
+            ));
+        }
         return refuse(
             "RT-02",
             &["rework", key.as_str(), base.as_str()],
-            &format!("`fullops task reopen --key {base}`. 정말 다른 과제면 `--distinct`"),
+            &format!("{fix}. 정말 다른 과제면 `--distinct`"),
         );
     }
     // 요청 파일의 글은 Jev로 나간다. 탐색과 같은 경로 규칙을 거친 레포 안의 파일만 읽는다
@@ -416,7 +484,22 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         }
     }
     route.reason = reason.unwrap_or_default();
-    route.request_file = request_file;
+    // `--request "<글>"`도 기록 옆에 남긴다: 인박스 없이 받는 설계 역할은 이 파일로 할 일을 안다(준비 커밋에 들어간다)
+    route.request_file = match (&request, request_file) {
+        (Some(text), _) if fullops_core::explore::sendable_text(text) => {
+            let file = format!(".fullops-squad/routes/{key}.request.md");
+            fullops_store::write_atomic(&repo.root.join(&file), text.as_bytes())?;
+            Some(file)
+        }
+        // 비밀값 무늬가 있는 글은 커밋되는 자리에 쓰지 않는다. 워크트리들이 함께 보는 Git 공용 디렉터리에 둔다
+        (Some(text), _) => {
+            let path = repo.shared().join("requests").join(format!("{key}.md"));
+            fullops_store::write_atomic(&path, text.as_bytes())?;
+            ctx.note("요청 글에 비밀값 무늬가 있어 커밋되지 않는 자리에 남겼다. 설계 역할에는 그 경로가 간다.");
+            Some(path_text(&path))
+        }
+        (None, file) => file,
+    };
     route.request_sha256 = Some(sha256_hex(text.as_bytes()));
     route.probabilities = decided.probabilities;
     route.thresholds = BTreeMap::from([

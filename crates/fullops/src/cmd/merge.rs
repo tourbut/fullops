@@ -31,13 +31,20 @@ fn git_in(cwd: &Path, args: &[&str], timeout: Duration) -> fullops_ext::ProcResu
     fullops_ext::run(&argv, cwd, timeout, &[("GIT_TERMINAL_PROMPT", "0")], None)
 }
 
-/// M-04에서 리뷰가 필요할 때의 표(설계 8.8절).
-fn review_gate(ctx: &Ctx, state: &State, key: &TaskKey, need: &Need) -> Result<(), CliError> {
+/// M-04에서 리뷰가 필요할 때의 표(설계 8.8절). `role`은 그 보고를 쓴 역할, `design`은 그것이 설계 역할일 때의 route class다(수정 배정 안내).
+fn review_gate(
+    ctx: &Ctx,
+    state: &State,
+    key: &TaskKey,
+    need: &Need,
+    role: &str,
+    design: &str,
+) -> Result<(), CliError> {
     let repo = ctx.repo()?;
     let (k, short) = (key.as_str(), need.head.short(7));
     match review::evidence(repo, key, &need.base, &need.head) {
         Evidence::Accepted | Evidence::Waived => return Ok(()),
-        Evidence::Rejected => return Err(refused("M-04", "rejected", &[k, short])),
+        Evidence::Rejected => return Err(refused("M-04", "rejected", &[k, short, role, design])),
         Evidence::Unfinished => return Err(refused("M-04", "unfinished", &[k, short])),
         Evidence::None => {}
     }
@@ -358,6 +365,9 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     let Some(sha) = completion.sha.clone() else {
         return Err(refused("M-02", "nosha", &[completion.id.as_str()]));
     };
+    let role = completion.role.as_ref().map_or("", |r| r.as_str());
+    let design =
+        review::design_class(repo, config, &key, completion.role.as_ref()).unwrap_or_default();
     // M-03
     let git = GitCli::cli(repo.root.clone());
     let worktrees = known(git.worktrees(), "워크트리 목록")?;
@@ -490,7 +500,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             ctx.note("기준 시점 설정을 읽지 못해 기본값을 썼습니다.");
         }
         if need.required {
-            review_gate(ctx, &state, &key, &need)?;
+            review_gate(ctx, &state, &key, &need, role, &design)?;
         }
         body.push(format!("리뷰 판정: {}", need.reason));
         // M-05
@@ -542,7 +552,11 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         if let Err(tail) = run_lint(&base_wt, &pre) {
             let back = rejoined.as_ref().unwrap_or(&pre);
             base.reset_keep(&base_wt, back.as_str())?;
-            return Err(refused("M-07", "", &[k, back.short(7), &tail]));
+            return Err(refused(
+                "M-07",
+                "",
+                &[k, back.short(7), &tail, role, &design],
+            ));
         }
         lint = "ran";
     }
@@ -576,8 +590,20 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     let now = fullops_store::now();
     let mut derived = Derived::default();
     if place == Landing::Landed {
+        // 같은 과제의 앞선 보고(병합 전 수정 배정 앞의 SHA)도 병합한 SHA에 담겼으면 함께 닫는다. 남기면 D-03이 다음 배정을 막는다
+        let earlier: Vec<_> = super::hold::recompute(repo, &git, config, &load_state(ctx)?)
+            .0
+            .into_iter()
+            .filter(|(id, _)| {
+                let same = |c: &&Completion| &c.id == id && c.key.as_ref() == Some(&key);
+                state.completions.iter().any(|c| same(&c))
+            })
+            .collect();
         ctx.update_state(None, |state| {
             mark_landed(state, &completion.id, None, now);
+            for (id, drift) in &earlier {
+                mark_landed(state, id, *drift, now);
+            }
             // 병합이 끝났으면 그 과제의 리뷰 보고와 앞선 실패 보고도 처리된 것이다
             let of_task = |d: &Dispatch| d.key == key;
             let ours: Vec<DispatchId> = state
@@ -681,6 +707,11 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     }
     if !ready.is_empty() {
         next.push("준비된 행은 `fullops task new` → `fullops dispatch`".to_string());
+    }
+    // 표에 없어도 이어 갈 일: 병합으로 들어온 지시서(설계 완료 뒤의 구현 지시서)와 실패한 채 남은 과제
+    let left = super::dispatch::leftover(repo, config, &after, &caller.actor);
+    if !left.is_empty() {
+        next.push(format!("이어서 할 일: {}", left.join(", ")));
     }
     if !working.is_empty() {
         let coordinator = after

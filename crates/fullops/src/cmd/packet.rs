@@ -8,7 +8,7 @@ use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::explore::{self, ContextResult, FindResult, Scope, Source};
 use fullops_core::model::{
-    EXPLORE_V, Packet, PacketCheck, PacketDecision, Refusal, RoleId, SourceBasis, TaskKey,
+    EXPLORE_V, Known, Packet, PacketCheck, PacketDecision, Refusal, RoleId, SourceBasis, TaskKey,
     parse_packet, sha256_hex,
 };
 use fullops_ext::{Git, GitCli};
@@ -212,11 +212,22 @@ fn check(
     mode: PacketCheck,
     head: &str,
 ) -> (bool, Vec<Refusal>) {
-    let route = fullops_store::read_route(repo, key).yes().flatten();
-    let packet = fullops_store::read_packet(repo, key).yes().flatten();
-    let outcomes = fullops_store::read_packet_outcomes(repo, key)
-        .yes()
-        .flatten();
+    // 읽지 못한 기록을 '없음'으로 내리면 패킷 검사를 건너뛴다
+    let (Known::Yes(route), Known::Yes(packet), Known::Yes(outcomes)) = (
+        fullops_store::read_route(repo, key),
+        fullops_store::read_packet(repo, key),
+        fullops_store::read_packet_outcomes(repo, key),
+    ) else {
+        let unread = Refusal {
+            rule: "packet",
+            reason: format!(
+                "`routes/{key}.json`이나 `{key}-packet.json`, 패킷 처리 기록을 읽을 수 없다."
+            ),
+            escape: "기록 파일의 JSON을 고치거나 `fullops packet build`로 다시 만든다".into(),
+            exit: 2,
+        };
+        return (true, vec![unread]);
+    };
     let read = |path: PathBuf| fullops_store::read_text(&path).yes().flatten();
     let inbox = read(repo.inbox_path(role))
         .and_then(|text| inbox_round(&text, key).map(|round| (Some(text), round)));

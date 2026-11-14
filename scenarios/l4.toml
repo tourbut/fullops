@@ -62,8 +62,13 @@ act = "runs_fullops"
 args = ["review", "snapshot", "A-1"]
 expect = { verdict = "pass" }
 
-# 병합 전의 수정 배정: lead 체크아웃에 같은 키의 인박스가 남아 있어 D-02를 통과한다.
-# `task reopen`은 병합 전에는 쓸 수 없다(8.4절: lead 체크아웃에 인박스가 없고 완료 기록이 있어야 한다. 완료 기록은 아직 역할 브랜치에만 있다).
+# 병합 전의 수정 배정: `task reopen`이 다음 차수의 인박스를 만들고(이전 차수의 완료 기록은 역할 브랜치의 것을 그대로 가져온다)
+# 수정 배정이 그 인박스를 worker 워크트리에 전달한다. 끝난 차수의 인박스로 그대로 배정하면 D-02로 거절된다
+[[step]]
+act = "runs_fullops"
+args = ["task", "reopen", "--role", "dev", "--key", "A-1", "--goal", "A-1 수정"]
+expect = { verdict = "pass" }
+
 [[step]]
 act = "lead_dispatches"
 key = "A-1"
@@ -72,13 +77,25 @@ purpose = "fix"
 bare = true
 expect = { verdict = "pass" }
 
-# worker가 수정 커밋을 더해 다시 보고한다. 인박스는 첫 완료 때 완료 기록으로 옮겨졌다
+# worker가 수정 커밋을 더하고 새 차수 인박스의 완료 보고를 채워 다시 보고한다
 [[step]]
 act = "worker_works"
 role = "dev"
 key = "A-1"
 path = "src/big.py"
 lines = 401
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n수정과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "수정 완료 보고"
 
 [[step]]
 act = "worker_lints"

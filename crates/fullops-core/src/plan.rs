@@ -42,7 +42,11 @@ struct Columns {
 
 /// 표의 한 줄을 칸으로 나눈다. `|`로 시작하지 않으면 표 줄이 아니다.
 fn cells(line: &str) -> Option<Vec<String>> {
-    let inner = line.trim().strip_prefix('|')?;
+    // 파일 머리의 BOM은 뗀다(front matter 파서와 같다)
+    let inner = line
+        .trim_start_matches('\u{feff}')
+        .trim()
+        .strip_prefix('|')?;
     let mut out = vec![String::new()];
     let mut chars = inner.chars().peekable();
     while let Some(c) = chars.next() {

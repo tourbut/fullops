@@ -5,7 +5,8 @@ use crate::assets::PLANS_MD;
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::messages::{self, flow::METRICS_CAVEAT};
 use fullops_core::model::{
-    BriefAt, Derived, Landing, MessageId, Mode, Parallel, RoleId, Seat, Status, TaskKey,
+    BriefAt, Derived, Known, Landing, MessageId, Mode, Parallel, RoleId, RunOwner, Seat, Status,
+    TaskKey,
 };
 use fullops_ext::{Git, GitCli};
 use lexopt::prelude::*;
@@ -105,15 +106,16 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         out.push("하위 worker다. 커밋·lint·`fullops done`은 부모가 한다. 맡은 범위를 끝내면 preamble의 `worker_done`을 보낸다".into());
     }
     if let Some(role) = &inbox_role {
-        out.push(
-            match fullops_store::read_inbox(repo, role).yes().flatten() {
-                Some(inbox) => format!(
-                    "인박스: .fullops-squad/handovers/to_{role}.md (과제 {})",
-                    inbox.key
-                ),
-                None => "인박스: 없음".into(),
-            },
-        );
+        out.push(match fullops_store::read_inbox(repo, role) {
+            Known::Yes(Some(inbox)) => format!(
+                "인박스: .fullops-squad/handovers/to_{role}.md (과제 {})",
+                inbox.key
+            ),
+            Known::Yes(None) => "인박스: 없음".into(),
+            Known::Unknown(_) => format!(
+                "인박스: .fullops-squad/handovers/to_{role}.md의 front matter를 읽을 수 없다"
+            ),
+        });
     }
     if let Some(config) = config {
         let host = caller
@@ -168,10 +170,11 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             .iter()
             .filter(|p| p.hold_reason.is_some())
             .count();
+        // 이어받을 Run은 lead가 소유한 것뿐이다. worker의 하위 Run을 lead가 받으면 부모 대신 보고를 소비한다
         let runs: Vec<&str> = state
             .runs
             .iter()
-            .filter(|r| r.closed_at.is_none())
+            .filter(|r| r.closed_at.is_none() && r.owner == RunOwner::Lead)
             .map(|r| r.id.as_str())
             .collect();
         out.push(format!(
@@ -187,6 +190,13 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
                 )
             }
         ));
+    }
+
+    if let (Some(config), Some(actor)) = (config, actor) {
+        let left = super::dispatch::leftover(repo, config, &state, actor);
+        if !left.is_empty() {
+            out.push(format!("이어서 할 일: {}", left.join(", ")));
+        }
     }
 
     for t in &status.tasks {

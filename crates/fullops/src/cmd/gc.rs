@@ -29,6 +29,13 @@ fn sweep(repo: &fullops_store::Repo, state: &mut State, now: i64) -> [usize; 8] 
         .runs
         .iter()
         .filter(|r| r.closed_at.is_none() && orphaned(&r.owner))
+        // 다시 배정된 worker가 이어받을 Run은 남긴다
+        .filter(|r| {
+            !state
+                .dispatches
+                .iter()
+                .any(|d| d.settled.is_none() && state.owns(r, &RunOwner::Dispatch(d.id.clone())))
+        })
         .map(|r| r.id.clone())
         .collect();
     let mut subs = 0;

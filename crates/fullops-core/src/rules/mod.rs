@@ -216,7 +216,7 @@ pub static RULES: &[Rule] = &[
         [("", "`fullops merge <KEY>`. 미룰 때는 `fullops hold <KEY> --reason … --owner … --resume …`. 키 없는 보고는 `fullops completion set-sha <메시지 ID> <SHA> --key <KEY>`로 키와 SHA를 적은 뒤 병합하거나 `fullops hold --completion <메시지 ID> --reason … --owner … --resume …`로 미룬다")],
         "Stop 미통합 완료 보고"),
     rule!("X-07", Stop, lead, BlockOnce, stop::x07,
-        [("", "계속할지 묻지 말고 배정한다: `fullops task new` → `fullops dispatch`. 기다려야 하면 `fullops plan set <KEY> \"보류(<사유>)\"` 또는 `\"대기(사람: …)\"`")],
+        [("", "계속할지 묻지 말고 배정한다: 준비된 행은 `fullops task new` → `fullops dispatch`, 괄호에 명령이 적힌 과제는 그 명령. 기다려야 하면 `fullops plan set <KEY> \"보류(<사유>)\"` 또는 `\"대기(사람: …)\"`")],
         "Stop 준비된 대기 행"),
     rule!("F-01", StopFailure, bound, Effect, failure::f01, "StopFailure escalation"),
 ];

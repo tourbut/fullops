@@ -5,10 +5,10 @@ use crate::facts::Facts;
 use crate::messages::{self, MsgId};
 use crate::model::{
     ArchiveLine, BriefAt, Completion, Dispatch, DispatchId, DispatchReason, DispatchRequest, Extra,
-    Known, Message, MessageNote, Metrics, ModelTuple, OrcaMessage, Parallel, Purpose, Refusal,
-    RoleId, RoleKind, RouteClass, RunId, RunOwner, Seat, Settled, SettledHow, Sha, ShaSource,
-    SnapshotState, State, TaskKey, TaskNewRequest, TestLevel, Turn, TurnKind, WorkOutcome,
-    host_of_agent,
+    Inbox, Known, Message, MessageNote, Metrics, ModelTuple, OrcaMessage, Parallel, Plan,
+    PlanStatus, Purpose, Refusal, RoleId, RoleKind, RouteClass, RunId, RunOwner, Seat, Settled,
+    SettledHow, Sha, ShaSource, SnapshotState, State, TaskKey, TaskNewRequest, TestLevel, Turn,
+    TurnKind, WorkOutcome, host_of_agent, sha256_hex,
 };
 use std::collections::BTreeSet;
 
@@ -75,6 +75,11 @@ pub fn dispatch_defaults(req: &DispatchRequest, facts: &mut dyn Facts) -> Dispat
     }
 }
 
+/// `--brief` 글의 지문(`dispatches[].brief`). 글은 저장하지 않는다.
+pub fn brief_fingerprint(brief: &str) -> String {
+    sha256_hex(brief.as_bytes()).chars().take(16).collect()
+}
+
 /// 선택형 위임인가(설계 8.5절 D-08). lead의 필수 독립 리뷰(`--purpose review`와 `--sha`)는 아니다.
 fn optional_delegation(req: &DispatchRequest, direct_dev: bool) -> bool {
     let mandatory_review = !req.sub && req.purpose == Purpose::Review && req.sha.is_some();
@@ -120,6 +125,32 @@ pub fn check_dispatch(req: &DispatchRequest, facts: &mut dyn Facts) -> Vec<Refus
     }
     if found.tuple.is_none() {
         out.push(refusal("D-09", &[], "`--agent --model --effort`", 2));
+    }
+    // D-10(같은 배정): 성공한 배정을 다시 실행하면 같은 워크트리에 worker가 하나 더 뜬다. 한도 재배정은 D-07이 본다.
+    // build와 fix는 같은 워크트리의 같은 작업이라 목적이 달라도 같은 배정이다
+    let brief = req.brief.as_deref().map(brief_fingerprint);
+    let same = |d: &&Dispatch| {
+        !d.is_reservation()
+            && d.settled.is_none()
+            && d.key == req.key
+            && Some(&d.role) == found.role.as_ref()
+            && d.is_work()
+            && d.is_sub() == req.sub
+            && d.brief == brief
+    };
+    if matches!(req.purpose, Purpose::Build | Purpose::Fix)
+        && req.reason != Some(DispatchReason::Limit)
+        && let Some(live) = state.dispatches.iter().find(same)
+    {
+        out.push(refusal(
+            "D-10",
+            &["same", live.role.as_str(), key, live.id.as_str()],
+            &format!(
+                "`fullops wait --run {}`로 그 worker의 보고를 받는다. 한도로 멈춘 worker는 `--reason limit`, 끊긴 worker는 그 워크트리에서 `fullops task recover --role {} --key {key}` 뒤 다시 배정, 다른 범위의 하위 배정은 다른 `--brief`",
+                live.run, live.role
+            ),
+            2,
+        ));
     }
 
     if req.sub {
@@ -219,7 +250,17 @@ pub fn check_dispatch(req: &DispatchRequest, facts: &mut dyn Facts) -> Vec<Refus
                 2,
             )),
             Known::Yes(Some(_)) => {}
-            Known::Yes(None) if design_build => {}
+            // 인박스 없이 받는 설계 역할은 route에 남긴 요청 글로 할 일을 안다
+            Known::Yes(None) if design_build => {
+                if route.as_ref().is_some_and(|r| r.request_file.is_none()) {
+                    out.push(refusal(
+                        "D-02",
+                        &["request", role.as_str(), key],
+                        &format!("`fullops route {key} --force --request \"<요청 글>\" --class … --role …`"),
+                        2,
+                    ));
+                }
+            }
             Known::Yes(None) => out.push(refusal("D-02", &["none", role.as_str()], escape, 2)),
             Known::Unknown(_) => out.push(refusal("D-02", &["syntax", role.as_str()], escape, 2)),
         }
@@ -324,6 +365,12 @@ pub fn check_task_new(req: &TaskNewRequest, facts: &mut dyn Facts) -> Vec<Refusa
     };
     let (key, role) = (req.key.as_str(), req.role.as_str());
     let route = facts.route(&req.key).yes().flatten();
+    let inbox = facts.inbox(&req.role);
+    // 같은 키의 열린 차수가 이미 있다: 새로 쓸 지시서가 없으니 그 차수를 배정하라고만 안내한다
+    let open_round = match &inbox {
+        Known::Yes(Some(open)) if req.reopen && open.key == req.key => Some(open.round),
+        _ => None,
+    };
     let own = actor.direct_dev && config.primary_role.as_ref() == Some(&req.role);
     let class = route
         .as_ref()
@@ -342,38 +389,120 @@ pub fn check_task_new(req: &TaskNewRequest, facts: &mut dyn Facts) -> Vec<Refusa
                 }
             );
             let designed = matches!(class, RouteClass::Design | RouteClass::Product);
+            // 반려·lint 실패의 수정 차수는 class와 관계없이 lead가 연다(1.24.0의 reopen). 설계 역할은 코드를 고치지 않는다
             let allowed = (actor.is_lead() && class == RouteClass::Direct && routed_here)
                 || (designer && designed)
-                || (actor.is_lead() && config.design_role().is_none());
+                || (actor.is_lead() && config.design_role().is_none())
+                || (actor.is_lead() && req.reopen);
             if !allowed {
+                let design = config.design_role().map_or("<설계 역할>", RoleId::as_str);
                 out.push(refusal(
                     "H-02",
                     &[key, class.as_str(), role],
-                    "design·product 과제의 지시서는 설계 역할이 쓴다. `fullops dispatch`로 설계 역할에 배정한다",
+                    &format!(
+                        "design·product 과제의 지시서는 설계 역할이 쓴다. `fullops dispatch {key} --role {design}`로 설계 역할에 배정한다"
+                    ),
                     2,
                 ));
             }
         }
     }
-    if facts.inbox(&req.role) != Known::Yes(None) {
-        out.push(refusal(
-            "H-03",
-            &[role],
-            "같은 과제면 본문을 고치고, 다른 과제면 `fullops plan add`",
-            2,
-        ));
+    let boxed = inbox != Known::Yes(None);
+    if boxed {
+        // 다시 열기의 탈출구가 다시 열기를 가리키지 않게 한다
+        let escape = match open_round {
+            Some(round) => format!(
+                "그 차수의 worker가 실행 중이면 `fullops wait`로 보고를 받은 뒤 다시 실행한다. 아직 배정하지 않았거나 실패한 차수면 `fullops dispatch {key} --role {role}{}`",
+                if round > 0 { " --purpose fix" } else { "" }
+            ),
+            None if req.reopen => "worker의 완료 보고를 `fullops wait`로 받은 뒤 다시 실행한다. 아직 배정하지 않은 과제면 본문을 고쳐 `fullops dispatch`".into(),
+            None => "아직 배정하지 않은 같은 과제면 본문을 고치고, 완료 보고를 받은 같은 과제의 수정이면 `fullops task reopen`, 다른 과제면 `fullops plan add`".into(),
+        };
+        out.push(refusal("H-03", &[role], &escape, 2));
     }
     let first_log = format!(".fullops-squad/handovers/logs/{key}.{role}.r0.md");
     let logged = facts.path_exists(std::path::Path::new(&first_log)) == Known::Yes(true);
     if logged && !req.reopen {
         out.push(refusal("H-04", &[key, role], "`fullops task reopen`", 2));
-    } else if !logged && req.reopen {
+    } else if !logged && req.reopen && !boxed {
         out.push(refusal(
             "H-04",
             &["missing", key, role],
             "`fullops task new`",
             2,
         ));
+    }
+    out
+}
+
+/// `ready()`가 보지 못하는 이어 갈 일의 안내 줄들(X-07, `status`, `wait`, `merge`가 함께 쓴다).
+/// `inboxes`는 lead 체크아웃의 인박스, 그 역할의 kind, 그 차수의 완료 기록이 역할 쪽에 있는가다(dev 주 담당 자신의 인박스는 뺀다).
+/// - 배정되지 않은 지시서: 설계 역할이 쓴 인박스(`from`이 lead가 아니다)인데 그 차수가 끝나지 않았고
+///   그 키·역할의 마지막 성공 보고 뒤에 시작됐거나 아직 끝나지 않은 Build·Fix dispatch가 없다.
+///   lead가 쓰고 있는 인박스는 X-04와 같이 세지 않는다. tester의 지시서는 같은 키의 구현이 끝나 병합된 뒤에 낸다.
+/// - 실패한 채 남은 과제: 가장 늦은 보고가 실패이고 그 뒤의 Build·Fix dispatch가 없다.
+/// 둘 다 `PLANS.md`에서 미룬(보류·사람 대기) 과제는 뺀다(X-07의 탈출구).
+pub fn leftover(state: &State, plan: &Plan, inboxes: &[(Inbox, RoleKind, bool)]) -> Vec<String> {
+    let work = |key: &TaskKey| {
+        let key = key.clone();
+        state
+            .dispatches
+            .iter()
+            .filter(move |d| d.key == key && d.counts() && d.is_work())
+    };
+    // 보고의 개수로 차수를 세지 않는다: 보관은 앞 차수의 기록을 지우고 한도 재배정은 한 차수에 보고를 둘 남긴다
+    let assigned = |inbox: &Inbox, finished: bool| {
+        let since = state
+            .completions
+            .iter()
+            .filter(|c| c.key.as_ref() == Some(&inbox.key) && c.role.as_ref() == Some(&inbox.role))
+            .filter(|c| c.outcome == WorkOutcome::Succeeded)
+            .map(|c| c.received_at)
+            .max();
+        inbox.from == "lead"
+            || finished
+            || work(&inbox.key).any(|d| {
+                d.role == inbox.role
+                    && (d.settled.is_none() || since.is_none_or(|at| d.started_at > at))
+            })
+    };
+    let put_off = |key: &TaskKey| {
+        plan.rows.iter().any(|r| {
+            &r.key == key && matches!(r.status, PlanStatus::Held(_) | PlanStatus::WaitHuman(_))
+        })
+    };
+    let mut out = Vec::new();
+    for (inbox, kind, _) in inboxes
+        .iter()
+        .filter(|(inbox, _, finished)| !assigned(inbox, *finished) && !put_off(&inbox.key))
+    {
+        let building = work(&inbox.key).any(|d| d.settled.is_none())
+            || state.pending().any(|c| c.key.as_ref() == Some(&inbox.key))
+            || inboxes.iter().any(|(other, kind, finished)| {
+                other.key == inbox.key && *kind != RoleKind::Tester && !assigned(other, *finished)
+            });
+        if *kind != RoleKind::Tester || !building {
+            out.push(messages::flow::unassigned_inbox(&inbox.key, &inbox.role));
+        }
+    }
+    let keys: BTreeSet<&TaskKey> = state
+        .completions
+        .iter()
+        .filter_map(|c| c.key.as_ref())
+        .collect();
+    for key in keys {
+        let Some(last) = crate::derive::last_failed(key, state) else {
+            continue;
+        };
+        let resumed = work(key).any(|d| d.settled.is_none() || d.started_at > last.received_at);
+        let fix = last
+            .dispatch
+            .as_ref()
+            .and_then(|id| state.dispatch(id))
+            .is_some_and(|d| d.purpose == Purpose::Fix);
+        if !resumed && !put_off(key) {
+            out.push(messages::flow::failed_task(key, last.role.as_ref(), fix));
+        }
     }
     out
 }
@@ -456,13 +585,16 @@ pub fn record_message(
     match msg.kind.as_str() {
         "escalation" => {
             if let Some(d) = found.and_then(|i| state.dispatches.get_mut(i)) {
-                d.settled = Some(Settled {
-                    how: SettledHow::Escalated,
-                    outcome: None,
-                    message: None,
-                    at,
-                    extra: Extra::new(),
-                });
+                // 보고로 끝난 배정을 뒤늦은 escalation이 되살리면 끝난 차수를 다시 배정하게 된다
+                if d.settled.as_ref().is_none_or(|s| s.how != SettledHow::Done) {
+                    d.settled = Some(Settled {
+                        how: SettledHow::Escalated,
+                        outcome: None,
+                        message: None,
+                        at,
+                        extra: Extra::new(),
+                    });
+                }
                 let limit = |s: &String| s.starts_with("[fullops:limit]");
                 d.limit_escalated |= msg.subject.as_ref().is_some_and(limit);
             }
@@ -883,7 +1015,9 @@ mod tests {
                 "terminal": "term_1", "worktree": "/w", "session_mode": "fresh", "started_at": 10,
                 "reported": {"branch": "fullops/dev", "sha": "a".repeat(40), "lint_head": null, "followups": [], "at": 11},
             });
-            state.dispatches.push(serde_json::from_value(dispatch).unwrap());
+            state
+                .dispatches
+                .push(serde_json::from_value(dispatch).unwrap());
             let msg = OrcaMessage {
                 id: crate::model::MessageId::new("msg_1").unwrap(),
                 kind: "worker_done".into(),
@@ -907,7 +1041,9 @@ mod tests {
             note.notes.join(" ")
         };
         let text = notes("succeeded");
-        assert!(text.contains("코드 변경이 없거나 `--no-checks`") && !text.contains("lint 없이 끝낸"));
+        assert!(
+            text.contains("코드 변경이 없거나 `--no-checks`") && !text.contains("lint 없이 끝낸")
+        );
         assert_eq!(notes("failed"), "");
     }
 
@@ -945,6 +1081,76 @@ mod tests {
             (m.subagent_calls, m.workflow_runs, m.sub_dispatches),
             (1, 0, 1)
         );
+    }
+
+    #[test]
+    fn leftover_lists_design_written_inboxes_and_holds_the_tester_back() {
+        let inbox = |role: &str, from: &str| Inbox {
+            key: TaskKey::new("F-1").unwrap(),
+            role: RoleId::new(role).unwrap(),
+            goal: "g".into(),
+            base: Sha::new("a".repeat(40)).unwrap(),
+            route: RouteClass::Design,
+            from: from.into(),
+            round: 0,
+            budget: 2,
+            test_level: TestLevel::Lite,
+            parallel: Parallel::On,
+        };
+        let boxes = [
+            (inbox("dev", "architecture"), RoleKind::Worker, false),
+            (inbox("qa", "architecture"), RoleKind::Tester, false),
+        ];
+        let state = |settled: &str| -> State {
+            serde_json::from_str(&format!(
+                r#"{{"v":1,"dispatches":[{{"id":"ctx_1","request":"r","task_id":"t","run":"run_1","key":"F-1","role":"dev","purpose":"build",
+                "tuple":{{"agent":"claude","model":"m","effort":"medium"}},"terminal":null,"worktree":"w","session_mode":"fresh","reason":null,
+                "started_at":10,"bound_session":null,"sub_of":null,"brief":null,"reported":null,"settled":{settled}}}]}}"#
+            ))
+            .unwrap()
+        };
+        let listed = |state: &State, boxes: &[(Inbox, RoleKind, bool)]| -> Vec<bool> {
+            let out = leftover(state, &Plan::default(), boxes);
+            ["--role dev", "--role qa"]
+                .iter()
+                .map(|role| out.iter().any(|line| line.contains(role)))
+                .collect()
+        };
+        // 구현 지시서가 먼저고 tester의 지시서는 구현이 끝난 뒤다
+        assert_eq!(listed(&State::default(), &boxes), [true, false]);
+        assert_eq!(listed(&state("null"), &boxes), [false, false]);
+        let done = r#"{"how":"done","outcome":"succeeded","message":"msg_1","at":20}"#;
+        assert_eq!(listed(&state(done), &boxes), [false, true]);
+        // 구현 보고가 아직 병합되지 않았으면(그 차수는 역할 브랜치에서 끝났다) tester의 지시서는 기다린다
+        let mut unmerged = state(done);
+        unmerged.completions = serde_json::from_str(
+            r#"[{"id":"msg_1","dispatch":"ctx_1","key":"F-1","role":"dev","branch":null,"sha":null,"sha_source":null,
+            "outcome":"succeeded","received_at":20,"hold":null,"released_hold":null,"landed_at":null,"drift":null}]"#,
+        )
+        .unwrap();
+        let mut finished = boxes.clone();
+        finished[0].2 = true;
+        assert_eq!(listed(&unmerged, &finished), [false, false]);
+        // 설계 역할이 쓴 다음 차수 지시서는 앞 차수의 배정으로 배정된 것이 아니다
+        let next = [(
+            Inbox {
+                round: 1,
+                ..inbox("dev", "architecture")
+            },
+            RoleKind::Worker,
+            false,
+        )];
+        assert_eq!(listed(&unmerged, &next), [true, false]);
+        let mut fixing = unmerged.clone();
+        let mut again = fixing.dispatches[0].clone();
+        again.id = DispatchId::new("ctx_2").unwrap();
+        again.started_at = 30;
+        again.settled = None;
+        fixing.dispatches.push(again);
+        assert_eq!(listed(&fixing, &next), [false, false]);
+        // lead가 쓰고 있는 인박스는 세지 않는다
+        let own = [(inbox("dev", "lead"), RoleKind::Worker, false)];
+        assert_eq!(listed(&State::default(), &own), [false, false]);
     }
 
     #[test]

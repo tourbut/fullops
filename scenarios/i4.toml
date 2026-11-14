@@ -98,9 +98,21 @@ ack = ["msg_failed"]
 no_wait = true
 expect = { verdict = "pass", flow = "continues" }
 
+# 실패한 과제는 처리 표시만으로 끝나지 않는다. 다시 배정하거나 미룰 때까지 X-07이 한 번 알린다
 [[step]]
 act = "user_prompts"
 text = "다음"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-07", flow = "stopped", escape = "fullops dispatch C-3" }
+
+[[step]]
+act = "lead_plans"
+key = "C-3"
+role = "dev"
+status = "보류(실패 원인 확인)"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]

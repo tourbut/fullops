@@ -206,7 +206,7 @@ pub(super) fn x05(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
     let mut runs: Vec<RunView> = state
         .runs
         .iter()
-        .filter(|r| r.closed_at.is_none() && r.owner == owner)
+        .filter(|r| r.closed_at.is_none() && state.owns(r, &owner))
         .map(|run| {
             let (mut merge, mut ack) = (Vec::new(), Vec::new());
             for m in state.messages.iter().filter(|m| m.run == run.id) {
@@ -358,10 +358,35 @@ pub(super) fn x06(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
 
 /// X-07
 pub(super) fn x07(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
-    let (keys, _) = known!(ready_rows(facts));
+    let (keys, plan) = known!(ready_rows(facts));
+    let mut keys: Vec<String> = keys.iter().map(|k| k.to_string()).collect();
+    // 표에 없어도 이어 갈 일: 배정되지 않은 지시서(설계 완료 뒤의 구현 지시서)와 실패한 채 남은 과제
+    let actor = known!(call::actor(facts));
+    let state = facts.state().yes().cloned();
+    if let (Ok(config), Some(state)) = (facts.config().cloned(), state) {
+        let own = |id: &RoleId| actor.direct_dev && config.primary_role.as_ref() == Some(id);
+        let mut inboxes = Vec::new();
+        for (id, role) in config.roles.iter().filter(|(id, _)| !own(id)) {
+            let Some(inbox) = facts.inbox(id).yes().flatten() else {
+                continue;
+            };
+            // Facts는 역할 브랜치를 읽지 않는다: 그 키·역할을 맡았던 워크트리의 완료 기록을 본다
+            let log = format!("logs/{}.{}.r{}.md", inbox.key, inbox.role, inbox.round);
+            let worktree = state
+                .dispatches
+                .iter()
+                .rev()
+                .find(|d| d.key == inbox.key && d.role == inbox.role && d.counts());
+            let finished = worktree.is_some_and(|d| {
+                let path = std::path::Path::new(&d.worktree).join(HANDOVERS).join(&log);
+                facts.path_exists(&path) == Known::Yes(true)
+            });
+            inboxes.push((inbox, role.kind, finished));
+        }
+        keys.extend(crate::flow::leftover(&state, &plan, &inboxes));
+    }
     if keys.is_empty() {
         return Finding::None;
     }
-    let keys: Vec<String> = keys.iter().map(|k| k.to_string()).collect();
     hit(keys.join(","), vec![keys.join(", ")])
 }

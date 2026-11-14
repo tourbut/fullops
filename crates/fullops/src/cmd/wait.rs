@@ -5,8 +5,8 @@ use super::dispatch::{step_refusal, usage, value};
 use crate::cli::{CliError, Ctx, EXIT_OK, session_handle};
 use fullops_core::flow::{self, body_shas};
 use fullops_core::model::{
-    AckBy, Extra, MessageId, OrcaMessage, RoleId, Run, RunId, RunOwner, Settled, SettledHow, Sha,
-    State, TaskKey, Waiter, ack_by, orca_wakes,
+    AckBy, Extra, Known, Landing, MessageId, OrcaMessage, RoleId, Run, RunId, RunOwner, Settled,
+    SettledHow, Sha, State, TaskKey, Waiter, ack_by, orca_wakes,
 };
 use fullops_ext::{CheckMode, ExtError, Git, GitCli, Orca, OrcaCli};
 use lexopt::prelude::*;
@@ -139,6 +139,12 @@ fn record(
             }
         }
     }
+    // 이미 통합된 SHA: 병합으로 보관된 과제의 보고가 Orca에 안 읽음으로 남아 다시 올 때 통합 대기로 되살리지 않는다
+    let landed: BTreeSet<&Sha> = resolved
+        .values()
+        .flatten()
+        .filter(|sha| super::hold::landing(git, config, sha) == Known::Yes(Landing::Landed))
+        .collect();
     let tips: BTreeMap<&RoleId, Option<Sha>> = config
         .roles
         .iter()
@@ -153,17 +159,26 @@ fn record(
         messages
             .iter()
             .map(|msg| {
-                flow::record_message(
+                let now = fullops_store::now();
+                let note = flow::record_message(
                     s,
                     run,
                     msg,
-                    fullops_store::now(),
+                    now,
                     &mut |hex| resolved.get(hex).cloned().flatten(),
                     &mut |role| tips.get(role).cloned().flatten(),
                     &mut |older, newer| {
                         ancestry.get(&(older.clone(), newer.clone())) == Some(&true)
                     },
-                )
+                );
+                let done = note.completion.as_ref().and_then(|c| c.sha.as_ref());
+                let orphan =
+                    |c: &fullops_core::model::Completion| c.id == msg.id && c.dispatch.is_none();
+                if done.is_some_and(|sha| landed.contains(sha)) && s.completions.iter().any(orphan)
+                {
+                    super::hold::mark_landed(s, &msg.id, None, now);
+                }
+                note
             })
             .collect::<Vec<_>>()
     })?;
@@ -215,7 +230,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             let own: Vec<&Run> = state
                 .runs
                 .iter()
-                .filter(|r| r.closed_at.is_none() && r.owner == owner)
+                .filter(|r| r.closed_at.is_none() && state.owns(r, &owner))
                 .collect();
             match own.as_slice() {
                 [only] => only.id.clone(),
@@ -235,6 +250,22 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             }
         }
     };
+    // 남의 Run을 이 세션에 다시 묶으면 그 Run의 보고가 소유자 대신 여기로 온다(lead가 worker의 하위 Run을 가로챈다).
+    // 한도·끊김으로 정산된 전임 worker의 Run은 다시 배정된 worker가 이어받는다
+    let bound = caller.actor.is_lead() || caller.actor.dispatch.is_some();
+    let found = state.runs.iter().find(|r| r.id == run);
+    if let (true, Some(found)) = (bound, found)
+        && !state.owns(found, &owner)
+    {
+        return Err(step_refusal(
+            "wait",
+            format!(
+                "Run `{run}`은 이 세션이 소유한 Run이 아니다(소유: {}).",
+                String::from(found.owner.clone())
+            ),
+            "`--run`을 빼거나 자기 Run을 준다. 하위 Run의 보고는 그 Run을 만든 worker가 받는다",
+        ));
+    }
     let orca = OrcaCli::new(repo.root.clone(), Duration::from_secs(15));
     let git = GitCli::cli(repo.root.clone());
     let handle = session_handle();
@@ -245,7 +276,8 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         .iter()
         .find(|r| r.id == run)
         .and_then(|r| r.coordinator.clone());
-    let known = state.runs.iter().any(|r| r.id == run);
+    let known = found.is_some();
+    let inherit = bound && found.is_some_and(|r| r.owner != owner);
     let rebound = match &handle {
         Some(handle) if coordinator.as_ref() != Some(handle) => match orca.run_use(&run) {
             Ok(()) => {
@@ -264,11 +296,17 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     let wakes = orca_wakes(handle.as_deref(), coordinator.as_deref());
 
     // 3. 처리 표시. Orca는 부르지 않는다
-    if rebound || !known || !acks.is_empty() {
+    if rebound || !known || inherit || !acks.is_empty() {
         let unknown = ctx.update_state(None, |s| {
             match s.runs.iter_mut().find(|r| r.id == run) {
-                Some(found) if rebound => found.coordinator = coordinator.clone(),
-                Some(_) => {}
+                Some(found) => {
+                    if rebound {
+                        found.coordinator = coordinator.clone();
+                    }
+                    if inherit {
+                        found.owner = owner.clone();
+                    }
+                }
                 None => s.runs.push(Run {
                     id: run.clone(),
                     owner: owner.clone(),
@@ -377,7 +415,8 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     }
 
     let state = fullops_store::read_state(repo).yes().unwrap_or_default();
-    let (actionable, next) = report(&state, &run, &received, wakes);
+    let left = super::dispatch::leftover(repo, config, &state, &caller.actor);
+    let (actionable, next) = report(&state, &run, &received, wakes, &left);
     let out = json!({
         "run": run, "idle_timeout": idle_timeout, "check_minutes": minutes, "actionable": actionable,
         "absorbed": {"heartbeats": received.heartbeats.len(), "status": received.status.len()},
@@ -425,8 +464,16 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
 }
 
 /// 그 Run의 처리 표시가 없는 메시지 전부와 다음 할 일(설계 8.6절의 반환).
-fn report(state: &State, run: &RunId, received: &Received, wakes: bool) -> (Vec<Json>, String) {
+fn report(
+    state: &State,
+    run: &RunId,
+    received: &Received,
+    wakes: bool,
+    left: &[String],
+) -> (Vec<Json>, String) {
     let (mut merges, mut ack_ids): (Vec<String>, Vec<&str>) = (Vec::new(), Vec::new());
+    // 과제 키 → 통합 대기인 보고들(받은 순서)
+    let mut by_key: Vec<(&TaskKey, Vec<&MessageId>)> = Vec::new();
     let mut actionable = Vec::new();
     for m in state
         .messages
@@ -440,12 +487,10 @@ fn report(state: &State, run: &RunId, received: &Received, wakes: bool) -> (Vec<
             .or(dispatch.map(|d| &d.key));
         let by = ack_by(state, &m.id);
         match (by, key) {
-            (AckBy::Merge, Some(key)) => {
-                let step = format!("`fullops merge {key}`(처리 표시까지 한다)");
-                if !merges.contains(&step) {
-                    merges.push(step);
-                }
-            }
+            (AckBy::Merge, Some(key)) => match by_key.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, ids)) => ids.push(&m.id),
+                None => by_key.push((key, vec![&m.id])),
+            },
             (AckBy::Merge, None) => merges.push(format!(
                 "`fullops completion set-sha {} <SHA> --key <KEY>` 뒤 `fullops merge <KEY>`",
                 m.id
@@ -469,13 +514,26 @@ fn report(state: &State, run: &RunId, received: &Received, wakes: bool) -> (Vec<
             "notes": seen.map(|(_, notes)| notes.clone()).unwrap_or_default(),
         }));
     }
-    let mut next = merges;
+    // 같은 과제의 보고가 여럿이면(병합 전 수정 배정) 가장 늦은 것을 고른다. `fullops merge <KEY>`만으로는 M-02에 걸린다
+    let mut next: Vec<String> = by_key
+        .iter()
+        .map(|(key, ids)| match ids.as_slice() {
+            [.., last] if state.pending().filter(|c| c.key.as_ref() == Some(*key)).count() > 1 => format!(
+                "`fullops merge {key} --completion {last}`(처리 표시까지 한다. 그 SHA에 담긴 앞선 보고도 함께 닫는다)"
+            ),
+            _ => format!("`fullops merge {key}`(처리 표시까지 한다)"),
+        })
+        .collect();
+    next.append(&mut merges);
     if !ack_ids.is_empty() {
         let flags: Vec<String> = ack_ids.iter().map(|id| format!("--ack {id}")).collect();
         next.push(format!(
             "그 밖의 메시지는 처리한 뒤 `fullops wait --run {run} {} --no-wait`",
             flags.join(" ")
         ));
+    }
+    if !left.is_empty() {
+        next.push(format!("이어서 할 일: {}", left.join(", ")));
     }
     next.push(if wakes {
         "기다릴 것이 남았으면 턴을 끝낸다. Orca가 깨운다".to_string()

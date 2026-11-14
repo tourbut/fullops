@@ -193,6 +193,7 @@ mod tests {
             reported: None,
             settled: None,
             limit_escalated: false,
+            round: None,
             extra: Extra::new(),
         }
     }

@@ -53,7 +53,12 @@ key = "B-2"
 role = "art"
 expect = { verdict = "deny", rule = "D-03", flow = "stopped", escape = "fullops merge A-1" }
 
-# 같은 키의 수정 배정은 통과한다
+# 같은 키의 수정 배정은 통과한다. 끝난 차수의 인박스로는 배정하지 않으므로 먼저 다음 차수를 연다
+[[step]]
+act = "runs_fullops"
+args = ["task", "reopen", "--role", "dev", "--key", "A-1", "--goal", "A-1 수정"]
+expect = { verdict = "pass" }
+
 [[step]]
 act = "lead_dispatches"
 key = "A-1"
