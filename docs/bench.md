@@ -96,6 +96,39 @@ export FULLOPS_PY_BASELINE="<py-baseline 사본의 루트>"
 
 ## 4. 측정 결과
 
+### 4.1 합친 뒤의 측정(2026-11-15)
+
+구현·통합·검증 수정을 모두 합친 뒤(`5a418f2`), 다른 빌드가 돌지 않는 상태에서 잰 값이다. 규칙을 실제로 평가하는 경로다.
+
+- 명령: `FULLOPS_PY_BASELINE=<py-baseline> cargo run --release -p xtask -- bench`(기본 횟수).
+- 같은 때 이 PC의 프로세스 바닥값(60회, p50/p95): `cmd /c exit` 22.5/25.9ms, `git --version` 38.2/43.0ms, `fullops --version` 20.1/22.5ms. 첫 측정 때보다 PC 전체의 바닥값이 올라 있었다.
+
+| 입력 | 본 것 | p50 | p95 | 최대 | 목표 p95 | git | orca | 쓰기 | py 본 것 | py p50 | py p95 | py 프로세스 | py git | py orca |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| inactive | pass | 22.3ms | 25.5ms | 38.6ms | 15ms | 0 | 0 | 0 | pass | 430.9ms | 443.7ms | 2 | 2 | 0 |
+| pre_bash | pass | 23.3ms | 25.8ms | 45.2ms | 30ms | 0 | 0 | 1 | pass | 727.9ms | 745.8ms | 2 | 8 | 0 |
+| pre_edit | pass | 23.6ms | 26.7ms | 34.9ms | 30ms | 0 | 0 | 1 | pass | 735.3ms | 756.1ms | 2 | 8 | 0 |
+| pre_inbox_edit | pass | 23.7ms | 26.4ms | 38.9ms | 80ms | 0 | 0 | 0 | deny | 360.9ms | 376.8ms | 1 | 4 | 0 |
+| pre_worker_start | deny | 23.6ms | 26.8ms | 34.8ms | 80ms | 0 | 0 | 1 | deny | 359.9ms | 380.0ms | 1 | 4 | 0 |
+| pre_git_commit | pass | 64.8ms | 69.4ms | 89.0ms | 80ms | 1 | 0 | 0 | pass | 823.3ms | 846.2ms | 2 | 10 | 0 |
+| stop_lead_clean | pass | 68.5ms | 74.9ms | 120.8ms | 150ms | 1 | 0 | 1 | pass | 1022.5ms | 1069.3ms | 2 | 15 | 0 |
+| stop_lead_pending10 | block | 731.9ms | 769.4ms | 804.9ms | - | 21 | 0 | 2 | block | 1956.0ms | 2007.6ms | 2 | 35 | 0 |
+| stop_lead_ready | block | 72.9ms | 79.4ms | 101.4ms | - | 1 | 0 | 2 | block | 1030.7ms | 1076.9ms | 2 | 25 | 0 |
+| stop_lead_open_run | block | 70.9ms | 76.7ms | 97.5ms | - | 1 | 0 | 2 | block | 1072.4ms | 1123.1ms | 2 | 15 | 2 |
+| stop_worker | block | 197.2ms | 209.9ms | 245.3ms | - | 4 | 1 | 3 | block | 991.8ms | 1028.1ms | 2 | 14 | 1 |
+| session_start_lead | context | 29.7ms | 33.7ms | 40.4ms | 250ms | 0 | 0 | 1 | warn | 882.2ms | 901.0ms | 3 | 11 | 0 |
+| session_start_worker | context | 25.6ms | 28.6ms | 36.1ms | 250ms | 0 | 0 | 1 | warn | 932.1ms | 956.2ms | 3 | 11 | 0 |
+| cli_rules | 종료 코드 0 | 21.5ms | 25.6ms | 33.2ms | - | 0 | 0 | 0 | - | - | - | - | - | - |
+| cli_status | 종료 코드 0 | 65.6ms | 69.6ms | 85.3ms | - | 0 | 0 | 2 | - | - | - | - | - | - |
+
+읽을 것:
+- 목표가 있는 입력 가운데 넘은 것은 `inactive`(p95 25.5ms, 목표 15ms) 하나다. 이 값은 아무것도 하지 않는 `cli_rules`(25.6ms)와 같고 `cmd /c exit`보다 낮다. 곧 이 PC에서 프로세스 하나를 띄우는 바닥값이다. 목표를 바닥값 기준(예: 바닥값 + 5ms)으로 다시 정해야 한다(미정-M9).
+- 도구 호출 hook(`pre_*`)은 p95 26~27ms(목표 30ms), `git commit` 판정은 69ms(목표 80ms), lead Stop은 75~79ms(목표 150ms), SessionStart는 29~34ms(목표 250ms)다. 1.24.0 대비 도구 호출은 약 28배, Stop은 약 14배, SessionStart는 약 30배 빠르고, 띄우는 프로세스는 호출당 2~3개에서 1개다.
+- 목표가 없는 입력 가운데 `stop_lead_pending10`(통합 대기 10건)이 732ms(git 21회)로 가장 느리다. 대기 건마다 통합 여부를 git으로 확인해서 건수에 비례한다. 1.24.0(1,956ms, git 35회)보다는 2.7배 빠르지만, 대기 건이 많은 레포에서는 lead Stop이 1초에 가까워질 수 있다. 확인을 한 번의 git 호출로 묶는 것이 다음 개선 거리다.
+- `stop_worker`는 210ms(git 4회, Orca 1회)다. Orca의 worker-show 조회(X-03)가 대부분이다.
+
+### 4.2 첫 측정(2026-11-14, 뼈대)
+
 첫 측정(2026-11-14)이다. **참고값이다.** 이 수치로 2.2절의 목표를 확정하지 않는다. 이유는 둘이다.
 
 - 측정하는 동안 같은 PC에서 다른 묶음 일곱 개가 빌드와 시험을 돌리고 있었다. 최댓값이 40ms 안팎으로 튀는 것은 그 부하다.
