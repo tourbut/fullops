@@ -62,6 +62,12 @@ fn runtime(report: &mut Report, root: Option<&Path>) {
         Some(path) if path.is_file() => {}
         _ => notes.push("고정 위치 실행본이 없다. `fullops install --only runtime`".to_string()),
     }
+    if record.as_ref().is_some_and(|r| r["pinned"] == true) {
+        notes.push(
+            "`install --rollback`으로 되돌린 버전에 고정돼 있다(세션 시작이 올리지 않는다). 풀려면 `fullops install`"
+                .to_string(),
+        );
+    }
     if let (Some(root), Some(installed)) = (root, installed) {
         let package = install::package_version(Some(root));
         if version_of(installed) < version_of(&package) {

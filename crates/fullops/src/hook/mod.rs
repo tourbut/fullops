@@ -323,13 +323,16 @@ fn self_install(args: &HookArgs, root: Option<&Path>) -> bool {
     if !fixed.exists() {
         return true;
     }
-    let installed = fullops_store::fullops_home()
-        .and_then(|home| {
-            fullops_store::read_json::<Value>(&home.join("install.json"))
-                .yes()
-                .flatten()
-        })
-        .and_then(|record| version(record["version"].as_str()?));
+    let record = fullops_store::fullops_home().and_then(|home| {
+        fullops_store::read_json::<Value>(&home.join("install.json"))
+            .yes()
+            .flatten()
+    });
+    // `install --rollback`이 고정한 실행본은 사람이 `fullops install`을 다시 할 때까지 올리지 않는다
+    if record.as_ref().is_some_and(|r| r["pinned"] == true) {
+        return false;
+    }
+    let installed = record.and_then(|record| version(record["version"].as_str()?));
     installed.is_none_or(|installed| shipped > installed)
 }
 

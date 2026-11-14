@@ -23,8 +23,14 @@ const REQUIRED: &[RequiredApply] = &[
     RequiredApply {
         since: "2.0.0",
         id: "managed-block",
-        check: |root| read(root, "AGENTS.md").contains(assets::BLOCK_START),
-        hint: "`AGENTS.md`·`CLAUDE.md`·`GEMINI.md`에 관리 블록이 없다. `fullops init`을 다시 실행한다.",
+        check: |root| {
+            let text = read(root, "AGENTS.md");
+            matches!(
+                init::block_span(&text, assets::BLOCK_START, assets::BLOCK_END),
+                Ok(Some(_))
+            )
+        },
+        hint: "`AGENTS.md`·`CLAUDE.md`·`GEMINI.md`에 관리 블록이 없거나 시작·끝 표식이 한 쌍이 아니다. 표식이 깨졌으면 한 쌍으로 고친 뒤 `fullops init`을 다시 실행한다.",
     },
     RequiredApply {
         since: "2.0.0",
@@ -41,10 +47,8 @@ const REQUIRED: &[RequiredApply] = &[
         since: "2.0.0",
         id: "delegation-rule",
         check: |root| {
-            let text = read(root, ".fullops-squad/rules/delegation.md").replace("\r\n", "\n");
-            !text.is_empty()
-                && fullops_core::model::sha256_hex(text.as_bytes())
-                    != assets::DELEGATION_1_24_SHA256
+            let text = read(root, ".fullops-squad/rules/delegation.md");
+            !text.is_empty() && !assets::is_stock_1_24("rules/delegation.md", &text)
         },
         hint: "`.fullops-squad/rules/delegation.md`가 없거나 1.24.0의 글이다. 병렬 방침에 맞게 고친다(없으면 `fullops init`이 새 템플릿을 둔다).",
     },

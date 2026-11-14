@@ -24,6 +24,82 @@ pub const DELEGATION_MD: &str = include_str!("../assets/repo/rules/delegation.md
 pub const DELEGATION_1_24_SHA256: &str =
     "b34ad71bceb0c81a90e53a2e900bc323095e5abf599dc4fe4059ee46367d2d4b";
 
+/// 새 템플릿과 글이 다른 1.24.0 템플릿 문서 `(상대 경로, LF로 맞춘 글의 sha256)`. `migrate`가 기본 글 그대로인 파일을 새 템플릿으로 바꾼다.
+pub const STOCK_1_24: &[(&str, &str)] = &[
+    (
+        "FULLOPS.md",
+        "137e7ee33581ffef944fc11c3804ab858f89e89f49b0f2c20709387e6a74a304",
+    ),
+    (
+        "docs/agents/document-writing.md",
+        "253ae1ba3f18973f1a8d51d84ad8dd5e262b138a0fe939f0fd9088a20cb40c73",
+    ),
+    (
+        "docs/agents/triage-labels.md",
+        "4bf6ff243adbc70889aa23fadcc5bca2aaff08b790a99b28a11df5f3f84cebf2",
+    ),
+    (
+        "docs/deliverables/README.md",
+        "98ff905f13c17220c150b8602ee7d8722d3123630fddd557adb5f9d4338c7224",
+    ),
+    (
+        "docs/planning/intents/_TEMPLATE.md",
+        "f40cf313a6cdef6f61a1b8c7068ae7a74b47e5a49ef30564880cc0040756af09",
+    ),
+    (
+        "handovers/_TEMPLATE.md",
+        "3bf33becfe55e9449df909ebbeeab5a8931797362d4df9617dec8c6a8ab5428e",
+    ),
+    (
+        "lint/README.md",
+        "70bce7373f735831d1444b952e8165879d502c317fe34bb4f2b1484dc122dc04",
+    ),
+    (
+        "orca-agents.md",
+        "ff4f8166211058ce111396671571e43b330a9ae13f6de1621760f608a9236da8",
+    ),
+    (
+        "review/_REPORT.md",
+        "47145317fa03c8132db75b730467edd5d092a70f55e546f6b48c0c0302d6e8d3",
+    ),
+    (
+        "rules/common/README.md",
+        "1a6cef530153e0f811ca3ca1a116e3d545b181a03b279f8d9dd3dddbf3aea40b",
+    ),
+    (
+        "rules/common/testing.md",
+        "939ebea35c4bda2cb44536875dbb4c6527502fd31662902119334065f057ef7c",
+    ),
+    ("rules/delegation.md", DELEGATION_1_24_SHA256),
+];
+
+/// 1.24.0 setup이 문서 머리에 찍은 front matter와 그 뒤의 글 `(front matter, 본문)`. LF로 맞춘 글을 받는다.
+pub fn split_front_matter(text: &str) -> (&str, &str) {
+    let end = text
+        .strip_prefix("---\n")
+        .and_then(|rest| rest.find("\n---\n"))
+        .map_or(0, |at| at + "---\n".len() + "\n---\n".len());
+    text.split_at(end)
+}
+
+/// 레포의 템플릿 문서가 1.24.0의 기본 글 그대로인가. setup이 찍는 front matter와 운영 모드 블록은 견주지 않는다.
+pub fn is_stock_1_24(rel: &str, text: &str) -> bool {
+    let Some((_, stock)) = STOCK_1_24.iter().find(|(path, _)| *path == rel) else {
+        return false;
+    };
+    let text = text.replace("\r\n", "\n");
+    let body = split_front_matter(&text).1.trim_start_matches('\n');
+    // 운영 모드 블록은 setup이 본문 앞에 넣는다(testing.md는 템플릿에 이미 들어 있다)
+    let without_mode = body
+        .strip_prefix("<!-- fullops-mode:start -->")
+        .and_then(|rest| rest.split_once("<!-- fullops-mode:end -->"))
+        .map(|(_, rest)| rest.trim_start_matches('\n'));
+    [Some(body), without_mode]
+        .into_iter()
+        .flatten()
+        .any(|body| fullops_core::model::sha256_hex(body.as_bytes()) == *stock)
+}
+
 /// `init`이 `.fullops-squad/` 아래에 없을 때만 만드는 파일 `(상대 경로, 내용)`.
 pub const REPO_FILES: &[(&str, &str)] = &[
     ("FULLOPS.md", include_str!("../assets/repo/FULLOPS.md")),
@@ -122,6 +198,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn stock_1_24_ignores_what_setup_stamps() {
+        // 1.24.0의 docs/agents/triage-labels.md 그대로
+        let stock = "# Triage labels\n\n로컬 역할 분류는 `fullops.json`의 `roles` 키를 그대로 쓴다.\n외부 트래커 라벨은 아직 설정하지 않았다. 연결 시 실제 라벨을 조회하고 역할별 대응표를 기록한다. 원본 레포의 라벨을 존재한다고 가정하지 않는다.\n";
+        let rel = "docs/agents/triage-labels.md";
+        assert!(is_stock_1_24(rel, stock));
+        // setup이 찍는 front matter와 운영 모드 블록, Windows 체크아웃의 CRLF는 견주지 않는다
+        let stamped = format!("---\ntitle: Triage labels\nupdated: 2026-11-01\n---\n\n{stock}");
+        assert_eq!(
+            split_front_matter(&stamped).0,
+            "---\ntitle: Triage labels\nupdated: 2026-11-01\n---\n"
+        );
+        assert!(is_stock_1_24(rel, &stamped));
+        assert!(is_stock_1_24(rel, &stamped.replace('\n', "\r\n")));
+        let moded = format!(
+            "---\ntitle: t\n---\n<!-- fullops-mode:start -->\n## 운영 책임\n<!-- fullops-mode:end -->\n\n{stock}"
+        );
+        assert!(is_stock_1_24(rel, &moded));
+        // 사람이 고친 글과 표에 없는 경로는 기본 글이 아니다
+        assert!(!is_stock_1_24(rel, &format!("{stock}- 사람이 더한 줄\n")));
+        assert!(!is_stock_1_24("project.md", stock));
+        // 표의 경로에는 모두 새 템플릿이 있고 새 템플릿은 1.24.0의 글이 아니다
+        for (rel, _) in STOCK_1_24 {
+            let new = REPO_FILES.iter().find(|(path, _)| path == rel);
+            assert!(
+                new.is_some_and(|(_, text)| !is_stock_1_24(rel, text)),
+                "{rel}"
+            );
+        }
+    }
+
+    #[test]
     fn templates_keep_the_parts_parsers_depend_on() {
         // PLANS.md: 과제 표의 머리와 위임 범위 절. 템플릿 자신은 행도 위임 문장도 없는 것으로 읽힌다
         let header = "| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n";
@@ -182,10 +289,7 @@ mod tests {
                 .all(|l| ignore.lines().any(|i| i == *l))
         );
         assert!(DELEGATION_MD.contains("fullops dispatch <자기 KEY> --brief"));
-        assert_ne!(
-            fullops_core::model::sha256_hex(DELEGATION_MD.as_bytes()),
-            DELEGATION_1_24_SHA256
-        );
+        assert!(!is_stock_1_24("rules/delegation.md", DELEGATION_MD));
 
         // 산출물 인덱스: 표 머리와 D01~D13 행
         assert!(DELIVERABLES_README.contains("| ID | 단계 | 산출물 | 원천 | 상태 |"));

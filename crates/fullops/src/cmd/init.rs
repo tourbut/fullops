@@ -3,7 +3,10 @@
 
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
-use fullops_core::model::{Mode, Parallel, RoleId, RoleKind, Routing, TestLevel, path_text};
+use fullops_core::messages::install as msg;
+use fullops_core::model::{
+    Mode, Parallel, Refusal, RoleId, RoleKind, Routing, TestLevel, path_text,
+};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -169,28 +172,49 @@ pub(super) fn set_top_key(text: &str, key: &str, value: &str) -> String {
     out
 }
 
+/// 관리 블록의 표식이 한 쌍이 아니다. 어디가 블록인지 알 수 없어 그 문서는 고치지 않는다.
+#[derive(Debug)]
+pub(super) struct BrokenBlock;
+
+/// 글에서 `start`·`end` 표식으로 감싼 블록의 자리. 표식이 없으면 `None`이다.
+/// 하나만 있거나 여럿이거나 순서가 뒤집혔으면 `BrokenBlock`이다(`init`·`migrate`·`upgrade`가 함께 쓴다).
+pub(super) fn block_span(
+    text: &str,
+    start: &str,
+    end: &str,
+) -> Result<Option<std::ops::Range<usize>>, BrokenBlock> {
+    let once = text.matches(start).count() == 1 && text.matches(end).count() == 1;
+    match (text.find(start), text.find(end)) {
+        (None, None) => Ok(None),
+        (Some(from), Some(to)) if once && from < to => Ok(Some(from..to + end.len())),
+        _ => Err(BrokenBlock),
+    }
+}
+
 /// 엔트리 문서의 글에 관리 블록을 넣는다. 이미 있으면 그 블록만 바꾼다.
-pub(super) fn with_block(text: &str) -> String {
+pub(super) fn with_block(text: &str) -> Result<String, BrokenBlock> {
     let block = format!(
         "{}\n{}{}",
         assets::BLOCK_START,
         assets::MANAGED_BLOCK,
         assets::BLOCK_END
     );
-    if let (Some(start), Some(end)) = (text.find(assets::BLOCK_START), text.find(assets::BLOCK_END))
-        && start < end
-    {
-        let tail = &text[end + assets::BLOCK_END.len()..];
-        return format!("{}{block}{tail}", &text[..start]);
-    }
-    if text.trim().is_empty() {
-        return format!("{block}\n");
-    }
-    format!("{}\n\n{block}\n", text.trim_end())
+    Ok(
+        match block_span(text, assets::BLOCK_START, assets::BLOCK_END)? {
+            Some(span) => format!("{}{block}{}", &text[..span.start], &text[span.end..]),
+            None if text.trim().is_empty() => format!("{block}\n"),
+            None => format!("{}\n\n{block}\n", text.trim_end()),
+        },
+    )
 }
 
 fn is_symlink(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
+}
+
+/// 경로 자신이나 레포 안의 조상 폴더가 심볼릭 링크인가. 링크 대상에는 쓰지 않는다.
+pub(super) fn linked(root: &Path, path: &Path) -> bool {
+    path.ancestors().take_while(|a| *a != root).any(is_symlink)
 }
 
 /// 한 일의 기록. `--dry-run`이면 쓰지 않고 기록만 한다.
@@ -200,6 +224,8 @@ pub(super) struct Applied {
     pub updated: Vec<String>,
     /// 심볼릭 링크라 건드리지 않은 대상.
     pub refused: Vec<String>,
+    /// 관리 블록의 표식이 한 쌍이 아니라 고치지 않은 엔트리 문서.
+    pub broken: Vec<String>,
 }
 
 fn write_new(path: &Path, text: &str, dry_run: bool) -> Result<(), CliError> {
@@ -237,13 +263,7 @@ pub(super) fn add_templates(
         if path.exists() || dir_used {
             continue;
         }
-        if is_symlink(&path)
-            || path
-                .ancestors()
-                .skip(1)
-                .take_while(|a| *a != root)
-                .any(is_symlink)
-        {
+        if linked(root, &path) {
             done.refused.push(shown);
             continue;
         }
@@ -262,7 +282,10 @@ pub(super) fn add_blocks(root: &Path, dry_run: bool, done: &mut Applied) -> Resu
             continue;
         }
         let before = std::fs::read_to_string(&path).ok();
-        let after = with_block(before.as_deref().unwrap_or(""));
+        let Ok(after) = with_block(before.as_deref().unwrap_or("")) else {
+            done.broken.push(name.to_string());
+            continue;
+        };
         if before.as_deref() == Some(after.as_str()) {
             continue;
         }
@@ -552,6 +575,15 @@ pub fn run(ctx: &Ctx, parser: lexopt::Parser) -> Result<u8, CliError> {
                 .into(),
         ));
     }
+    // Python판 레포에 새 표식을 만들면 두 판의 hook이 함께 돈다. 전환은 migrate가 한다
+    if root.join(".fullops-squad/fullops.json").exists() {
+        return Err(CliError::Refused(vec![Refusal {
+            rule: "init",
+            reason: "Python판(`.fullops-squad/fullops.json`)을 쓰는 레포다".into(),
+            escape: "`fullops migrate --from-python`으로 전환한다".into(),
+            exit: 2,
+        }]));
+    }
     let before = std::fs::read_to_string(&config_path).ok();
     let text = match &before {
         Some(before) => merged_config(&args, before, &root)?,
@@ -592,6 +624,7 @@ pub fn run(ctx: &Ctx, parser: lexopt::Parser) -> Result<u8, CliError> {
         ("고친 파일", &done.updated),
         ("만든 원격 브랜치", &pushed),
         ("심볼릭 링크라 건드리지 않은 것", &done.refused),
+        (msg::BLOCK_BROKEN, &done.broken),
     ] {
         if !items.is_empty() {
             lines.push(format!("{label}:\n  {}", items.join("\n  ")));
@@ -606,6 +639,7 @@ pub fn run(ctx: &Ctx, parser: lexopt::Parser) -> Result<u8, CliError> {
         json!({
             "dry_run": args.dry_run, "root": path_text(&root), "created": done.created,
             "updated": done.updated, "branches": pushed, "refused": done.refused,
+            "broken": done.broken,
         }),
     );
     Ok(EXIT_OK)

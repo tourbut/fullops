@@ -934,10 +934,16 @@ fn rollback(ctx: &Ctx) -> Result<u8, CliError> {
     record["previous"] = version;
     record["sha256"] = json!(sha256_hex(&std::fs::read(&fixed)?));
     record["at"] = json!(fullops_store::now());
+    // 고정: S-04가 플러그인의 새 버전으로 다시 올리지 않게 한다. 실행본 단계가 기록을 새로 쓰면서 풀린다
+    record["pinned"] = json!(true);
     fullops_store::write_json(&record_path, &record)?;
     ctx.print(
-        &format!("실행본을 되돌렸다: {}", fixed.display()),
-        json!({ "bin": path_text(&fixed), "version": record["version"] }),
+        &format!(
+            "실행본을 되돌렸다: {}\n{}",
+            fixed.display(),
+            msg::ROLLBACK_PINNED
+        ),
+        json!({ "bin": path_text(&fixed), "version": record["version"], "pinned": true }),
     );
     Ok(EXIT_OK)
 }

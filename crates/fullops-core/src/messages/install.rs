@@ -61,6 +61,13 @@ pub const PARALLEL_WAS_OFF: &str = "subagent_level이 없어 parallel = \"on\"�
 /// `migrate`가 `parallel`을 `on`으로 옮겼을 때 덧붙이는 문장.
 pub const PARALLEL_HOW_TO_LIMIT: &str = "읽기 전용만 허용하려면 `read`, 끄려면 `off`로 고친다.";
 
+/// `init`·`migrate`가 관리 블록의 시작·끝 표식이 한 쌍이 아닌 엔트리 문서를 만났을 때. 뒤에 문서 이름이 온다.
+pub const BLOCK_BROKEN: &str = "관리 블록의 시작·끝 표식이 한 쌍이 아니라 고치지 않은 것(표식을 한 쌍으로 고친 뒤 다시 실행한다)";
+
+/// `install --rollback`이 되돌린 버전을 고정했을 때(S-04가 다시 올리지 않는다).
+pub const ROLLBACK_PINNED: &str =
+    "이 버전으로 고정했다. 다음 `fullops install`까지 세션 시작(S-04)이 실행본을 올리지 않는다.";
+
 /// `migrate`가 사람이 고친 `rules/delegation.md`를 그대로 둘 때.
 pub const DELEGATION_KEPT: &str =
     "rules/delegation.md는 사람이 고친 흔적이 있어 두었다. 병렬 방침(8.15절)에 맞게 고친다.";
