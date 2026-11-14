@@ -14,35 +14,7 @@ use std::time::Duration;
 /// 목록 조회의 제한 시간(설계 9.5절).
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// PATH에서 실행 파일을 찾아 전체 경로를 돌려준다. Windows는 `PATHEXT`의 확장자를 붙여 본다
-/// (`.cmd` 실행 파일은 찾은 전체 경로로 실행해야 한다).
-pub fn find_program(name: &str) -> Option<PathBuf> {
-    // 경로로 준 이름(`ORCA_CLI_COMMAND` 등)은 PATH를 보지 않는다
-    if std::path::Path::new(name).components().count() > 1 {
-        let path = PathBuf::from(name);
-        return path.is_file().then_some(path);
-    }
-    let exts: Vec<String> = if cfg!(windows) {
-        std::env::var("PATHEXT")
-            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
-            .split(';')
-            .filter(|e| !e.is_empty())
-            .map(str::to_lowercase)
-            .collect()
-    } else {
-        vec![String::new()]
-    };
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .filter(|dir| !dir.as_os_str().is_empty())
-        .flat_map(|dir| {
-            exts.iter()
-                .map(move |ext| dir.join(format!("{name}{ext}")))
-                .collect::<Vec<_>>()
-        })
-        .find(|candidate| candidate.is_file())
-        .and_then(|found| std::path::absolute(found).ok())
-}
+pub use crate::proc::find_program;
 
 /// 실행 파일을 PATH에서 찾아 그 전체 경로로 실행한다. 셸을 거치지 않는다.
 fn run_found(argv: &[String], timeout: Duration) -> ProcResult {

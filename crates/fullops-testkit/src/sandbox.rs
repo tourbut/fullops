@@ -398,6 +398,11 @@ impl Sandbox {
     pub fn fullops(&self, cwd: &Path, args: &[&str], env: &[(&str, &str)], stdin: &[u8]) -> Run {
         let mut cmd = self.command(bin("fullops"), cwd);
         cmd.args(args).envs(env.iter().copied());
+        // fullops는 PATH의 상대 항목을 보지 않는다. 시나리오가 적은 상대 PATH(`../bin`)는 cwd 기준 절대 경로로 넘긴다
+        if let Some((_, path)) = env.iter().rev().find(|(name, _)| *name == "PATH") {
+            let dirs = std::env::split_paths(path).map(|dir| cwd.join(dir));
+            cmd.env("PATH", std::env::join_paths(dirs).expect("PATH 만들기"));
+        }
         self.run(cmd, stdin)
     }
 

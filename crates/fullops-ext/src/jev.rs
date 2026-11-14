@@ -141,6 +141,8 @@ const PROVIDERS: [(&str, &str, &str, &str); 2] = [
 
 /// env 파일의 키 줄만 읽는다. 같은 출처에서는 공식 API 키가 먼저다.
 fn key_in(text: &str) -> Option<(usize, String)> {
+    // 메모장과 PowerShell 5가 붙이는 BOM은 첫 줄의 이름에 붙어 키를 가린다
+    let text = text.trim_start_matches('\u{feff}');
     PROVIDERS.iter().enumerate().find_map(|(index, p)| {
         text.lines()
             .filter_map(|line| line.split_once('='))
@@ -155,18 +157,6 @@ fn clean_key(raw: &str) -> Option<String> {
     let key = raw.trim().trim_matches(['"', '\'']);
     let ok = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-');
     (!key.is_empty() && key.chars().all(ok)).then(|| key.to_string())
-}
-
-/// PATH에서 처음 찾은 `curl`의 전체 경로. Windows에서 이름만 주면 System32의 것이 PATH보다 먼저 잡힌다.
-fn curl_program() -> String {
-    let name = format!("curl{}", std::env::consts::EXE_SUFFIX);
-    std::env::var_os("PATH")
-        .and_then(|path| {
-            std::env::split_paths(&path)
-                .map(|dir| dir.join(&name))
-                .find(|file| file.is_file())
-        })
-        .map_or(name, |file| file.to_string_lossy().into_owned())
 }
 
 fn home() -> Option<PathBuf> {
@@ -322,8 +312,11 @@ impl Judge for JevCurlAt {
         let config = format!(
             "url = \"{url}\"\nheader = \"Authorization: Bearer {key}\"\nheader = \"Content-Type: application/json\"\ndata-binary = \"{quoted}\"\n"
         );
+        // PATH에서 처음 찾은 curl의 전체 경로로 띄운다. 이름만 주면 Windows는 System32의 것을 먼저 잡는다
+        let curl = crate::proc::find_program("curl")
+            .ok_or_else(|| JudgeError::Request("curl을 찾지 못했습니다".into()))?;
         let argv = [
-            curl_program().as_str(),
+            curl.to_string_lossy().as_ref(),
             "--config",
             "-",
             "--silent",
@@ -377,16 +370,21 @@ mod tests {
         assert!(unsafe_text("{\"note\":\"API_KEY: abc\"}"));
         assert!(unsafe_text("sk-abcdefghijkl"));
         assert!(unsafe_text("-----BEGIN RSA PRIVATE KEY-----"));
-        // JSON의 키 이름과 값 없는 낱말은 걸리지 않는다
-        assert!(!unsafe_text(
-            "{\"token\":\"x\",\"guide\":\"secret 관리 문서\"}"
-        ));
+        // 따옴표로 닫은 키(JSON·YAML)도 걸린다. 본문에 다시 실려 `\"`가 된 것도 같다. 값 없는 낱말은 걸리지 않는다
+        assert!(unsafe_text("{\"token\":\"x\"}"));
+        assert!(unsafe_text(r#"{"text":"{\"password\": \"x\"}"}"#));
+        assert!(!unsafe_text("{\"guide\":\"secret 관리 문서\"}"));
         assert!(!unsafe_text("sk-short"));
         assert_eq!(
             key_in("# 주석\nOPENROUTER_API_KEY=or-1\nTYPESAFE_API_KEY = \"ts_2\"\n"),
             Some((0, "ts_2".to_string()))
         );
         assert_eq!(key_in("TYPESAFE_API_KEY=a b\nOTHER=1\n"), None);
+        // R2-6: BOM으로 시작하는 파일의 첫 줄도 키로 읽는다
+        assert_eq!(
+            key_in("\u{feff}TYPESAFE_API_KEY=bom-key\n"),
+            Some((0, "bom-key".to_string()))
+        );
     }
 
     #[test]

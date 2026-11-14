@@ -243,6 +243,17 @@ fn worker(value: &Value) -> Result<WorkerView, ExtError> {
     })
 }
 
+/// 레포·기록·응답에서 온 값(ID, tuple, 제목, 본문)이 Orca의 옵션으로 읽히지 않는가. `-`로 시작하면 부르지 않는다.
+fn plain(values: &[&str]) -> Result<(), ExtError> {
+    match crate::proc::option_like(values) {
+        false => Ok(()),
+        true => Err(ExtError::Failed {
+            code: 2,
+            stderr: "`-`로 시작하는 값은 Orca가 옵션으로 읽을 수 있어 부르지 않았습니다.".into(),
+        }),
+    }
+}
+
 impl OrcaCli {
     /// 환경에서 실행 파일을 찾아 만든다.
     pub fn new(cwd: PathBuf, timeout: Duration) -> Self {
@@ -269,6 +280,7 @@ impl OrcaCli {
 
 impl Orca for OrcaCli {
     fn run_create(&self, objective: &str) -> Result<RunId, ExtError> {
+        plain(&[objective])?;
         let result = self.ask(&["orchestration", "run-create", "--objective", objective])?;
         id(&result, "runId")
     }
@@ -276,6 +288,20 @@ impl Orca for OrcaCli {
     fn worker_start(&self, req: &StartRequest) -> Result<StartOutcome, ExtError> {
         let worktree = format!("path:{}", path_text(&req.worktree));
         let timeout_ms = req.ready_timeout.as_millis().to_string();
+        let target: Vec<&str> = match &req.target {
+            StartTarget::NewTerminal {
+                agent,
+                model,
+                effort,
+            } => [Some(agent), model.as_ref(), effort.as_ref()]
+                .into_iter()
+                .flatten()
+                .map(String::as_str)
+                .collect(),
+            StartTarget::Existing { terminal } => vec![terminal],
+        };
+        plain(&target)?;
+        plain(&[req.run.as_str(), &req.request])?;
         let mut args = vec![
             "orchestration",
             "worker-start",
@@ -357,6 +383,10 @@ impl Orca for OrcaCli {
     fn check(&self, run: Option<&RunId>, mode: CheckMode) -> Result<CheckResult, ExtError> {
         let (types, timeout_ms);
         let mut args = vec!["orchestration", "check"];
+        if let CheckMode::AckLegacy(delivery) = &mode {
+            plain(&[delivery])?;
+        }
+        plain(&[run.map_or("", RunId::as_str)])?;
         if let Some(run) = run {
             args.extend(["--run", run.as_str()]);
         }
@@ -404,6 +434,7 @@ impl Orca for OrcaCli {
     }
 
     fn worker_show(&self, dispatch: &DispatchId) -> Result<WorkerView, ExtError> {
+        plain(&[dispatch.as_str()])?;
         worker(&self.ask(&[
             "orchestration",
             "worker-show",
@@ -413,6 +444,7 @@ impl Orca for OrcaCli {
     }
 
     fn worker_list(&self, run: &RunId) -> Result<Vec<WorkerView>, ExtError> {
+        plain(&[run.as_str()])?;
         let mut workers = Vec::new();
         let mut cursor: Option<String> = None;
         // 100건씩 이어 읽는다. 끝나지 않는 응답에 묶이지 않게 쪽 수를 끊는다
@@ -429,6 +461,7 @@ impl Orca for OrcaCli {
             if cursor.is_none() {
                 break;
             }
+            plain(&[cursor.as_deref().unwrap_or_default()])?;
         }
         Ok(workers)
     }
@@ -440,6 +473,7 @@ impl Orca for OrcaCli {
         subject: &str,
         body: &str,
     ) -> Result<(), ExtError> {
+        plain(&[dispatch.as_str(), task.unwrap_or_default(), subject, body])?;
         let mut args = vec![
             "orchestration",
             "send",
@@ -471,6 +505,7 @@ impl Orca for OrcaCli {
     }
 
     fn run_use(&self, run: &RunId) -> Result<(), ExtError> {
+        plain(&[run.as_str()])?;
         self.ask(&["orchestration", "run-use", "--id", run.as_str()])
             .map(drop)
     }

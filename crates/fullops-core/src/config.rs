@@ -136,6 +136,32 @@ fn invalid(detail: String) -> PolicyError {
     }
 }
 
+/// git 원격 이름으로만 읽히는 값인가. 영문·숫자로 시작하고 영문·숫자·`._-/`만 쓴다.
+/// `-`로 시작하면 git이 옵션으로, `:`·`.`·`/`로 시작하거나 `..`이 있으면 URL·경로·`ext::`로 읽는다.
+pub fn valid_remote(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-/".contains(c))
+        && !name.contains("..")
+        && !name.contains("//")
+        && !name.ends_with('/')
+}
+
+/// `git check-ref-format --branch`가 받는 브랜치 이름인가. `-`로 시작하면 git이 옵션으로 읽는다.
+pub fn valid_branch(name: &str) -> bool {
+    let piece = |p: &str| !p.is_empty() && !p.starts_with('.') && !p.ends_with(".lock");
+    !name.starts_with('-')
+        && name != "@"
+        && !name.ends_with('.')
+        && !name.contains("..")
+        && !name.contains("@{")
+        && !name
+            .chars()
+            .any(|c| c.is_control() || " ~^:?*[\\".contains(c))
+        && name.split('/').all(piece)
+}
+
 /// 6.1.1절의 검증 규칙을 적용해 `Config`로 바꾼다.
 pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
     if raw.schema != SCHEMA {
@@ -146,6 +172,12 @@ pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
     }
     let mut branches = BTreeSet::new();
     for (id, role) in &raw.roles {
+        if !valid_branch(&role.branch) {
+            return Err(invalid(format!(
+                "역할 {id}의 브랜치 `{}`는 git 브랜치 이름이 아닙니다.",
+                role.branch
+            )));
+        }
         if !branches.insert(role.branch.as_str()) {
             return Err(invalid(format!(
                 "역할 {id}의 브랜치 {}가 다른 역할과 겹칩니다.",
@@ -172,6 +204,17 @@ pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
         }
         if raw.primary_branch.as_deref().is_none_or(str::is_empty) {
             return Err(invalid("dev 모드에는 primary_branch가 필요합니다.".into()));
+        }
+    }
+    // 이 값들은 git의 인자로 간다. 커밋되는 파일이라 worker가 고칠 수 있다
+    for (name, branch) in [
+        ("[git].base", Some(&raw.git.base)),
+        ("primary_branch", raw.primary_branch.as_ref()),
+    ] {
+        if let Some(branch) = branch.filter(|b| !valid_branch(b)) {
+            return Err(invalid(format!(
+                "{name} `{branch}`는 git 브랜치 이름이 아닙니다."
+            )));
         }
     }
     if raw.routing == Routing::Split {
@@ -203,6 +246,11 @@ pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
         return Err(invalid(
             "[git].remote가 빈 문자열입니다. 로컬 전용이면 키를 지웁니다.".into(),
         ));
+    }
+    if let Some(remote) = raw.git.remote.as_ref().filter(|r| !valid_remote(r)) {
+        return Err(invalid(format!(
+            "[git].remote `{remote}`는 원격 이름이 아닙니다. 영문·숫자로 시작하고 영문·숫자·`._-/`만 씁니다(URL과 경로는 쓸 수 없습니다)."
+        )));
     }
     Ok(Config {
         schema: raw.schema,
@@ -263,4 +311,63 @@ pub fn is_code(path: &str, code: &CodeDef, exclude: &globset::GlobSet) -> bool {
     };
     let ext = &name[dot..];
     code.extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)) && !exclude.is_match(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // R2-1: fullops.toml의 원격과 브랜치는 git의 인자로 간다. 옵션·URL·경로로 읽힐 값은 받지 않는다
+    #[test]
+    fn remote_and_branch_names_cannot_be_options_urls_or_paths() {
+        for name in ["origin", "up-stream", "team/fork", "a.b_c"] {
+            assert!(valid_remote(name), "{name}");
+        }
+        for name in [
+            "",
+            "-u",
+            "--upload-pack=touch x",
+            "ext::sh -c touch% x",
+            "https://example.com/a.git",
+            "git@example.com:a.git",
+            "../planted.git",
+            "./planted.git",
+            "/abs/planted.git",
+            "a//b",
+            "a/",
+            "C:\\planted.git",
+            "원격",
+        ] {
+            assert!(!valid_remote(name), "{name}");
+        }
+        for name in ["main", "fullops/dev", "release-1.2", "기능/결제", "+main"] {
+            assert!(valid_branch(name), "{name}");
+        }
+        for name in [
+            "",
+            "-main",
+            "--upload-pack=touch x",
+            "a..b",
+            "a b",
+            "a:b",
+            "a~1",
+            "a^",
+            "a?",
+            "a*",
+            "a[b",
+            "a\\b",
+            "/main",
+            "main/",
+            "a//b",
+            ".hidden",
+            "a/.b",
+            "a.lock",
+            "main.",
+            "@",
+            "a@{1}",
+            "a\nb",
+        ] {
+            assert!(!valid_branch(name), "{name:?}");
+        }
+    }
 }

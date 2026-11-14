@@ -206,6 +206,147 @@ fn git_cli_reads_and_writes_a_real_repo() {
     assert!(nowhere.fetch("origin", "main").is_err());
 }
 
+// R2-1: 레포·설정에서 온 값(원격, 브랜치, ref, SHA)은 git의 옵션으로도, 경로·URL 원격으로도 읽히지 않는다
+#[test]
+fn git_cli_never_passes_values_as_options() {
+    let sb = Sandbox::with(&Setup::default());
+    let lead = sb.path("lead");
+    let git = GitCli::cli(lead.clone());
+    let evil = "--upload-pack=touch r2-marker";
+    let push_evil = "--receive-pack=touch r2-marker";
+
+    // 원격과 브랜치 자리
+    assert!(git.fetch(evil, "main").is_err());
+    assert!(git.fetch("origin", evil).is_err());
+    assert!(git.push(evil, "main").is_err());
+    assert!(git.push("origin", push_evil).is_err());
+    assert!(git.push("origin", "+main").is_err(), "강제 push다");
+    // 등록되지 않은 이름을 git은 경로로 읽는다. 레포에 놓인 폴더는 원격이 되지 못한다
+    sb.git_ok(&lead, &["init", "-q", "--bare", "planted.git"]);
+    for remote in [
+        "planted.git",
+        "./planted.git",
+        "ext::sh -c touch% r2-marker",
+    ] {
+        assert!(git.fetch(remote, "main").is_err(), "{remote}");
+        assert!(git.push(remote, "main").is_err(), "{remote}");
+    }
+    // 등록된 원격과 브랜치 이름은 그대로 된다(온전한 ref로 넘긴다)
+    git.fetch("origin", "main").unwrap();
+    git.push("origin", "main").unwrap();
+
+    // 읽기는 모른다고 답하고 git을 부르지 않는다
+    assert_eq!(git.is_ancestor(evil, "HEAD"), Known::Unknown("git_arg"));
+    assert_eq!(git.is_ancestor("HEAD", evil), Known::Unknown("git_arg"));
+    assert_eq!(git.merge_base("HEAD", "--all"), Known::Unknown("git_arg"));
+    assert_eq!(git.rev_parse("--all"), Known::Unknown("git_arg"));
+    assert_eq!(
+        git.diff_names("--no-index", "HEAD"),
+        Known::Unknown("git_arg")
+    );
+    assert_eq!(
+        git.numstat("HEAD", "--output=r2-marker"),
+        Known::Unknown("git_arg")
+    );
+    assert_eq!(
+        git.name_status("--output=r2-marker", "HEAD"),
+        Known::Unknown("git_arg")
+    );
+    assert_eq!(
+        git.diff_u0("HEAD", "--output=r2-marker"),
+        Known::Unknown("git_arg")
+    );
+    assert_eq!(git.ls_tree("--output=r2-marker"), Known::Unknown("git_arg"));
+    let literal = strings(&["README"]);
+    assert_eq!(
+        git.grep_files("--open-files-in-pager=touch r2-marker", &literal),
+        Known::Unknown("git_arg")
+    );
+    // 쓰기는 거절한다
+    assert!(git.merge(&lead, "--no-verify", MergeMode::NoEdit).is_err());
+    assert!(git.reset_keep(&lead, "--hard").is_err());
+    let head = git.rev_parse("HEAD").yes().unwrap();
+    assert!(git.update_ref("--stdin", &head, &head).is_err());
+    assert!(
+        git.worktree_add_detached(&sb.root.join("r2-snapshot"), "--force")
+            .is_err()
+    );
+    assert!(!lead.join("r2-marker").exists() && !sb.root.join("r2-snapshot").exists());
+
+    // `-`로 시작해도 옵션이 아닌 자리: grep의 리터럴, `--` 뒤의 경로
+    assert_eq!(
+        git.grep_files("HEAD", &strings(&["--no-such-text"])),
+        Known::Yes(vec![])
+    );
+    sb.write(&lead.join("-dash.txt"), "이름이 -로 시작하는 파일\n");
+    let paths = strings(&["-dash.txt"]);
+    git.commit_only(&paths, "-m으로 시작하는 제목")
+        .unwrap()
+        .unwrap();
+    git.mv("-dash.txt", "moved/-dash.txt").unwrap();
+    assert!(lead.join("moved/-dash.txt").is_file());
+    // 없는 rev가 같은 이름의 파일로 읽히지 않는다
+    assert_eq!(git.diff_names("HEAD", "README.md"), Known::Unknown("git"));
+}
+
+// R2-7: 이름만 준 실행 파일은 PATH의 절대 경로 항목에서만 찾는다
+#[test]
+fn programs_are_found_only_in_absolute_path_entries() {
+    let found = hosts::find_program("git").expect("PATH에 git이 있다");
+    assert!(found.is_absolute());
+    assert_eq!(hosts::find_program("fullops-no-such-program"), None);
+    // 경로로 준 이름은 PATH를 보지 않는다
+    let exe = found.to_string_lossy().into_owned();
+    assert_eq!(hosts::find_program(&exe), Some(found));
+    let cwd = std::env::temp_dir();
+    let argv = strings(&["git", "--version"]);
+    assert!(run(&argv, &cwd, Duration::from_secs(20), &[], None).ok());
+}
+
+// R2-1의 같은 원칙: 기록·응답에서 온 값이 `-`로 시작하면 Orca를 부르지 않는다
+#[test]
+fn orca_cli_never_passes_values_as_options() {
+    let sb = Sandbox::with(&Setup::default());
+    let orca = orca(&sb);
+    let run_id: RunId = "--help".parse().unwrap();
+    let dispatch: DispatchId = "--help".parse().unwrap();
+    let good: DispatchId = "ctx_1".parse().unwrap();
+    assert!(orca.run_create("--help").is_err());
+    assert!(orca.check(Some(&run_id), CheckMode::Peek).is_err());
+    assert!(
+        orca.check(None, CheckMode::AckLegacy("--all".into()))
+            .is_err()
+    );
+    assert!(orca.worker_show(&dispatch).is_err());
+    assert!(orca.worker_list(&run_id).is_err());
+    assert!(orca.run_use(&run_id).is_err());
+    assert!(orca.send_escalation(&good, None, "제목", "--body").is_err());
+    assert!(
+        orca.send_escalation(&good, Some("--task"), "제목", "본문")
+            .is_err()
+    );
+    let request = |agent: &str, model: Option<&str>, request: &str| StartRequest {
+        run: "run_1".parse().unwrap(),
+        spec: "spec".into(),
+        worktree: sb.path("dev"),
+        target: StartTarget::NewTerminal {
+            agent: agent.into(),
+            model: model.map(str::to_string),
+            effort: None,
+        },
+        ready_timeout: Duration::from_secs(5),
+        request: request.into(),
+    };
+    for req in [
+        request("--agent", None, "req-1"),
+        request("claude", Some("--model"), "req-1"),
+        request("claude", None, "--retry"),
+    ] {
+        assert!(orca.worker_start(&req).is_err());
+    }
+    assert!(sb.orca_calls().is_empty(), "fake-orca가 호출을 받았다");
+}
+
 fn fixture(name: &str) -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../scenarios/fixtures/orca")

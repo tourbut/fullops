@@ -232,8 +232,8 @@ pub struct PacketInput<'a> {
 
 // ── 상수 ────────────────────────────────────────────────────────
 
-/// 색인 형식의 이름. 다르면 색인을 전부 다시 만든다.
-pub const PARSER: &str = "map-v1";
+/// 색인 형식의 이름. 다르면 색인을 전부 다시 만든다. 글 규칙이 바뀌면 올린다(옛 규칙으로 남긴 요약을 다시 본다).
+pub const PARSER: &str = "map-v2";
 /// 한 파일에서 읽는 양(바이트).
 pub const MAX_BLOB: usize = 65_536;
 /// 필수 문서(고정 여섯).
@@ -488,17 +488,45 @@ pub fn keywords(authored: &str) -> BTreeSet<String> {
 // ── 보낼 수 있는 경로와 글(설계 8.14절 표) ───────────────────────
 
 fn sensitive(piece: &str) -> bool {
-    let p = piece.to_ascii_lowercase();
+    // Windows는 끝의 점·공백을 뗀 이름으로 파일을 연다(`.netrc.`은 `.netrc`다). `:` 뒤는 대체 데이터 스트림이다
+    let p = piece.trim_end_matches(['.', ' ']).to_ascii_lowercase();
+    if p.is_empty() || p.contains(':') {
+        return true;
+    }
     let stem = p.split('.').next().unwrap_or_default();
     p.starts_with(".env")
         || p.starts_with(".secret")
         || p.split(['.', '_', '-']).any(|word| word == "env")
         || [
-            ".git", ".codex", ".agents", ".claude", ".grok", ".gemini", ".ssh", ".aws", ".netrc",
-            ".npmrc", ".pypirc",
+            ".git",
+            ".codex",
+            ".agents",
+            ".claude",
+            ".grok",
+            ".gemini",
+            ".ssh",
+            ".aws",
+            ".netrc",
+            "_netrc",
+            ".npmrc",
+            ".pypirc",
+            ".git-credentials",
+            ".credentials",
+            ".kube",
+            ".docker",
+            ".dockercfg",
+            ".pgpass",
+            ".htpasswd",
         ]
         .contains(&p.as_str())
-        || ["secret", "secrets", "credential", "credentials"].contains(&stem)
+        || [
+            "secret",
+            "secrets",
+            "credential",
+            "credentials",
+            "kubeconfig",
+        ]
+        .contains(&stem)
         || ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"]
             .contains(&p.strip_suffix(".pub").unwrap_or(&p))
         || [".pem", ".key", ".p12", ".pfx"]
@@ -518,9 +546,17 @@ pub fn sendable_path(path: &str) -> bool {
 
 static SECRET: LazyLock<Option<Regex>> = LazyLock::new(|| {
     Regex::new(concat!(
-        r"(?i:API[_-]?KEY|SECRET|PASSWORD|TOKEN)\s*[:=]\s*\S",
+        // 이름 뒤에 복수형이나 `_`·`-`로 이은 말(`SECRET_ACCESS_KEY`), 닫는 따옴표(JSON·YAML의 키, JSON 글 안에서는 `\"`)가 올 수 있다
+        r"(?i:API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY|CLIENT-KEY-DATA|SECRET|PASSWORD|PASSWD|PASSPHRASE|TOKEN|CREDENTIAL)",
+        r#"(?:s|S|[_-][\w-]*)?(?:\\*["'])?\s*[:=]\s*\S"#,
         r"|-----BEGIN[^\n]*PRIVATE KEY-----",
         r"|sk-[A-Za-z0-9_-]{12,}",
+        // GitHub·Slack 토큰, AWS 접근 키 ID, JWT
+        r"|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}",
+        r"|AKIA[0-9A-Z]{16}|eyJ[\w-]{8,}\.[\w-]{8,}\.",
+        // 주소에 든 `사용자:비밀번호@`, netrc의 `login … password …`, `Bearer <토큰>`
+        r"|://[^/\s:@]+:[^/\s@]+@",
+        r"|(?i:login\s+\S+\s+password\s+\S|bearer\s+[\w.~+/-]{12,})",
     ))
     .ok()
 });
@@ -1531,7 +1567,10 @@ pub fn check_packet(
                     false => read_text(&item.path).map(|t| t.map(|t| source_sha256(&t, false))),
                 };
                 match sha {
-                    Known::Yes(None) => moved.push(format!("`{}`(없음)", item.path)),
+                    // 만들 때 읽지 못한 항목(없던 필수 문서 등)은 패킷의 unknown에 이미 있다. 지금도 없다고 배정을 막지 않는다
+                    Known::Yes(None) if item.source_sha256.is_some() => {
+                        moved.push(format!("`{}`(없음)", item.path))
+                    }
                     Known::Yes(Some(sha))
                         if item.source_sha256.as_ref().is_some_and(|made| *made != sha) =>
                     {
@@ -1679,6 +1718,21 @@ mod tests {
             "a//b",
             "a\\b",
             "",
+            // R2-2: Windows가 같은 파일로 여는 이름(끝의 점·공백, 대체 데이터 스트림)
+            ".netrc.",
+            "id_rsa. ",
+            ".env::$DATA",
+            "docs/a.md:stream",
+            "a/ /b",
+            // R2-3: 자격 증명 파일
+            ".git-credentials",
+            "home/.credentials",
+            "_netrc",
+            "deploy/kubeconfig",
+            "kubeconfig.yaml",
+            ".kube/config",
+            ".docker/config.json",
+            ".pgpass",
         ] {
             assert!(!sendable_path(path), "{path}");
         }
@@ -1702,6 +1756,26 @@ mod tests {
             "token:abc",
             "-----BEGIN RSA PRIVATE KEY-----",
             "key sk-abcDEF123456_-x",
+            // R2-3: 따옴표로 닫은 키, 접미사가 붙은 이름, 토큰, 주소의 비밀번호
+            r#"{"password": "x"}"#,
+            r#"{\"password\": \"x\"}"#,
+            "'token' : x",
+            "AWS_SECRET_ACCESS_KEY=abc",
+            "def f(secret_access_key=\"x\")",
+            "aws_access_key_id = abc",
+            "secrets:\n  db: x",
+            "db_passwd=x",
+            "private_key: x",
+            "client-key-data: LS0t",
+            "credentials = x",
+            "ghp_abcdefghijklmnopqrstuvwxyz0123",
+            "github_pat_abcdefghijklmnopqrstuv",
+            "xoxb-1234567890-abc",
+            "id AKIAIOSFODNN7EXAMPLE",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.sig",
+            "postgres://admin:hunter2@db.internal/prod",
+            "machine a.example login bob password hunter2",
+            "Authorization: Bearer abcdefghijkl",
         ] {
             assert!(!sendable_text(text), "{text}");
         }
@@ -1713,6 +1787,12 @@ mod tests {
             "SK-ABCDEFGHIJKLMNOP",
             "-----BEGIN CERTIFICATE-----",
             "password\n\nnext",
+            "tokenizer = make()",
+            "secretary: kim",
+            "https://example.com:8080/a@b",
+            "git@github.com:org/repo.git",
+            "ghp_short",
+            "the bearer of news",
         ] {
             assert!(sendable_text(text), "{text}");
         }

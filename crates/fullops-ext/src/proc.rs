@@ -1,8 +1,9 @@
 //! 프로세스 실행기(설계 10.2절). 셸을 거치지 않는 인자 배열로 실행한다.
 //! 제한 시간이 지나면 프로세스 트리를 끝낸다(설계 8.11절 8번). `run`의 시그니처는 뼈대가 동결한 그대로다.
 
+use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
@@ -100,7 +101,8 @@ fn kill_tree(pid: u32) {
     let taskkill = std::env::var_os("SystemRoot")
         .map(|root| Path::new(&root).join("System32").join("taskkill.exe"))
         .filter(|path| path.is_file())
-        .unwrap_or_else(|| "taskkill".into());
+        .or_else(|| find_program("taskkill"));
+    let Some(taskkill) = taskkill else { return };
     let mut command = Command::new(taskkill);
     command.args(["/T", "/F", "/PID", &pid.to_string()]);
     quiet(command);
@@ -111,13 +113,76 @@ fn kill_tree(pid: u32) {
 fn kill_tree(pid: u32) {
     // 프로세스 그룹 ID가 직접 띄운 프로세스의 PID다(`process_group(0)`). 그 프로세스가 먼저 끝나도 그룹은 남는다.
     // libc 없이 신호를 보내려고 kill 명령을 쓴다
-    let mut command = Command::new("kill");
+    let kill = find_program("kill").unwrap_or_else(|| "/bin/kill".into());
+    let mut command = Command::new(kill);
     command.args(["-KILL", "--", &format!("-{pid}")]);
     quiet(command);
 }
 
 #[cfg(not(any(windows, unix)))]
 fn kill_tree(_pid: u32) {}
+
+/// 값 가운데 `-`로 시작하는 것이 있는가. 바깥 도구는 그런 값을 옵션으로 읽는다.
+pub(crate) fn option_like(values: &[&str]) -> bool {
+    values.iter().any(|v| v.starts_with('-'))
+}
+
+/// 찾은 결과를 `PATH` 값과 함께 기억한다. 한 명령이 git을 수십 번 부른다.
+type Found = (
+    Option<std::ffi::OsString>,
+    BTreeMap<String, Option<PathBuf>>,
+);
+static FOUND: Mutex<Found> = Mutex::new((None, BTreeMap::new()));
+
+/// PATH에서 실행 파일을 찾아 전체 경로를 돌려준다. Windows는 `PATHEXT`의 확장자를 붙여 본다
+/// (`.cmd` 실행 파일은 찾은 전체 경로로 실행해야 한다).
+/// 절대 경로가 아닌 PATH 항목(`.`, 빈 항목)은 보지 않는다. 그런 항목은 작업 디렉터리, 곧 레포에 놓인 파일을 띄운다.
+pub fn find_program(name: &str) -> Option<PathBuf> {
+    // 경로로 준 이름(`ORCA_CLI_COMMAND` 등)은 PATH를 보지 않는다
+    if Path::new(name).components().count() > 1 {
+        let path = PathBuf::from(name);
+        return path.is_file().then_some(path);
+    }
+    let path = std::env::var_os("PATH")?;
+    let mut found = FOUND.lock().ok()?;
+    if found.0.as_ref() != Some(&path) {
+        *found = (Some(path.clone()), BTreeMap::new());
+    }
+    if let Some(known) = found.1.get(name) {
+        return known.clone();
+    }
+    let exts: Vec<String> = if cfg!(windows) {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
+            .split(';')
+            .filter(|e| !e.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+    let program = std::env::split_paths(&path)
+        .filter(|dir| dir.is_absolute())
+        .flat_map(|dir| {
+            exts.iter()
+                .map(move |ext| dir.join(format!("{name}{ext}")))
+                .collect::<Vec<_>>()
+        })
+        .find(|candidate| runnable(candidate));
+    found.1.insert(name.to_string(), program.clone());
+    program
+}
+
+#[cfg(unix)]
+fn runnable(file: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(file).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn runnable(file: &Path) -> bool {
+    file.is_file()
+}
 
 /// `argv[0]`을 `cwd`에서 실행하고 끝나기를 기다린다. `env`는 물려받은 환경에 덧붙인다.
 /// 제한 시간이 지나면 프로세스 트리를 끝내고 `TimedOut`을 돌려준다.
@@ -130,6 +195,14 @@ pub fn run(
 ) -> ProcResult {
     let Some((program, args)) = argv.split_first() else {
         return failed(ProcStatus::NotFound);
+    };
+    // 이름만 준 실행 파일(git, orca, curl)은 PATH의 절대 경로 항목에서 찾은 전체 경로로 띄운다
+    let program = match Path::new(program).components().count() {
+        1 => match find_program(program) {
+            Some(found) => found,
+            None => return failed(ProcStatus::NotFound),
+        },
+        _ => PathBuf::from(program),
     };
     let mut command = Command::new(program);
     command

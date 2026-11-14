@@ -49,6 +49,7 @@ pub enum MergeOutcome {
     Conflict,
 }
 
+/// 레포·설정·인자에서 온 값(rev, ref, 원격)이 `-`로 시작하면 git을 부르지 않는다. 읽기는 `Unknown("git_arg")`, 쓰기는 `Err`다.
 pub trait Git {
     fn is_ancestor(&self, older: &str, newer: &str) -> Known<bool>;
     fn merge_base(&self, a: &str, b: &str) -> Known<Sha>;
@@ -72,8 +73,10 @@ pub trait Git {
     /// 바뀐 경로만 골라 `git commit --only`. 바뀐 것이 없으면 `None`.
     fn commit_only(&self, paths: &[String], message: &str) -> Result<Option<Sha>, ExtError>;
     fn merge(&self, cwd: &Path, rev: &str, mode: MergeMode) -> Result<MergeOutcome, ExtError>;
-    /// force를 쓰지 않는다.
+    /// force를 쓰지 않는다(`+`로 시작하는 refspec은 거절한다). `remote`는 이 레포에 등록된 원격 이름이어야 한다.
+    /// `refspec`이 `:` 없는 브랜치 이름이면 `refs/heads/<이름>`끼리 올린다.
     fn push(&self, remote: &str, refspec: &str) -> Result<(), ExtError>;
+    /// `remote`는 등록된 원격 이름, `branch`는 브랜치 이름이다(`refs/heads/<이름>`으로 받는다).
     fn fetch(&self, remote: &str, branch: &str) -> Result<(), ExtError>;
     /// `diff --name-status -z`.
     fn name_status(&self, from: &str, to: &str) -> Known<Vec<NameStatus>>;
@@ -110,6 +113,20 @@ fn text(bytes: &[u8]) -> String {
 /// NUL로 끝나는 항목들.
 fn records(bytes: &[u8]) -> impl Iterator<Item = String> + '_ {
     bytes.split(|b| *b == 0).filter(|r| !r.is_empty()).map(text)
+}
+
+/// 레포·설정·인자에서 온 값(원격, ref, SHA, 브랜치)이 git 옵션으로 읽히지 않는가. `-`로 시작하면 git은 옵션으로 본다.
+/// `--`를 넣을 수 있는 명령에는 `--`도 넣는다. 이 검사는 넣을 수 없는 자리까지 막는 두 번째 겹이다.
+fn plain(values: &[&str]) -> bool {
+    !crate::proc::option_like(values)
+}
+
+/// 옵션으로 읽힐 값이라 git을 부르지 않았다.
+fn refused(what: &str) -> ExtError {
+    ExtError::Failed {
+        code: 129,
+        stderr: format!("git을 부르지 않았습니다: {what}"),
+    }
 }
 
 fn fail(out: ProcResult) -> ExtError {
@@ -180,7 +197,11 @@ impl GitCli {
     }
 
     /// `git diff`. 게이트(lint·리뷰 판정·변경 계산)가 읽으므로 레포·사용자 설정과 속성이 출력을 바꾸지 못하게 고정한다.
-    fn diff(&self, args: &[&str]) -> Known<Vec<u8>> {
+    /// `revs`는 레포·설정에서 온 값이라 옵션으로 읽히지 않는지 먼저 본다. 끝의 `--`는 없는 rev가 파일로 읽히는 것도 막는다.
+    fn diff(&self, args: &[&str], revs: &[&str]) -> Known<Vec<u8>> {
+        if !plain(revs) {
+            return Known::Unknown("git_arg");
+        }
         let fixed = [
             "-c",
             "core.attributesFile=",
@@ -190,12 +211,34 @@ impl GitCli {
             "--no-textconv",
             "--no-relative",
         ];
-        let args: Vec<&str> = fixed.iter().chain(args).copied().collect();
+        let args: Vec<&str> = fixed
+            .iter()
+            .chain(args)
+            .chain(revs)
+            .chain(&["--"])
+            .copied()
+            .collect();
         self.read(&args)
     }
 
     fn slow(&self) -> Duration {
         self.timeout.max(SLOW)
+    }
+
+    /// 이 레포에 등록된 원격 이름인가. 등록되지 않은 값을 git은 URL이나 경로로 읽는다
+    /// (커밋된 폴더를 원격으로 삼으면 그 안의 hook이 돈다).
+    fn remote(&self, remote: &str) -> Result<(), ExtError> {
+        let known = fullops_core::config::valid_remote(remote)
+            && self
+                .read(&["remote", "get-url", "--", remote])
+                .yes()
+                .is_some();
+        match known {
+            true => Ok(()),
+            false => Err(refused(&format!(
+                "`{remote}`은 이 레포에 등록된 원격 이름이 아닙니다."
+            ))),
+        }
     }
 
     /// `cat-file --batch`의 출력을 요청 수만큼 읽는다. `(종류, 크기, 내용)`이고 없는 객체는 `None`이다.
@@ -288,7 +331,10 @@ impl GitCli {
 
 impl Git for GitCli {
     fn is_ancestor(&self, older: &str, newer: &str) -> Known<bool> {
-        let args = ["merge-base", "--is-ancestor", older, newer];
+        if !plain(&[older, newer]) {
+            return Known::Unknown("git_arg");
+        }
+        let args = ["merge-base", "--is-ancestor", "--", older, newer];
         match self
             .call(&self.repo_root, &args, self.timeout, None, false)
             .status
@@ -300,7 +346,10 @@ impl Git for GitCli {
     }
 
     fn merge_base(&self, a: &str, b: &str) -> Known<Sha> {
-        match self.read(&["merge-base", a, b]) {
+        if !plain(&[a, b]) {
+            return Known::Unknown("git_arg");
+        }
+        match self.read(&["merge-base", "--", a, b]) {
             Known::Yes(out) => {
                 Sha::new(text(&out).trim()).map_or(Known::Unknown("git_format"), Known::Yes)
             }
@@ -309,6 +358,9 @@ impl Git for GitCli {
     }
 
     fn rev_parse(&self, rev: &str) -> Known<Sha> {
+        if !plain(&[rev]) {
+            return Known::Unknown("git_arg");
+        }
         match self.read(&["rev-parse", "--verify", "--quiet", "--end-of-options", rev]) {
             Known::Yes(out) => {
                 Sha::new(text(&out).trim()).map_or(Known::Unknown("git_format"), Known::Yes)
@@ -318,12 +370,12 @@ impl Git for GitCli {
     }
 
     fn diff_names(&self, from: &str, to: &str) -> Known<Vec<String>> {
-        self.diff(&["--name-only", "--no-renames", "-z", from, to])
+        self.diff(&["--name-only", "--no-renames", "-z"], &[from, to])
             .map(|out| records(&out).collect())
     }
 
     fn numstat(&self, from: &str, to: &str) -> Known<Vec<FileStat>> {
-        self.diff(&["--numstat", "--no-renames", "-z", from, to])
+        self.diff(&["--numstat", "--no-renames", "-z"], &[from, to])
             .map(|out| {
                 records(&out)
                     .filter_map(|record| {
@@ -420,9 +472,12 @@ impl Git for GitCli {
     }
 
     fn ls_tree(&self, rev: &str) -> Known<Vec<TreeEntry>> {
+        if !plain(&[rev]) {
+            return Known::Unknown("git_arg");
+        }
         let out = self.call(
             &self.repo_root,
-            &["ls-tree", "-r", "-z", rev],
+            &["ls-tree", "-r", "-z", "--", rev],
             self.timeout,
             None,
             true,
@@ -493,11 +548,15 @@ impl Git for GitCli {
         if literals.is_empty() {
             return Known::Yes(Vec::new());
         }
+        if !plain(&[rev]) {
+            return Known::Unknown("git_arg");
+        }
+        // 리터럴은 `-e`의 값이라 `-`로 시작해도 옵션이 아니다
         let mut args = vec!["grep", "-F", "-l", "-z", "--full-name"];
         for literal in literals {
             args.extend(["-e", literal]);
         }
-        args.push(rev);
+        args.extend([rev, "--"]);
         let out = self.call(&self.repo_root, &args, self.timeout, None, true);
         match out.status {
             // 출력은 `<rev>:<경로>`다
@@ -569,9 +628,12 @@ impl Git for GitCli {
             MergeMode::FfOnly => "--ff-only",
             MergeMode::NoEdit => "--no-edit",
         };
+        if !plain(&[rev]) {
+            return Err(refused(rev));
+        }
         let out = self.call(
             cwd,
-            &["merge", "--quiet", flag, rev],
+            &["merge", "--quiet", flag, "--", rev],
             self.slow(),
             None,
             false,
@@ -595,25 +657,39 @@ impl Git for GitCli {
     }
 
     fn push(&self, remote: &str, refspec: &str) -> Result<(), ExtError> {
+        self.remote(remote)?;
+        // 브랜치 이름만 받으면 온전한 ref로 넘긴다. `+`로 시작하는 refspec은 강제 push다
+        let refspec = match refspec.contains(':') {
+            true => refspec.to_string(),
+            false => format!("refs/heads/{refspec}:refs/heads/{refspec}"),
+        };
+        if !plain(&[&refspec]) || refspec.starts_with('+') {
+            return Err(refused(&refspec));
+        }
         self.write(
             &self.repo_root,
-            &["push", "--quiet", remote, refspec],
+            &["push", "--quiet", "--", remote, &refspec],
             self.slow(),
         )
         .map(drop)
     }
 
     fn fetch(&self, remote: &str, branch: &str) -> Result<(), ExtError> {
+        self.remote(remote)?;
+        if !fullops_core::config::valid_branch(branch) {
+            return Err(refused(branch));
+        }
+        let name = format!("refs/heads/{branch}");
         self.write(
             &self.repo_root,
-            &["fetch", "--quiet", remote, branch],
+            &["fetch", "--quiet", "--", remote, &name],
             self.slow(),
         )
         .map(drop)
     }
 
     fn name_status(&self, from: &str, to: &str) -> Known<Vec<NameStatus>> {
-        self.diff(&["--name-status", "-z", from, to]).map(|out| {
+        self.diff(&["--name-status", "-z"], &[from, to]).map(|out| {
             let mut list = Vec::new();
             let mut items = records(&out);
             while let Some(code) = items.next() {
@@ -639,10 +715,8 @@ impl Git for GitCli {
             "--inter-hunk-context=0",
             "--src-prefix=a/",
             "--dst-prefix=b/",
-            from,
-            to,
         ];
-        self.diff(&args).map(|out| text(&out))
+        self.diff(&args, &[from, to]).map(|out| text(&out))
     }
 
     fn mv(&self, from: &str, to: &str) -> Result<(), ExtError> {
@@ -653,7 +727,7 @@ impl Git for GitCli {
                 stderr: e.to_string(),
             })?;
         }
-        self.write(&self.repo_root, &["mv", from, to], self.timeout)
+        self.write(&self.repo_root, &["mv", "--", from, to], self.timeout)
             .map(drop)
     }
 
@@ -663,24 +737,33 @@ impl Git for GitCli {
     }
 
     fn reset_keep(&self, cwd: &Path, rev: &str) -> Result<(), ExtError> {
-        self.write(cwd, &["reset", "--quiet", "--keep", rev], self.timeout)
-            .map(drop)
+        if !plain(&[rev]) {
+            return Err(refused(rev));
+        }
+        let args = ["reset", "--quiet", "--keep", rev, "--"];
+        self.write(cwd, &args, self.timeout).map(drop)
     }
 
     fn update_ref(&self, name: &str, new: &Sha, old: &Sha) -> Result<(), ExtError> {
+        if !plain(&[name]) {
+            return Err(refused(name));
+        }
         self.write(
             &self.repo_root,
-            &["update-ref", name, new.as_str(), old.as_str()],
+            &["update-ref", "--", name, new.as_str(), old.as_str()],
             self.timeout,
         )
         .map(drop)
     }
 
     fn worktree_add_detached(&self, path: &Path, rev: &str) -> Result<(), ExtError> {
+        if !plain(&[rev]) {
+            return Err(refused(rev));
+        }
         let path = path.to_string_lossy();
         self.write(
             &self.repo_root,
-            &["worktree", "add", "--quiet", "--detach", &path, rev],
+            &["worktree", "add", "--quiet", "--detach", "--", &path, rev],
             self.timeout,
         )
         .map(drop)
@@ -690,7 +773,7 @@ impl Git for GitCli {
         let path = path.to_string_lossy();
         self.write(
             &self.repo_root,
-            &["worktree", "remove", &path],
+            &["worktree", "remove", "--", &path],
             self.timeout,
         )
         .map(drop)

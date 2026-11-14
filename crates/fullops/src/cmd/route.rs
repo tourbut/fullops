@@ -1,6 +1,7 @@
 //! `fullops route`: 분류와 tuple 기록(설계 8.3절). 분류는 추천이고 실패하면 폴백이다.
 
 use super::dispatch::{usage, value};
+use super::find::{path_refusal, repo_path};
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::flow::refusal;
 use fullops_core::model::{
@@ -11,6 +12,7 @@ use fullops_ext::{Answer, JevCurl, Judge, Question, QuestionKind};
 use lexopt::prelude::*;
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 /// 임계값은 1.24.0과 같게 둔다(결과 비교 때문).
 const SCOPE: f64 = 0.8;
@@ -41,7 +43,12 @@ struct Classified {
 }
 
 /// Jev에게 범위·담당 역할·산출물을 묻고 임계값으로 정한다. 어떤 실패든 폴백이다(설계 8.3절 6번).
-fn classify(ctx: &Ctx, config: &Config, request: &str) -> Result<Classified, CliError> {
+fn classify(
+    ctx: &Ctx,
+    config: &Config,
+    request: &str,
+    env_file: Option<PathBuf>,
+) -> Result<Classified, CliError> {
     let repo = ctx.repo()?;
     let split = config.routing == Routing::Split;
     let design = config.design_role().cloned();
@@ -129,7 +136,7 @@ fn classify(ctx: &Ctx, config: &Config, request: &str) -> Result<Classified, Cli
         .map(|d| (d.id.as_str(), format!("{} — {}", d.title, d.summary)))
         .collect();
     let state = json!({"request": request, "roles": roles, "deliverables": deliverables});
-    let judged = match JevCurl::at(&repo.root, None).ask(&state.to_string(), &questions) {
+    let judged = match JevCurl::at(&repo.root, env_file).ask(&state.to_string(), &questions) {
         Ok(judged) => judged,
         Err(e) => return Ok(fallback(format!("{e:?}"))),
     };
@@ -210,6 +217,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     let (mut reason, mut agent, mut model, mut effort, mut why) = (None, None, None, None, None);
     let (mut origin, mut deliverables) = (Origin::User, Vec::new());
     let (mut force, mut distinct, mut tuple_only) = (false, false, false);
+    let mut env_file = None;
     while let Some(arg) = args.next()? {
         match arg {
             Value(v) if key.is_none() => key = Some(v.string()?),
@@ -242,6 +250,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             Long("force") => force = true,
             Long("distinct") => distinct = true,
             Long("tuple-only") => tuple_only = true,
+            Long("env-file") => env_file = Some(PathBuf::from(value(&mut args)?)),
             other => return Err(other.unexpected().into()),
         }
     }
@@ -323,6 +332,22 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             &format!("`fullops task reopen --key {base}`. 정말 다른 과제면 `--distinct`"),
         );
     }
+    // 요청 파일의 글은 Jev로 나간다. 탐색과 같은 경로 규칙을 거친 레포 안의 파일만 읽는다
+    let request_file = match (&request, request_file) {
+        (None, Some(file)) => {
+            let refused = |why: &str| {
+                usage(format!(
+                    "요청 파일로 쓸 수 없다: {file} ({why}). 레포 안의 일반 파일을 주거나 `--request \"<글>\"`로 준다."
+                ))
+            };
+            let rel = repo_path(repo, &file).map_err(|_| refused("outside repo"))?;
+            match path_refusal(repo, &rel) {
+                Some(why) => return Err(refused(why)),
+                None => Some(rel),
+            }
+        }
+        (_, file) => file,
+    };
     let text = match (&request, &request_file) {
         (Some(text), _) => text.clone(),
         (None, Some(file)) => std::fs::read_to_string(repo.root.join(file))
@@ -367,7 +392,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
                 probabilities: BTreeMap::new(),
             }
         }
-        None => classify(ctx, config, &text)?,
+        None => classify(ctx, config, &text, env_file)?,
     };
     if let (Some(old), Some(new), None) = (
         existing.as_ref().and_then(|r| r.role.as_ref()),

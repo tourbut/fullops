@@ -166,7 +166,18 @@ pub(super) fn path_refusal(repo: &Repo, rel: &str) -> Option<&'static str> {
             Err(_) => return Some("not a file"),
         }
     }
-    (!at.is_file()).then_some("not a file")
+    if !at.is_file() {
+        return Some("not a file");
+    }
+    // 준 이름이 별칭(8.3 짧은 이름, 끝의 점·공백, 다른 대소문자)이면 같은 파일이 다른 이름으로 열린다. 실제 이름으로 한 번 더 본다
+    let real = |path: &Path| std::fs::canonicalize(path).ok();
+    let inside = real(&at)
+        .zip(real(&repo.root))
+        .and_then(|(file, root)| file.strip_prefix(root).ok().map(path_text));
+    match inside {
+        Some(rel) if explore::sendable_path(&rel) => None,
+        _ => Some("sensitive path"),
+    }
 }
 
 /// 결과와 문구에 적는 레포 상대 경로.

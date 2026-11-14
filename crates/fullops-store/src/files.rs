@@ -278,6 +278,25 @@ pub fn parse_deps(text: &str) -> Result<Deps, DepsError> {
             ));
         }
     }
+    // 이 값들은 호스트 CLI와 스킬 설치 도구의 인자로 간다. `-`로 시작하면 옵션으로 읽힌다
+    let option_like = [&deps.own.plugin, &deps.own.marketplace, &deps.own.source]
+        .into_iter()
+        .chain(
+            deps.marketplaces
+                .iter()
+                .flat_map(|(name, source)| [name, source]),
+        )
+        .chain(deps.plugins.iter().map(|p| &p.id))
+        .chain(
+            deps.skills
+                .iter()
+                .flat_map(|s| std::iter::once(&s.source).chain(&s.names)),
+        )
+        .find(|v| v.starts_with('-'))
+        .cloned();
+    if let Some(value) = option_like {
+        return invalid(format!("`{value}`는 `-`로 시작해 명령의 옵션으로 읽힙니다"));
+    }
     if let Some(mcp) = deps.mcp.iter().find(|m| !m.url.starts_with("https://")) {
         return invalid(format!(
             "[[mcp]] {}의 url이 https://로 시작하지 않습니다",
