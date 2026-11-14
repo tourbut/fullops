@@ -32,7 +32,7 @@ stdout에 JSON 하나를 낸다. 시나리오는 {"name", "steps": [{"act", "ver
   `decision add`·`answer`는 1.24.0에서 대화로 묻던 일이라 "n/a"다(답했다는 사실만 기억한다). 그 밖은 1.24.0에 대응이 없다. 판정 "n/a"로 적는다.
   단 `raw`인 `fullops migrate …`는 FULLOPS_FAKES 폴더의 새 판 실행본으로 실제로 돌린다(판정은 그대로 "n/a").
   전환·되돌린 레포에서 1.24.0의 hook이 무엇을 내는지 뒤 단계가 보게 하려는 것이다(N3).
-- `fullops <하위 명령>` 하나뿐인 runs_shell: 1.24.0에 그 명령이 없다. "n/a"다(정책 오류에서 1.24.0이 받던 복구 명령은 setup.py였다).
+- runs_shell은 `fullops <하위 명령>`도 1.24.0의 hook에 그대로 넣는다(그 판정이 1.24.0이 실제로 낸 것이다).
 - 설정: 1.24.0은 `.fullops-squad/fullops.json`을 읽는다. `fullops.toml`을 쓰는 준비 동사(`file`)는 fullops.json의 mode·primary_role·
   primary_branch·test_level을 바꾸고(TOML로 읽히지 않으면 깨진 JSON을 쓴다), 에이전트가 `fullops.toml`을 쓰는 단계는 1.24.0의 복구 명령
   `setup.py`로 옮긴다.
@@ -708,8 +708,6 @@ class Driver:
             if not name:
                 raise Unsupported(f'{self.host}의 셸 도구')
             command = req('command')
-            if re.fullmatch(r'fullops( [\w-]+)*', command):
-                raise Unsupported('1.24.0에는 `fullops` 명령이 없다(정책 오류의 복구 명령은 setup.py였다)')
             # 소비형 check는 실제로 실행해야 메일이 읽힌다(1.24.0의 Stop이 Orca의 미처리 메일을 본다). 다른 명령은 hook만 본다
             if command.startswith('orca orchestration check') and name != 'PowerShell':
                 return result(act, *self.shell(who, shlex.split(command), session=session, env=env)[:2])

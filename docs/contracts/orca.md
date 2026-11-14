@@ -192,6 +192,8 @@ orca orchestration dispatch --task <task_id> --to <handle> [--from <handle>] [--
 
 `--inject`가 있다. 설계의 T-02가 보는 형태와 맞는다.
 
+설계 쪽 판정(검증 뒤 수정, 2026-11-15): 위 인자 가운데 배정이 아닌 것은 `--dry-run`뿐이다. 그래서 fullops hook은 `--inject`가 있으면 `OrcaInject`(T-02), `--inject`도 `--dry-run`도 없으면 날것 배정인 `OrcaWorkerStart`(T-01)로 보고 둘 다 `fullops dispatch`로 돌린다(설계 7.4절 8번, DF-1). `--inject` 없는 dispatch가 실제로 worker를 띄우는지는 Orca를 실행해 확인하지 않았다(7절).
+
 ### 2.10 `terminal list`, `terminal send`
 
 ```

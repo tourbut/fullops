@@ -223,7 +223,6 @@ expect = { verdict = "deny", rule = "J-10", flow = "stopped", escape = "packet b
 # 거절 문구에 걸린 J 규칙이 있다
 [[step]]
 act = "lead_dispatches"
-df = "DF-16"
 key = "PAY-12"
 role = "dev"
 reason = "limit"

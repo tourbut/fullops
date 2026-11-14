@@ -63,7 +63,8 @@
 | | `archive.jsonl` | `archive_path()` |
 | | `turns.jsonl` | `turns_path()` |
 | | `waiters/<run>.json` | `waiter_path(run)` |
-| | `py-backup/`(Python판 상태 폴더의 사본, 되돌리기 기록 `migrate.json`, 바꾸기 전의 `delegation.md`) | (묶음 F의 `migrate`) |
+| | `py-backup/`(Python판 상태 폴더의 사본. 전환할 때마다 새로 뜬다. 되돌리기 기록 `migrate.json`: `{"v":2,"at","changes":[{"path","before","after_sha"}]}`. `before`는 전환 전 글 전문이고 없던 파일은 null, `after_sha`는 전환이 쓴 글의 sha256이다. v 1의 `blocks`·`gitignore_added`·`removed_inboxes`·`delegation_replaced`는 쓰지 않는다. 설계 13.2·13.3절) | (묶음 F의 `migrate`) |
+| | `requests/<KEY>.md`(비밀값 무늬가 있는 `route --request` 글. 커밋되지 않는다) | `route` |
 | 작업 트리별 Git 디렉터리 | `<git-dir>/fullops/` | `local()` |
 | | `sessions/<sid>.json`, `sessions/<sid>.json.lock` | `session_path(sid)` |
 | | `sessions/<sid>.seen/<이벤트>` | `seen_path(sid, event)` |
@@ -94,7 +95,7 @@
 | `test_level` | `"minimal"` \| `"lite"` \| `"standard"` \| `"full"` \| `"exhaustive"` | 필수 | 뒤로 갈수록 높다. 새 레포의 기본값은 `lite` |
 | `parallel` | `"off"` \| `"read"` \| `"on"` \| `"ultra"` | 필수 | 병렬 방침. 새 레포의 기본값은 `on`. 1.24.0의 `subagent_level`은 받지 않는다(`migrate`가 옮긴다) |
 | `[git] base` | 글 | 필수 | 기본 브랜치 |
-| `[git] remote` | 글 | 선택 | 없으면 로컬 전용이다. 빈 문자열은 오류다 |
+| `[git] remote` | 글 | 선택 | 없으면 로컬 전용이다. 원격 이름의 꼴만 받는다(영문·숫자로 시작, 영문·숫자·`._-/`, `..`·`//`·끝 `/` 금지. URL·경로·빈 문자열은 오류). 쓸 때는 이 레포에 등록된 원격이어야 한다(설계 9.1절) |
 | `[roles.<RoleId>] branch` | 글 | 필수 | 역할마다 고유하다 |
 | `[roles.<RoleId>] kind` | `"worker"` \| `"design"` \| `"tester"` \| `"coordinator"` | 필수 | `design`·`coordinator`·`tester`는 각각 최대 1개 |
 | `[roles.<RoleId>] about` | 글 | 선택 | 분류 질문에 쓰는 설명 |
@@ -114,7 +115,7 @@
 | `PolicyKind` | `as_str()` | 언제 |
 |---|---|---|
 | `Unreadable` | `config_unreadable` | 파일을 읽지 못했다. TOML이 아니다. 필수 키가 없다. enum 값이 모르는 값이다. 역할 ID가 `RoleId` 문법에 맞지 않는다 |
-| `Invalid` | `config_invalid` | `schema != 2`, 역할 브랜치 중복, kind 중복, dev 모드의 `primary_*` 누락이나 미등록 역할, split의 `tech_plan_role` 누락·미등록·design 역할과 같음, `remote`가 빈 문자열 |
+| `Invalid` | `config_invalid` | `schema != 2`, 역할 브랜치 중복, kind 중복, dev 모드의 `primary_*` 누락이나 미등록 역할, split의 `tech_plan_role` 누락·미등록·design 역할과 같음, `remote`가 원격 이름의 꼴이 아님, `[git].base`·`primary_branch`·역할 `branch`가 `git check-ref-format --branch`의 꼴이 아니거나 `-`로 시작(검증 뒤 수정 R2-1) |
 | `ModeChanged` | `mode_changed` | 세션 파일의 `mode_at_start`가 현재 `[mode, primary_role, primary_branch]`와 다르다(`config::mode_changed`) |
 
 신원에 쓰는 값은 작업 트리의 파일에서, 검사 기준에 쓰는 값(`[review]`, `[code]`, lint 명령 선택의 `test_level`)은 merge-base 커밋의 blob에서 읽는다. 그 선택은 `baseline`이 한다.
@@ -204,7 +205,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `origin` | `user` \| `bot` | 과제가 들어온 곳 |
 | `decided_by` | `jev` \| `fallback` \| `manual` | |
 | `reason` | 글 | `--reason` 값. 없으면 빈 글 |
-| `request_file` | 글 \| null | `--request-file` 경로 |
+| `request_file` | 글 \| null | `--request-file`로 준 레포 상대 경로(레포 안이고 경로 규칙을 통과한 파일만). `--request "<글>"`이면 그 글을 저장한 `.fullops-squad/routes/<KEY>.request.md`, 글에 비밀값 무늬가 있으면 `<git-common-dir>/fullops/requests/<KEY>.md`(절대 경로). 옛 실행본의 기록은 `--request`로 만들었으면 null이다(설계 6.1.4절) |
 | `request_sha256` | 글 \| null | 요청 글의 sha256 |
 | `probabilities` | 객체(이름 → 수) | `scope`, `role` |
 | `thresholds` | 객체(이름 → 수) | `scope` 0.8, `role` 0.6, `deliverable` 0.5 |
@@ -224,7 +225,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `report.md` | 리뷰 보고서 틀. 기계는 읽지 않는다 |
 | `lint.json` | 같은 base·head의 `lint/result.json` 사본(5.6절) |
 | `accepted.json` | `v`(1), `key`, `base`, `head`, `result_sha256`, `lint_sha256`, `reviewer_session`, `implementer_session`(글 \| null), `at`. 두 해시가 현재 파일과 같을 때만 유효하다 |
-| `waiver.json` | `v`(1), `key`, `base`, `head`, `reason`, `decision`(`DecisionId`), `decided_by`(`"user"`), `need`(`Need` 객체), `at`. 덮어쓰지 않는다 |
+| `waiver.json` | `v`(1), `key`, `base`, `head`, `reason`, `decision`(`DecisionId`), `decided_by`(결정의 `--by`, 없으면 `via` 이름), `via`(`user` \| `bot` \| null. 없으면 null), `human_turn`(불. 결정을 연 뒤의 사람 턴을 확인하고 받은 답인가. 없으면 거짓), `need`(`Need` 객체), `at`. 덮어쓰지 않는다 |
 | `superseded.json` | `by`, `old_result_sha256`, `new_result_sha256`, `at` |
 | `abandoned.json` | `v`(1), `key`, `head`, `reason`, `at`. `review cleanup --abandon`이 쓴다 |
 
@@ -342,9 +343,9 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 타입은 `State`다. 열린 것만 담는다. 쓰기는 `fullops_store::update_state` 하나로만 한다(잠금 → 다시 읽기 → 수정 → `state.json.tmp.<pid>`에 쓰고 `sync_all` → `rename` → `status.json` 교체 → 잠금 해제). 읽기는 `read_state`가 잠그지 않고 한다.
 
 - 파일이 없으면 빈 상태(`State::default()`)다.
-- JSON으로 읽히지 않으면 `Unknown("state_broken")`, `v`가 `STATE_V`(1)보다 크면 `Unknown("state_newer")`다. `update_state`는 각각 `StoreError::Corrupt("state_broken")`·`Corrupt("state_newer")`를 돌려주고 파일을 건드리지 않는다.
+- JSON으로 읽히지 않으면 `Unknown("state_broken")`, `v`가 `STATE_V`(1)보다 크거나 JSON 객체로는 읽히는데 타입으로 풀리지 않으면(모르는 enum 값, 타입 오류) `Unknown("state_newer")`다. `update_state`는 각각 `StoreError::Corrupt("state_broken")`·`Corrupt("state_newer")`를 돌려주고 파일을 건드리지 않는다.
 - 모든 객체는 모르는 필드를 보존한다(`extra`, `#[serde(flatten)]`). `ModelTuple`만 예외다.
-- 값이 없는 필드는 `null`로 쓴다. 읽을 때는 없는 필드를 `null`로 본다.
+- 값이 없는 필드는 `null`로 쓴다. 읽을 때는 없는 필드를 `null`로 본다. 예외: `dispatches[].round`, `decisions[].repository`·`drop_reason`은 값이 있을 때만 쓴다.
 
 최상위:
 
@@ -392,9 +393,10 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `bound_session` | `SessionId` \| null | 이 dispatch를 묶은 세션 | P-01 효과 |
 | `sub_of` | `DispatchId` \| null | 하위 배정이면 부모 dispatch의 ID | `dispatch` |
 | `brief` | 글 \| null | 하위 배정에 준 `--brief` 글의 sha256 앞 16자. 글은 저장하지 않는다 | `dispatch` |
+| `round` | 정수(값이 있을 때만) | 작업 배정이 보낸 인박스의 차수. 인박스 없이 받는 배정과 이 필드가 생기기 전의 기록에는 없다. `derive::last_failed`가 같은 차수의 다른 배정의 성공 보고를 끝난 차수로 칠 때 쓴다 | `dispatch` |
 | `reported` | `Reported` \| null | `fullops done`의 기록 | `done` |
 | `settled` | `Settled` \| null | null이면 미정산이다 | `wait`·T-11, X-03 효과, `gc` |
-| `limit_escalated` | 불 | F-01이 escalation을 보냈다 | F-01 효과, `wait` |
+| `limit_escalated` | 불 | F-01이 escalation을 보냈다. escalation 메시지는 이미 `done`으로 정산된 dispatch의 `settled`를 바꾸지 않고 이 값만 쓴다 | F-01 효과, `wait` |
 
 `Dispatch`의 판정 메서드: `is_work()`(Build·Fix), `is_reservation()`(`id`가 `pending:`으로 시작한다), `is_sub()`(`sub_of`가 있다), `counts()`(예약 기록도 하위 배정도 아니다). 예약 기록은 dispatch로 세지 않는다: X-03·X-05·D-10·R-11·`stage_of`·`State::sub_open`·`status.json`이 건너뛴다. 하위 배정은 completion을 만들지 않고 `stage_of`·D-03·D-10·지표의 "이어진 배정 수"·`status.json`의 `tasks`에서 건너뛴다.
 
@@ -441,7 +443,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `path` | 경로 글 | `<레포 부모>/.fullops-review-<무작위 8자>` |
 | `head`, `base` | `Sha` | |
 | `state` | `creating` \| `active` \| `removed` \| `abandoned` \| `missing` | |
-| `implementer_session` | 글 \| null | |
+| `implementer_session` | 글 \| null | `review snapshot`이 정한 구현자 세션(`--implementer-session` → 보고의 dispatch의 `bound_session` → dev 직접 작업의 자기 세션). `review check` 4번이 이 값과 견준다. 정하지 못하면 snapshot이 거절된다(RV-00) |
 | `reviewer_dispatch` | `DispatchId` \| null | |
 | `owner` | `"lead"` \| `"dispatch:<DispatchId>"` | |
 | `created_at` | 시각 | |
@@ -469,6 +471,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `closed_at` | 시각 \| null | |
 | `repository` | 글 | `--repository`. 값이 있을 때만 있는 필드다 |
 | `drop_reason` | 글 | `drop --reason`. 값이 있을 때만 있는 필드다 |
+| `human_turn` | 불 | 답한 결정에만 있다. 결정을 연 뒤의 사람 턴을 확인하고 받은 답이면 참(DC-04. 설계 8.10절). 타입의 필드가 아니라 `extra`에 쓴다 |
 
 ### 4.2 `archive.jsonl`
 
@@ -587,7 +590,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | 필드 | 타입 | 뜻 |
 |---|---|---|
 | `v` | 정수 | `1` |
-| `parser` | 글 | `map-v1` |
+| `parser` | 글 | `map-v2`(글 규칙을 바꾸면 올린다. 값이 다르면 색인을 다시 만든다) |
 | `config_sha256` | 글 | `{scope, exclude(HEAD의 lint.json), max_blob: 65536}`의 sha256. `parser`나 이 값이 다르면 전부 다시 만든다 |
 | `files_sha256` | 글 | `files`를 키 정렬한 JSON의 sha256. 읽을 때 다르면 색인을 버린다 |
 | `files[]` | `IndexEntry` | `path`, `blob`(blob OID), `summary`(240자), `headings`(160자 24개), `definitions`(240자 24개), `searchable`(불), `read_error`(글 \| null. UTF-8이 아니면 `not utf-8`, blob을 읽지 못하면 `unreadable`. 값이 있는 항목은 다음 실행에서 다시 읽는다) |
@@ -624,7 +627,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `bin/fullops[.exe]` | 고정 위치 실행본 |
 | `bin/fullops.old-<시각>[.exe]` | 교체 전 실행본. `install --prune`만 지운다 |
 | `bin/fullops.new-<pid>` | 설치 중의 임시 파일 |
-| `install.json` | `version`, `sha256`, `source`(복사해 온 통합 패키지 폴더의 절대 경로), `at`, `previous` |
+| `install.json` | `version`, `sha256`, `source`(복사해 온 통합 패키지 폴더의 절대 경로), `at`, `previous`, `pinned`(불. `install --rollback`이 참으로 쓰고 실행본 단계가 기록을 새로 쓰면서 없앤다. 참이면 S-04가 올리지 않는다) |
 | `deps.toml` | 실행본을 복사할 때 통합 패키지에서 함께 복사한 의존 목록(아래) |
 | `deps-state.json` | 의존 설치 기록(아래) |
 | `package/<버전>/grok/`, `package/<버전>/agy/` | `install`의 `plugin` 단계가 통합 패키지의 `hosts/` 재료로 조립한 패키지 |
@@ -731,7 +734,9 @@ pub fn host_for(arg: &str) -> Option<Box<dyn Host>>;   // 인자만 본다
 | `decide_in(scene, input, facts) -> Outcome` | `fullops_core::rules` | 바이너리가 부르는 진입점. 동결된 `decide(input, facts)`는 루트를 `path_exists`로 찾아 이것을 부른다 |
 | `NO_SESSION`(`"no_session"`) | `fullops_core::rules` | `Facts::session()`이 `Unknown(NO_SESSION)`이면 세션 파일이 없다는 뜻이다(읽지 못한 것과 가른다) |
 | `RECORD_PATHS`, `is_record_path`, `is_change_target`, `landing_of` | `fullops_core::derive` | 기록 경로 다섯(설계 6.6절)과 `changed()`·`landing()`의 순수한 부분 |
-| `repo_relative(path, cwd, root)` | `fullops_core::patch` | 편집 경로를 레포 루트 기준으로 맞춘다 |
+| `repo_relative(path, cwd, root, real)` | `fullops_core::patch` | 편집 경로를 레포 루트 기준으로 맞춘다. `real: &mut dyn FnMut(&Path) -> PathBuf`는 실제 경로로 푸는 함수(`Facts::real_path`)이고 `root`는 이미 푼 루트다(검증 뒤 수정 R3-2) |
+| `Facts::real_path(path) -> PathBuf`(기본 구현은 받은 그대로), `Facts::qa_commit_candidates(&CommitScope)`, `CommitScope { tracked, added }`·`takes(index, path)` | `fullops_core::facts` | 검증 뒤 수정에서 바뀐 `Facts`의 둘: 경로 맞추기의 실제 경로(설계 7.4절), T-09가 git이 실제로 담을 항목만 보는 범위(`tracked`는 `commit -a`·`add -u`, `added`는 레포 상대 경로이고 빈 글은 레포 전체. 설계 7.5절). 전에는 `qa_commit_candidates(include_unstaged: bool)`였다 |
+| `Intent::GitAdd { paths, update }` | `fullops_core::model` | `paths`는 적힌 경로(작업 위치 기준) 그대로이고 레포 전체는 `:/` 하나다(`-A`·`--all`·`--pathspec-from-file`·`git -C`·풀리지 않은 확장·경로 없는 add). `update`는 `-u`. `stage`도 같다. `--inject`·`--dry-run` 없는 `orchestration dispatch`는 `OrcaWorkerStart`다(설계 7.4절) |
 | `command_name(token)` | `fullops_core::shell` | 셸 낱말에서 명령 이름을 뽑는다 |
 | `read_trace(repo, sid) -> Vec<TraceLine>` | `fullops_store::trace` | `fullops why`가 읽는다 |
 
@@ -753,7 +758,9 @@ pub fn host_for(arg: &str) -> Option<Box<dyn Host>>;   // 인자만 본다
 | Stop | X-00 ~ X-07 |
 | StopFailure | F-01 |
 
-CLI의 거절 ID(`Refusal.rule`)는 hook 규칙 ID와 겹치지 않는다: `route`는 RT-01~RT-05, `task`는 H-01~H-04, `dispatch`는 D-01~D-13, `done`은 R-01~R-11, `merge`와 통합 명령은 M-01~M-13, 탐색은 J-01~J-04와 J-10~J-17, `review`는 RV-00~RV-10(RV-01~RV-10은 `review check`의 실패 항목 번호, RV-00은 그 밖의 거절), `resume`·`completion set-sha`는 HD-01·HD-02, `decision`은 DC-00~DC-03이다. `sync`가 반영하지 못한 역할은 M-11, `hold`의 대상 없음은 M-02로 낸다. 번호 없이 단계 이름을 쓰는 거절도 있다: `publish`·`sync`(`dispatch` 3·4단계), `wait`(열린 Run이 여럿), `LINT`(`lint`의 더러운 작업 트리), `install`(마켓플레이스 출처 충돌), `migrate`(전제 위반), `packet`(`rebuild_packet`의 거절이 아닌 실패). CLI의 거절 ID는 `fullops rules`의 표에 나오지 않는다(그 표는 hook 규칙 34개다). 정본은 설계 8절의 명령별 절이다.
+CLI의 거절 ID(`Refusal.rule`)는 hook 규칙 ID와 겹치지 않는다: `route`는 RT-01~RT-05, `task`는 H-01~H-04, `dispatch`는 D-01~D-13, `done`은 R-01~R-11, `merge`와 통합 명령은 M-01~M-13, 탐색은 J-01~J-04와 J-10~J-17, `review`는 RV-00~RV-10(RV-01~RV-10은 `review check`의 실패 항목 번호, RV-00은 그 밖의 거절), `resume`·`completion set-sha`는 HD-01·HD-02, `decision`은 DC-00~DC-04이다(DC-04는 결정을 연 뒤의 사람 턴이 없다). `sync`가 반영하지 못한 역할은 M-11, `hold`의 대상 없음은 M-02로 낸다. 번호 없이 단계 이름을 쓰는 거절도 있다: `publish`·`sync`(`dispatch` 3·4단계), `wait`(열린 Run이 여럿), `LINT`(`lint`의 더러운 작업 트리), `install`(마켓플레이스 출처 충돌), `migrate`(전제 위반), `packet`(`rebuild_packet`의 거절이 아닌 실패. `packet check`·`review check` 10번이 route·패킷·처리 기록을 읽지 못한 경우), 검증 뒤 수정에서 더한 `reopen`(병합 전 `task reopen`이 기록을 덮어쓰게 되는 경우)과 `init`(Python판 레포의 `init`). `wait`는 남의 Run을 `--run`으로 준 경우에도 쓴다. CLI의 거절 ID는 `fullops rules`의 표에 나오지 않는다(그 표는 hook 규칙 34개다). 정본은 설계 8절의 명령별 절이다.
+
+검증 뒤 수정에서 바뀐 CLI 꼴(설계 8절): `fullops hold --completion <메시지 ID> --reason … --owner … --resume …`는 KEY 없이 받는다(키 없는 보고. `merge`·`resume`은 KEY가 필요하다). `fullops route`에 `--env-file <경로>`가 있다. `fullops merge --json`의 성공 출력에 `ungated`(불. 병합 기록 커밋 없이 이미 통합 기준 ref에 들어가 리뷰·lint를 판정하지 못한 SHA)가 있다. `task new`·`task reopen`의 다음 명령 안내는 `fullops dispatch <KEY> --role <R>`(reopen이면 `--purpose fix`)다.
 
 ## 8. CLI 공통 규약과 묶음 사이 인터페이스
 
@@ -831,17 +838,17 @@ spec에 적는 실행 명령은 `fullops_core::messages::spec_command(host: Opti
 |---|---|
 | `run(argv, cwd, timeout, env, stdin) -> ProcResult` | `ProcResult { status: Exited(i32) \| TimedOut \| NotFound, stdout, stderr }`. 제한 시간이 지나면 프로세스 트리를 끝낸다(묶음 D): Windows는 `taskkill /T /F /PID`(직접 띄운 프로세스가 먼저 끝난 뒤 남은 손자는 찾지 못한다. 그때도 5초만 더 기다린다), POSIX는 `process_group(0)`으로 띄운 그룹에 `kill -KILL -- -<pgid>`. 출력의 EOF를 먼저 기다리고, 직접 띄운 프로세스가 끝났는데 자손이 파이프를 쥔 채 남으면 200ms만 더 읽고 `Exited(코드)`와 그때까지의 출력을 돌려주며(그 자손은 끝내지 않는다), `TimedOut`의 stdout·stderr에는 끝내기 전까지의 출력이 남는다. `run`으로 띄우는 모든 프로세스(git·orca·curl 포함)가 자기 프로세스 그룹을 가진다 |
 | `ExtError` | `NotFound`, `TimedOut`, `Failed { code, stderr }`, `Parse(글)` |
-| `GitCli { repo_root, timeout }` | `GitCli::hook(root)`(호출당 2초), `GitCli::cli(root)`(30초. `fetch`·`push`·`merge`는 120초). 모든 호출에 `GIT_TERMINAL_PROMPT=0`, `GIT_NO_LAZY_FETCH=1`, `LC_ALL=C`, `-c core.quotepath=false`. 읽기는 실패하면 `Known::Unknown("git")`이다. 탐색용 읽기(`ls_tree`·`blob_prefixes`·`grep_files`)는 오프라인(`FULLOPS_OFFLINE=1` 또는 `FULLOPS_JEV_ENABLED=0`)이면 `GIT_ALLOW_PROTOCOL=`을 더한다 |
+| `GitCli { repo_root, timeout }` | `GitCli::hook(root)`(호출당 2초), `GitCli::cli(root)`(30초. `fetch`·`push`·`merge`는 120초). 모든 호출에 `GIT_TERMINAL_PROMPT=0`, `GIT_NO_LAZY_FETCH=1`, `LC_ALL=C`, `-c core.quotepath=false`. 읽기는 실패하면 `Known::Unknown("git")`이다. 탐색용 읽기(`ls_tree`·`blob_prefixes`·`grep_files`)는 오프라인(`FULLOPS_OFFLINE=1` 또는 `FULLOPS_JEV_ENABLED=0`)이면 `GIT_ALLOW_PROTOCOL=`을 더한다. 검증 뒤 수정(R2-1·R1-2): 값이 `-`로 시작하면 부르지 않는다(읽기 `Unknown("git_arg")`, 쓰기 `Err`)고 `--`를 넣는다. `fetch`·`push`는 등록된 원격 이름과 온전한 ref(`refs/heads/x`, `refs/heads/x:refs/heads/x`)만 받고 `+` refspec을 거절한다. diff 계열 넷은 `-c core.attributesFile= --attr-source=<빈 트리> --no-ext-diff --no-textconv --no-relative`를 고정하고 `diff_u0`는 `--inter-hunk-context=0 --src-prefix=a/ --dst-prefix=b/`도 고정한다. `numstat`의 `FileStat`에 `binary`(git이 줄 수를 세지 못함)가 있다 |
 | `Git`의 읽기 | `is_ancestor`, `merge_base`, `rev_parse`(`rev-parse --verify`. 커밋으로 풀려면 `<rev>^{commit}`), `diff_names`·`numstat`(`--no-renames`. 이름 변경은 삭제와 추가로 낸다), `status(pathspec)`(`--untracked-files=all`), `show_blobs(&[(rev, path)])`, `worktrees`, `ls_tree`, `blob_prefixes(oids, max)`, `grep_files(rev, literals)`, `name_status`(`NameStatus { status, path, old_path }`. 이름 변경을 찾는다), `diff_u0` |
 | `Git`의 쓰기 | `commit_only(paths, message)`(바뀐 경로만 골라 인덱스에 넣고 `commit --only`. 새 파일과 삭제도 된다. 바뀐 것이 없으면 `None`), `merge(cwd, rev, FfOnly \| NoEdit) -> Done \| Conflict`(충돌이면 병합이 진행 중으로 남는다), `push`, `fetch`, `mv`(대상 폴더를 만든다), `merge_abort`, `reset_keep`, `update_ref(name, new, old)`, `worktree_add_detached`, `worktree_remove` |
-| `OrcaCli { program, cwd, timeout }` | `OrcaCli::new(cwd, timeout)`이 실행 파일을 찾는다(`orca_program()`: `ORCA_CLI_COMMAND` → `orca-dev` → `orca-ide`(Linux) → `orca`). 모든 호출에 `--json`을 붙인다. `timeout`은 호출당 제한 시간이고 부르는 쪽이 설계 9.2절 표의 값으로 만든다 |
+| `OrcaCli { program, cwd, timeout }` | `OrcaCli::new(cwd, timeout)`이 실행 파일을 찾는다(`orca_program()`: `ORCA_CLI_COMMAND` → `orca-dev` → `orca-ide`(Linux) → `orca`). 모든 호출에 `--json`을 붙인다. ID·tuple·핸들·요청 ID·제목·본문·cursor가 `-`로 시작하면 부르지 않고 실패로 돌려준다(검증 뒤 수정 R2-1). `timeout`은 호출당 제한 시간이고 부르는 쪽이 설계 9.2절 표의 값으로 만든다 |
 | `Orca::run_create(objective)`, `run_use(run)` | `runId`를 읽는다 |
 | `Orca::worker_start(&StartRequest) -> Result<StartOutcome, ExtError>` | `StartRequest { run, spec, worktree, target, ready_timeout, request }`, `StartTarget { NewTerminal { agent, model, effort } \| Existing { terminal } }`. spec은 stdin(`--spec-file -`), 프로세스 제한 시간은 `ready_timeout` + 30초. `StartOutcome::Started(Started { dispatch, task, run, terminal, state, run_created })`: 종료 코드 0. `Failed(StartFailure { dispatch, failed_stage, last_error, next, residual })`: 종료 코드가 0이 아니고 `result`가 있다. `Unknown(글)`: 제한 시간 초과, JSON이 아닌 출력, 필수 필드가 없는 영수증. `Err`는 시작되지 않은 것이 확실한 실패다(실행 파일 없음은 `NotFound`, Orca가 `result` 없이 `error`로 거절한 것은 `Failed`). `dispatch`는 이때 예약 기록을 지우고 종료 코드 4로 끝난다(설계 8.5절 8단계) |
 | `Orca::check(run: Option<&RunId>, mode) -> CheckResult` | `CheckMode { Peek \| Consume \| PeekWait { types, timeout } \| AckLegacy(deliveryId) }`. `CheckResult { messages, delivery_id, timed_out }`. `cancelled`·`connectionLost`는 `Err`다. `id`가 없는 메시지는 `ExtError::Parse`다 |
 | `Orca::worker_show`, `worker_list` | `WorkerView { dispatch, state, stage, outcome, liveness(첫 낱말), terminal }`. `settled()`: `state`가 `succeeded`·`failed`이거나 `stage`가 `settled`·`released`. `failed()`: `state` 또는 `outcome`이 `failed`. `worker_list`는 `nextCursor`를 따라 이어 읽는다 |
 | `Orca::send_escalation`, `terminals_in` | `orchestration send --type escalation …`, `terminal list --worktree path:<경로>`의 `connected`인 핸들 |
 | `Judge::ask(state, questions) -> Result<Judged, JudgeError>` | `Question { id, kind: Choice { options } \| Noul, instructions }`, `Answer { Choice { id, choice, probabilities } \| Noul { id, value } }`, `Judged { answers, usage: Usage { input_tokens, output_tokens, cost }, model, cached }`, `JudgeError { Offline, NoKey, Unsafe, Request(글), Response(글) }`. 구현은 `fullops_ext::jev`의 `JevCurl`(환경 변수, 그다음 작업 디렉터리에서 위로 찾은 `.fullops-squad/.env`에서 키를 찾는다)과 `JevCurl::at(repo_root, env_file) -> JevCurlAt`(`--env-file`과 `--repo`를 지킨다. `provider()`가 `typesafe` \| `openrouter` \| 없음을 돌려준다)다. 전송 형식은 설계 9.3절이고 `curl`은 PATH에서 찾은 전체 경로로 띄운다 |
-| `find_program(name) -> Option<PathBuf>`, `program_version(name) -> Known<String>` | `fullops_ext::hosts`. 호스트 CLI와 스킬 도구를 PATH에서 찾아 전체 경로로 실행한다(이름만으로 띄우지 않는다) |
+| `find_program(name) -> Option<PathBuf>`, `program_version(name) -> Known<String>` | `find_program`의 정본은 `fullops_ext::proc`이고 `fullops_ext::hosts`가 다시 내보낸다. PATH의 절대 경로 항목만 보고 상대 항목은 보지 않는다. `proc::run`이 이름만 준 실행 파일(git·orca·curl·kill·taskkill)을 이것으로 찾은 전체 경로로 띄운다(검증 뒤 수정 R2-7) |
 | `skill_roots(host) -> Vec<PathBuf>` | 사용자 스킬 폴더(설계 9.5절 표, 그 순서). `claude`: `$CLAUDE_CONFIG_DIR`(없으면 `~/.claude`)의 `skills`. `codex`: `~/.agents/skills`, `$CODEX_HOME`(없으면 `~/.codex`)의 `skills`. `grok`: `~/.agents/skills`, `$GROK_HOME`(없으면 `~/.grok`)의 `skills`. `agy`: `~/.gemini/config/skills`, `~/.gemini/antigravity-cli/skills`, `~/.gemini/skills` |
 
 설치 계획의 타입은 `fullops_core::deps`에 있다(`PLANS.md`의 `model::Plan`과 이름이 같으므로 경로로 가린다. `explore::Decision`과 `model::Decision`도 같다): `Plan { per_host: BTreeMap<HostId, Result<Vec<Step>, Refusal>>, skills: Vec<Step> }`, `Step { stage: InstallStage(Plugin \| Deps), kind: StepKind, argv, what, hosts }`, `StepKind { MarketAdd, MarketUpdate, PluginInstall, SelfInstall, SkillInstall, Assemble, HookFile }`. 같은 모듈에 묶음 F가 더한 것: `HostCommands`와 `HOST_COMMANDS`(호스트별 명령 표), `host_commands(host)`, `ALL_HOSTS`, `HOOK_TIMEOUTS`와 `pre_tool_matcher(host)`(hook 등록 파일의 타임아웃과 매처. `xtask dist`와 `grok_hook_json`이 함께 쓴다), `package_items(host)`(조립하는 패키지의 항목), `normalize_source(source)`, 자리표시자 `PACKAGE_ROOT`·`GROK_HOOK_FILE`·`FIXED_BIN`과 그것을 실제 경로로 바꾸는 `Plan::bind(package_root, grok_hook_file, fixed_bin)`(`install_plan`은 순수 함수라 경로를 모른다).

@@ -1648,6 +1648,45 @@ fn path_rules_see_the_real_path() {
     }
 }
 
+/// T-09: hook의 cwd가 하위 폴더여도 레포 전체를 담는 add(`-A`, `-C ..`, 변수 경로)는 링크 없는 QA 캡처를 본다.
+#[test]
+fn commit_gate_sees_the_whole_repo_from_a_subfolder() {
+    let h = Hooks::new(&Setup::default());
+    let dev = h.sb.path("dev");
+    let qa = dev.join(".fullops-squad/docs/evaluations/qa-reports/A-1-test");
+    h.commit("dev", "src/lib.rs", "fn a() {}\n");
+    h.sb.write(&qa.join("report.md"), "# A-1 test report\n");
+    h.sb.write(&qa.join("shot.png"), "PNG");
+    let run = |cwd: &Path, tool: &str, command: &str| {
+        let input = json!({"hook_event_name": "PreToolUse", "session_id": "s", "cwd": cwd,
+            "tool_name": tool, "tool_input": {"command": command}});
+        h.call(&["claude"], &[], &input)
+    };
+    let src = dev.join("src");
+    for (cwd, tool, command) in [
+        (&src, "Bash", "git add -A && git commit -m qa"),
+        (&src, "Bash", "git add --all && git commit -m qa"),
+        (&src, "Bash", "git -C .. add . && git commit -m qa"),
+        (&src, "Bash", "git stage -A && git commit -m qa"),
+        (&src, "PowerShell", "git add -A; git commit -m qa"),
+        (
+            &dev,
+            "Bash",
+            "D=.fullops-squad; git add $D && git commit -m qa",
+        ),
+    ] {
+        let out = run(cwd, tool, command);
+        assert!(
+            reason(&out).starts_with("FullOps[T-09]"),
+            "{command}: {out}"
+        );
+    }
+    // 범위를 좁힌 add와 추적 파일만 담는 commit -am은 통과한다
+    for command in ["git add . && git commit -m src", "git commit -am src"] {
+        assert_eq!(run(&src, "Bash", command), json!({}), "{command}");
+    }
+}
+
 /// 감시 스레드: stdin이 끝나지 않으면 내부 기한 뒤에 그 호스트의 통과 글을 내고 종료 코드 0으로 끝난다.
 /// `--event`로 이벤트를 아는 agy는 그 이벤트의 내부 기한(PreToolUse 4초)을 쓴다: 등록 타임아웃(8초)보다 먼저 답한다.
 #[test]

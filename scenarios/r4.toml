@@ -92,7 +92,6 @@ expect = { verdict = "deny", rule = "R-11" }
 
 [[step]]
 act = "stops"
-df = "DF-23"
 who = "dev"
 expect = { verdict = "block", rule = "X-05" }
 
@@ -115,7 +114,7 @@ message = "하위 worker의 변경을 확인해 커밋"
 
 [[step]]
 act = "worker_lints"
-df = "DF-23"
+df = "DF-33"
 role = "dev"
 expect = { verdict = "pass" }
 

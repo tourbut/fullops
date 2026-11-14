@@ -28,6 +28,7 @@ expect = { verdict = "context", flow = "continues", escape = "정책 오류" }
 
 [[step]]
 act = "runs_shell"
+df = "DF-26"
 command = "fullops status"
 expect = { verdict = "pass", flow = "continues" }
 

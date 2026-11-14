@@ -499,10 +499,7 @@ impl RealFacts {
         // `~/.agents/skills`를 먼저 보고 그다음 호스트의 스킬 폴더를 본다. 같은 폴더는 한 번만 본다
         let mut dirs: Vec<PathBuf> = Vec::new();
         let agents = fullops_store::home().map(|home| home.join(".agents").join("skills"));
-        for dir in agents
-            .into_iter()
-            .chain(fullops_ext::skill_roots(host))
-        {
+        for dir in agents.into_iter().chain(fullops_ext::skill_roots(host)) {
             if !dirs.contains(&dir) {
                 dirs.push(dir);
             }

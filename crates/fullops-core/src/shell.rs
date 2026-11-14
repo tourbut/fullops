@@ -404,8 +404,25 @@ fn orca(args: &[Token], vars: &BTreeMap<String, Option<String>>) -> Vec<Intent> 
     if has("--help") || has("-h") {
         return vec![Intent::Other];
     }
-    let word = |i: usize| args.get(i).map_or("", |t| t.text.as_str());
-    match (word(0), word(1)) {
+    // Orca는 전역 플래그(`--json` 등)를 명령 경로 앞·가운데에도 받는다: 플래그를 건너뛰고 무리와 하위 명령을 찾는다
+    let words: Vec<&str> = args
+        .iter()
+        .map(|t| t.text.as_str())
+        .filter(|w| !w.starts_with('-'))
+        .collect();
+    let path = words
+        .iter()
+        .position(|w| *w == "orchestration" || *w == "terminal")
+        .map_or(("", ""), |i| {
+            let subs: &[&str] = if words[i] == "terminal" {
+                &["send"]
+            } else {
+                &["worker-start", "task-create", "dispatch", "check"]
+            };
+            let sub = words[i + 1..].iter().find(|w| subs.contains(w));
+            (words[i], sub.copied().unwrap_or(""))
+        });
+    match path {
         ("orchestration", "worker-start") => vec![Intent::OrcaWorkerStart],
         ("orchestration", "task-create") => {
             let spec = match option(args, "--spec") {
@@ -415,6 +432,8 @@ fn orca(args: &[Token], vars: &BTreeMap<String, Option<String>>) -> Vec<Intent> 
             vec![Intent::OrcaTaskCreate { spec }]
         }
         ("orchestration", "dispatch") if has("--inject") => vec![Intent::OrcaInject],
+        // 날것 배정은 worker-start와 같다(DF-1): 배정은 `fullops dispatch`로만 한다. 미리보기만 통과
+        ("orchestration", "dispatch") if !has("--dry-run") => vec![Intent::OrcaWorkerStart],
         ("orchestration", "check") => vec![Intent::OrcaCheck {
             peek: has("--peek"),
             run: option(args, "--run").map(|t| t.text),
@@ -432,6 +451,9 @@ fn orca(args: &[Token], vars: &BTreeMap<String, Option<String>>) -> Vec<Intent> 
         _ => vec![Intent::Other],
     }
 }
+
+/// 작업 위치와 무관하게 레포 전체를 뜻하는 pathspec(`:/`). `.`은 hook의 cwd로 풀려 하위 폴더가 된다.
+const WHOLE_REPO: &str = ":/";
 
 fn git(args: &[Token]) -> Intent {
     let mut args = args.iter();
@@ -461,7 +483,8 @@ fn git(args: &[Token]) -> Intent {
                 t.text == "--all" || short.is_some_and(before_value)
             }),
         },
-        "add" => {
+        // `stage`는 `add`의 별칭이다
+        "add" | "stage" => {
             let (mut paths, mut update, mut options) = (Vec::new(), false, true);
             for t in args {
                 let text = t.text.as_str();
@@ -469,7 +492,7 @@ fn git(args: &[Token]) -> Intent {
                 match text {
                     "--" if options => options = false,
                     _ if options && (text == "--all" || short.is_some_and(|s| s.contains('A'))) => {
-                        paths.push(".".to_string())
+                        paths.push(WHOLE_REPO.to_string())
                     }
                     _ if options
                         && (text == "--update" || short.is_some_and(|s| s.contains('u'))) =>
@@ -478,14 +501,19 @@ fn git(args: &[Token]) -> Intent {
                     }
                     // 작업 위치를 따라가지 않고 레포 전체로 본다(넓게 보는 쪽이 안전하다)
                     _ if options && text.starts_with("--pathspec-from-file") => {
-                        paths.push(".".to_string())
+                        paths.push(WHOLE_REPO.to_string())
                     }
                     _ if options && text.starts_with('-') => {}
+                    // 풀리지 않은 확장(변수·명령 치환)은 어디를 가리킬지 모른다
+                    _ if t.var || text.contains(['$', '`', '%']) => {
+                        paths.push(WHOLE_REPO.to_string())
+                    }
                     _ => paths.push(text.to_string()),
                 }
             }
-            if moved && !paths.is_empty() {
-                paths = vec![".".to_string()];
+            // `-C`로 옮겼거나 경로가 따로 오면(`$(…)`·xargs) 어디인지 모른다
+            if (moved && !paths.is_empty()) || (paths.is_empty() && !update) {
+                paths = vec![WHOLE_REPO.to_string()];
             }
             Intent::GitAdd { paths, update }
         }
@@ -761,11 +789,6 @@ mod tests {
                 vec![check(false, Some("r1"))],
             ),
             (
-                "orca orchestration dispatch --task t",
-                Bash,
-                vec![Intent::Other],
-            ),
-            (
                 "orca orchestration check --peek",
                 Bash,
                 vec![check(true, None)],
@@ -828,7 +851,7 @@ mod tests {
             (
                 "git add -A; git commit --all",
                 Bash,
-                vec![add(&["."], false), Intent::GitCommit { all: true }],
+                vec![add(&[":/"], false), Intent::GitCommit { all: true }],
             ),
             (
                 "git add -u src/a.png -- -x.png && git commit -m x",
@@ -838,7 +861,56 @@ mod tests {
                     Intent::GitCommit { all: false },
                 ],
             ),
-            ("git -C sub add a.png", Bash, vec![add(&["."], false)]),
+            ("git -C sub add a.png", Bash, vec![add(&[":/"], false)]),
+            ("git stage --all", Bash, vec![add(&[":/"], false)]),
+            (
+                "git add --pathspec-from-file=l.txt",
+                Bash,
+                vec![add(&[":/"], false)],
+            ),
+            (
+                "D=.fullops-squad; git add $D",
+                Bash,
+                vec![add(&[":/"], false)],
+            ),
+            (
+                r#"git add "$(git rev-parse --show-toplevel)""#,
+                Bash,
+                vec![add(&[":/"], false), Intent::Other],
+            ),
+            ("git add %D%", PowerShell, vec![add(&[":/"], false)]),
+            ("git add -u", Bash, vec![add(&[], true)]),
+            ("git add src", Bash, vec![add(&["src"], false)]),
+            (
+                "orca orchestration dispatch --task t --to term",
+                Bash,
+                vec![Intent::OrcaWorkerStart],
+            ),
+            (
+                "orca orchestration dispatch --task t --to term --dry-run",
+                Bash,
+                vec![Intent::Other],
+            ),
+            (
+                "orca --json orchestration dispatch --task t --to term",
+                Bash,
+                vec![Intent::OrcaWorkerStart],
+            ),
+            (
+                "orca orchestration --json worker-start --run r --spec x",
+                Bash,
+                vec![Intent::OrcaWorkerStart],
+            ),
+            (
+                "orca --json terminal send --terminal t --text 'handovers/to_dev.md'",
+                Bash,
+                vec![send(19), Intent::OrcaInject],
+            ),
+            (
+                "orca worktree create --name orchestration",
+                Bash,
+                vec![Intent::Other],
+            ),
             ("git status", Bash, vec![Intent::Other]),
             (
                 "fullops dispatch A-1 --role dev",

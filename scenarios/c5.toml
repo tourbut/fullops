@@ -23,6 +23,13 @@ df = "DF-28"
 command = "orca orchestration task-create --spec \"$SPEC\""
 expect = { verdict = "pass", flow = "continues" }
 
+# 읽지 못한 spec으로 만든 Task도 날것 배정으로는 worker를 얻지 못한다
+[[step]]
+act = "runs_shell"
+df = "DF-1"
+command = "orca orchestration dispatch --task task_1 --to term_1"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped", escape = "fullops dispatch" }
+
 [[step]]
 act = "runs_shell"
 who = "dev"

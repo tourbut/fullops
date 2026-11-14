@@ -28,6 +28,7 @@ expect = { verdict = "deny", rule = "T-00", flow = "stopped" }
 
 [[step]]
 act = "runs_shell"
+df = "DF-26"
 command = "fullops doctor"
 expect = { verdict = "pass", flow = "continues" }
 

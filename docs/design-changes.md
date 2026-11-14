@@ -778,9 +778,9 @@ hook 규칙 표(`RULES`)는 34개가 된다: 뼈대의 32개에 S-06과 T-13을 
 | 11 | D·F | `crates/fullops/assets/repo/docs/deliverables/README.md` | 내장 인덱스 템플릿에 front matter가 없어, 인덱스의 상태 칸을 고친 커밋이 DOC-003에 걸린다 | 8.11절 DOC-003, 8.12절(인덱스 상태는 사람이 고친다) |
 | 12 | F | `crates/fullops/assets/repo/lint/lint.json` | 버린 기능의 `.fullops-squad/board/**` exclude가 남아 있다 | 17절 H6 |
 
-## 8. 통합과 검증 뒤 수정에서 바뀐 것 (2026-11-14)
+## 8. 검증에서 드러난 것과 고친 방식 (2026-11-14~15)
 
-여덟 묶음을 합친 뒤 통합 담당 다섯(I1 hook, I2 설치·비교, I3 탐색, I4 hook 쪽 확인, I5 흐름·리뷰·lint)이 묶음마다 따로 구현한 곳을 하나로 모으고 `pending` 단계를 풀었다. 그 뒤 검증자 여섯이 실제 바이너리로 결함을 찾았고(R1~R6), 영역별 수정 담당이 고치고 있다. 이 절은 (1) 통합이 정한 것, (2) 7.4절의 코드 문제 12건이 어떻게 됐는가, (3) 안내 문구·스킬·문서 영역(F6)이 이번에 고친 것을 적는다. 다른 영역이 고친 방식은 다음 문서 맞추기에서 더한다. 검증에서 드러난 설계의 구멍은 `docs/design.md` 16.1절에 있다.
+여덟 묶음을 합친 뒤 통합 담당 다섯(I1 hook, I2 설치·비교, I3 탐색, I4 hook 쪽 확인, I5 흐름·리뷰·lint)이 묶음마다 따로 구현한 곳을 하나로 모으고 `pending` 단계를 풀었다. 그 뒤 검증자 여섯이 실제 바이너리로 결함을 찾았고(R1~R6), 영역별 수정 담당이 고치고 있다. 이 절은 (1) 통합이 정한 것, (2) 7.4절의 코드 문제 12건이 어떻게 됐는가, (3) 안내 문구·스킬·문서 영역(F6)이 고친 것, (4) 결함마다 고친 방식(다섯 영역의 수정, 흐름 쪽 다섯 바퀴, 비교 반영과 그 반박 확인)을 적는다. 검증에서 드러난 설계의 구멍과 그 상태는 `docs/design.md` 16.1절에, 남은 사람 결정은 17절 H19~H28에 있다.
 
 ### 8.1 통합이 정한 것
 
@@ -835,3 +835,63 @@ hook 규칙 표(`RULES`)는 34개가 된다: 뼈대의 32개에 S-06과 T-13을 
 | R6-2(스킬 몫) | 설계 완료 뒤 구현 인박스를 배정하는 절차가 스킬에 없었다 | 스킬 `fullops-orca`에 "설계 완료 뒤" 절을 넣었다(병합 → 들어온 지시서마다 `dispatch <KEY> --role <역할> --agent … --model … --effort …`, tester는 구현 병합 뒤). `merge`와 Stop의 안내는 흐름·hook 담당의 몫이다 | 11.3 |
 
 스킬 문서가 말하는 `fullops` 명령과 옵션은 인자 해석기와 다시 대조했다(없는 명령·옵션 0건). `crates/fullops/tests/bundle_f.rs`의 `skill_docs_name_real_commands_and_skills`가 옵션 이름까지 본다.
+
+### 8.4 결함별 고친 방식
+
+심각도는 검증 보고(R1~R6)와 비교 반박 확인의 판정이다. 바퀴마다 뒤집힌 결정은 마지막 것만 적고 '뒤집힘'에 한 줄로 이유를 남겼다. 지금 코드가 정답이다.
+
+| 결함 | 심각도 | 고친 방식 | 반영한 절 |
+|---|---|---|---|
+| R1-1 `lint --from HEAD`의 빈 통과 기록을 M-05·`review check`가 받음 | high | `pass_covers`가 `pass.base`가 요구 시작점과 다르면 설정 지문도 본다. M-05의 `pass.json` 길과 `done`의 다시 실행 길이 시작점과 함께 부른다. check 9번에 'lint의 `merge_base`가 리뷰 base이거나 그 조상' | 설계 6.6, 8.8 M-05, 8.9 9번 |
+| R1-2 `.gitattributes`·diff 설정이 추가 줄 검사를 끔 | high | diff 계열을 한 함수로 모아 속성·외부 diff·textconv·접두어를 고정. 남는 통로에는 '옛 글과 새 글이 다르면 모든 줄이 추가 줄' | 설계 8.11 4번, 9.1, formats 8 |
+| R1-3 `-diff` 속성이 리뷰 줄 수를 0으로 | high | numstat도 고정 인자, `FileStat.binary`, 줄 수를 세지 못한 코드 파일은 리뷰 필요 | 설계 8.9, 9.1 |
+| R1-4 날것 `git merge` 뒤 `fullops merge`가 게이트를 건너뜀 | high | 병합 기록 커밋이 있을 때만 건너뛴다. 없으면 M-04·M-05를 다시 판정하고, 이미 원격에 있으면 `ungated`로 표시한다. `--continue`도 게이트를 본다 | 설계 8.8, formats 8 |
+| R1-5 결정의 답에 사람 증거가 없음 | high | 새 거절 DC-04(결정을 연 뒤의 사람 턴), 결정과 `waiver.json`의 `human_turn`·`via`, `decided_by`는 실제 답한 사람 | 설계 6.2.1, 8.9 waive, 8.10, formats 3.5·4.1, 17 H22 |
+| R1-6 구현자 세션을 모르면 같은 세션 리뷰가 통과 | high | snapshot이 구현자 세션을 정하지 못하면 RV-00, check 4번은 `state.json`의 snapshot 값과 견줌 | 설계 8.9, formats 4.1 |
+| R1-7 lead의 X-01이 병합된 파일을 경로째 뺌 | medium | 내용이 병합 SHA와 같은 파일만 뺀다(`diff(sha, HEAD)`에 없는 경로) | 설계 6.6 4번 |
+| R1-8 원격이 먼저 나아가면 `merge` 다시 실행이 멈춤 | medium | M-03이 통합 기준 ref를 합치고 lint, 충돌은 종료 코드 3, 실패는 `reset --keep`. 오프라인 push 실패 안내 | 설계 8.8 M-03·M-09, 17 H27 |
+| R1-9 옛 글에 NUL이 있으면 lint 검사를 건너뜀 | medium | 옛 글을 읽지 못하면 새 파일처럼 검사 | 설계 8.11 4번 |
+| R1-10 6.6절의 코드 파일 판정 기준 문장이 코드와 반대 | low | 문서만 고침(F6) | 설계 6.6 |
+| R2-1 커밋된 `remote`·`base`가 git 옵션으로 읽힘(임의 명령 실행) | critical | 설정 검증(원격 이름의 꼴, `check-ref-format`), git·Orca·`deps.toml` 값의 `-` 시작 거절과 `--`, 등록된 원격만, 온전한 refspec | 설계 6.1.1, 9.1, 9.2, 10.7, formats 3.1·8, 17 H24 |
+| R2-2 Windows 별칭 이름으로 비밀 파일이 Jev로 감 | high | 끝 점·공백을 떼고 `:` 조각 거절, 실제 이름으로 다시 검사 | 설계 8.14 |
+| R2-3 글 규칙이 흔한 비밀 꼴을 놓침 | high | 이름·접미사·따옴표·토큰 꼴을 넓히고 경로 목록을 더함. 색인 `parser`를 `map-v2`로 | 설계 6.3, 8.14, formats 5.5, 17 H23 |
+| R2-4 `route --request-file`이 레포 밖 파일을 읽음 | high | 레포 안이고 경로 규칙을 통과한 파일만, 레포 상대 경로로 기록 | 설계 6.1.4, 8.3, formats 3.4 |
+| R2-5 필수 문서가 없으면 J-12가 배정을 계속 막음 | medium | 만들 때 읽은 항목만 '없음'으로 건다 | 설계 8.14 J-12, 12.2 P14 |
+| R2-6 `.env`의 BOM이 키를 가림 | low | BOM을 뗀다 | 설계 9.3 |
+| R2-7 PATH의 상대 항목에서 레포 안 실행 파일이 돎 | high | `proc::find_program`이 절대 경로 항목만 보고 `proc::run`이 전체 경로로 띄운다 | 설계 9.3, formats 8, 17 H24 |
+| R2-8 `route`에 `--env-file`이 없음 | low | 더했다 | 설계 8.3, formats 8 |
+| R3-1 키 없는 보고가 있으면 X-06이 풀리지 않음 | high | 문구에 메시지 ID, 탈출구에 `completion set-sha … --key`와 `hold --completion <ID>`, `hold`가 KEY 없이 받음 | 설계 7.5 X-06, 8.8, formats 8 |
+| R3-2 대소문자·junction 경로가 T-05·T-06·T-10을 지남 | high | `Facts::real_path`로 실제 경로를 풀고 규칙 이름을 정본 표기로 | 설계 7.4, 10.2, formats 8 |
+| R3-3 셸 분류가 감싼 명령을 못 풂 | high | 괄호·중괄호·백틱 구분자, 큰따옴표 안 치환, 제어 키워드·앞붙이 명령, 세 단계 중첩, `eval`·`iex`·`Start-Process`, `.ps1`. 남은 한계를 적었다 | 설계 7.4 2·3·4·5·7번, 17 H5 |
+| R3-4 `commit -m<글>`을 `-a`로 읽음 | low | 값을 받는 옵션 앞의 `a`만 센다 | 설계 7.4 9번 |
+| R3-5 `Purpose : research`를 못 읽음 | low | `Purpose\s*[:=]\s*`, T-04와 같은 함수 | 설계 7.5 T-08 |
+| R3-6 agy의 stdin 기한이 등록 타임아웃보다 김 | low | `--event`가 있으면 읽기 전부터 그 이벤트의 기한 | 설계 7.1 |
+| R4-1 병합 전 수정 배정이 막힘(탈출구가 서로를 가리킴) | high | 병합 전 `task reopen`(`unmerged_record`, 재오픈 준비 커밋, 거절 셋), lead의 reopen은 class와 무관하게 H-02 통과, `fix_round` 하나가 RT-02·M-04·M-07·review의 탈출구를 만든다. 뒤집힘: 반려된 설계 과제를 '설계 역할에 다시 보낸다'에서 '구현 역할의 수정 차수는 lead가 연다(1.24.0과 같다), 설계 역할 자신의 보고가 반려되면 `route --force --request`로 다시 맡긴다'로 바꿨다. 설계 역할은 코드를 고치지 않기 때문이다(T-07) | 설계 8.3, 8.4, 8.5, 8.8, 8.9 |
+| R4-1 이어서: spec의 반려 정보 | - | 뒤집힘: spec에 `Rejected SHA`·`Review result`를 넣었다가 지웠다. 형식을 늘리지 않고 반려 사유를 요청 글 하나로 전한다 | 설계 8.5 |
+| R4-1 이어서: `done` 뒤 실패한 차수 | - | 뒤집힘: reopen을 허용하는 안 대신 '그 차수의 완료 기록을 지시서로 다시 보내기'를 골랐다. 보통 실패와 같은 재시도이고 기록을 다시 쓰지 않는다 | 설계 8.5 D-02 |
+| R4-2 미리 보기 뒤 `wait`가 병합한 보고를 되살림 | high | `Landed` SHA의 dispatch 없는 보고를 통합 대기로 되살리지 않는다 | 설계 8.6 |
+| R4-3 같은 키를 다시 보고하면 `merge <KEY>`가 M-02 | medium | `--completion <가장 늦은 ID>` 안내, M-10이 이미 `Landed`인 앞선 보고도 닫는다 | 설계 8.6, 8.8 M-10 |
+| R4-4 성공한 `dispatch`를 다시 실행하면 worker가 하나 더 뜸 | high | D-10 `same`(Build·Fix를 한 배정으로, `--reason limit`만 예외), `task recover`가 끊긴 배정을 `lost`로 | 설계 8.5, 17 H21 |
+| R4-5 인박스 front matter 오류면 `done`이 검사를 건너뜀 | medium | R-04 `syntax`로 거절(`--failed`는 보낸다) | 설계 8.7 |
+| R4-6·R4-7·R4-8 CRLF, BOM, 모르는 enum 값 | low | 줄 끝 보존, BOM 떼기, 타입 오류는 옮기지 않고 '새 형식'으로 거절 | 설계 6.5, formats 4.1, 17 H19 |
+| R5-1 `migrate` 중간 실패가 두 판의 표식을 남김 | high | 쓰기 전에 모두 계산하고, `fullops.toml`을 `git mv` 바로 앞에 쓰고, 실패하면 기록대로 되돌리고, 끝나지 않은 전환을 알아본다 | 설계 13.2, formats 2 |
+| R5-2 `install --rollback`을 S-04가 바로 다시 올림 | medium | `install.json`의 `pinned`, S-04 조건, `doctor` 알림 | 설계 6.4, 7.5 S-04, 10.3, formats 6 |
+| R5-3 `migrate`가 심볼릭 링크 엔트리 문서를 일반 파일로 바꿈 | medium | 링크면 쓰지 않고 보고, 표식이 링크면 거절 | 설계 13.2 |
+| R5-4 전환 뒤 기본 템플릿이 Python 명령을 안내 | medium | 1.24.0 기본 글 12개를 front matter·모드 블록을 뺀 본문으로 판별해 바꾸고, 고친 문서는 Python 명령 줄을 보고 | 설계 13.2, 17 H25 |
+| R5-5 Python판 레포에서 `init`이 됨 | high | `FullOps[init]` | 설계 8.1, 10.6, formats 7 |
+| R5-6 끝 표식 없는 블록에서 `init`이 글을 지움 | high | `block_span` 하나, 깨진 블록은 고치지 않음 | 설계 10.6 |
+| R5-7·R5-9 되돌린 뒤 닫힌 결정이 남음, 결정 번호 겹침 | medium | 지난 사본과 견줘 닫힌 것을 뺌, 닫힌 결정까지의 최대 번호 + 1 | 설계 13.2 |
+| R5-8 `--dry-run`에 `PLANS.md` 문법 오류가 없음 | low | 검사를 쓰기 전 점검으로 옮김 | 설계 13.2 |
+| R5-10 되돌린 엔트리 문서의 바이트가 다름 | low | `migrate.json` v 2에 전환 전 글 전문과 쓴 글의 sha, 그대로면 바이트 복원 | 설계 13.3, formats 2, 17 H25 |
+| R6-1 `route --request` 글이 저장되지 않음 | high | `routes/<KEY>.request.md`(비밀 무늬면 공용 디렉터리)에 저장해 `request_file`에 적고 준비 커밋에 넣음. 옛 기록은 D-02 `request` | 설계 6.1.4, 8.3, 8.5, formats 2·3.4 |
+| R6-2 설계 완료 뒤 구현 지시서 배정 안내가 없음 | high | `flow::leftover`의 '배정되지 않은 지시서'를 X-07·`status`·`wait`·`merge`가 낸다(차수 인식). 스킬은 F6이 고쳤다. 뒤집힘: 안내를 '`task new` → `dispatch`'로 적었다가 `dispatch`만으로 바꿨다(설계 과제의 지시서는 H-02 때문에 설계 역할만 쓴다) | 설계 6.6, 7.5 X-07, 8.5, 17 H20 |
+| R6-3·R6-4·R6-5·R6-8·R6-9 안내 문구·스킬·문서 | medium~low | 8.3절 표. R6-4의 `wait` 안내에 `reply` 절차를 붙이는 일은 남았다 | 8.3절, 설계 8.6 |
+| R6-6 lead가 worker의 하위 Run을 가로챔 | medium | `wait --run`이 남의 Run을 `FullOps[wait]`로 거절, `status`는 lead 소유만, 정산된 전임 worker의 Run은 다시 배정된 worker가 이어받음 | 설계 8.6, 8.1 |
+| R6-7 실패 보고를 처리하면 과제가 '보고됨'으로 남음 | high | `derive::last_failed`(차수 인식. `dispatches[].round`), `ready()` 4번과 '실패한 채 남은 과제' 안내 | 설계 6.2.1, 6.6, formats 4.1 |
+| (흐름 바퀴) 설계 역할 재배정 뒤 `review check`가 RV-09 | medium | 설계 역할 좌석의 `lint --from` 기본은 인박스 base, 없으면 바닥(anchor를 쓰지 않음) | 설계 8.11 1번 |
+| (흐름 바퀴) escalation이 끝난 dispatch를 실패처럼 보이게 함 | medium | 이미 `done`인 정산은 바꾸지 않고 `limit_escalated`만 | 설계 8.6, formats 4.1 |
+| (흐름 바퀴) `Unknown`을 '없음'으로 내려 게이트를 건너뜀(`done`, `packet check`, `review`, `route`) | high | 읽지 못하면 거절(R-04 `syntax`, `FullOps[packet]`, 사용법 오류) | 설계 8.1, 8.3, 8.7, formats 7 |
+| 비교: f1 `commit -am`이 미추적 캡처로 T-09 거부 | medium | `GitAdd { paths, update }`와 `CommitScope`로 git이 담을 항목만 본다 | 설계 7.4 9번, 7.5 T-09, 10.2, formats 8 |
+| 비교 반박: 하위 폴더 cwd의 `add -A`·`$D` 등이 T-09를 지남(위 수정의 회귀) | high | 레포 전체 표식을 `.`에서 `:/`로 바꾸고 `stage`, `--pathspec-from-file`, 풀리지 않은 확장, 경로 없는 add를 레포 전체로 본다 | 설계 7.4 9번, 7.5 T-09 |
+| 비교 반박: 날것 `orchestration dispatch`(`--inject` 없음)가 분류 안 된 Task를 배정 | medium | `OrcaWorkerStart`로 분류해 T-01(`--dry-run`만 통과). DF-28의 근거를 고침 | 설계 7.4 8번, 7.5 T-01, 11.1, 12.2 C5, 12.3 DF-1·DF-28, contracts/orca.md 2.9 |
+| 비교 반박: py 구동기의 `fullops <sub>` 지름길이 1.24.0 판정을 가림, 판정이 같은데 붙은 `df` | low | 지름길을 지우고 a3·a4 6단계에 DF-26, p2 30·r4 14의 `df`를 지우고 r4 18을 DF-33으로 | 설계 16.1(비교), 12.2 A3·A4 |
