@@ -73,6 +73,17 @@ fn text(id: &str, case: &str, a: &[&str]) -> Option<(String, String)> {
                 v(0)
             ),
         ),
+        ("M-03", "diverged") => (
+            format!(
+                "원격 기본 브랜치가 먼저 나아가 {}를 병합하다 충돌했습니다({}).",
+                v(1),
+                v(2)
+            ),
+            format!(
+                "해결해 스테이징한 뒤 `fullops merge {0} --continue`, 포기하면 `fullops merge {0} --abort`",
+                v(0)
+            ),
+        ),
         ("M-04", "rejected") => (
             format!(
                 "{} {}의 리뷰 결론이 reject이거나 미해결 critical·high가 있습니다.",
@@ -200,6 +211,17 @@ fn text(id: &str, case: &str, a: &[&str]) -> Option<(String, String)> {
         ("DC-03", _) => (
             format!("{}는 결정 {}에 답할 수 있는 사람이 아닙니다.", v(1), v(0)),
             format!("허용된 사람({})이 `--by`로 답합니다.", v(2)),
+        ),
+        ("DC-04", _) => (
+            format!(
+                "결정 {}를 연 뒤 lead 세션에 사람 턴이 없습니다. 사람이 정할 것을 에이전트가 스스로 답할 수 없습니다.",
+                v(0)
+            ),
+            "사용자에게 물어 답을 받은 뒤 다시 실행합니다.".into(),
+        ),
+        ("RV-00", "implementer") => (
+            format!("{}의 구현자 세션을 알 수 없습니다.", v(0)),
+            "`fullops review snapshot <KEY> --implementer-session <구현한 세션 ID>`".into(),
         ),
         ("RV-00", "nohead") => (
             format!("{}의 리뷰할 SHA를 정하지 못했습니다.", v(0)),

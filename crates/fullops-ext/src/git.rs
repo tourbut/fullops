@@ -98,6 +98,8 @@ pub struct GitCli {
 
 /// `fetch`·`push`·`merge`의 제한 시간.
 const SLOW: Duration = Duration::from_secs(120);
+/// 빈 트리를 속성의 출처로 준다: 브랜치가 커밋한 `.gitattributes`(`-diff` 등)가 diff를 가리지 못한다.
+const NO_ATTRS: &str = "--attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /// `blob_prefixes`가 `cat-file --batch` 한 번에 읽는 blob 크기의 합.
 const BATCH_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -175,6 +177,21 @@ impl GitCli {
     fn write(&self, cwd: &Path, args: &[&str], timeout: Duration) -> Result<ProcResult, ExtError> {
         let out = self.call(cwd, args, timeout, None, false);
         if out.ok() { Ok(out) } else { Err(fail(out)) }
+    }
+
+    /// `git diff`. 게이트(lint·리뷰 판정·변경 계산)가 읽으므로 레포·사용자 설정과 속성이 출력을 바꾸지 못하게 고정한다.
+    fn diff(&self, args: &[&str]) -> Known<Vec<u8>> {
+        let fixed = [
+            "-c",
+            "core.attributesFile=",
+            NO_ATTRS,
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-relative",
+        ];
+        let args: Vec<&str> = fixed.iter().chain(args).copied().collect();
+        self.read(&args)
     }
 
     fn slow(&self) -> Duration {
@@ -301,22 +318,23 @@ impl Git for GitCli {
     }
 
     fn diff_names(&self, from: &str, to: &str) -> Known<Vec<String>> {
-        self.read(&["diff", "--name-only", "--no-renames", "-z", from, to])
+        self.diff(&["--name-only", "--no-renames", "-z", from, to])
             .map(|out| records(&out).collect())
     }
 
     fn numstat(&self, from: &str, to: &str) -> Known<Vec<FileStat>> {
-        self.read(&["diff", "--numstat", "--no-renames", "-z", from, to])
+        self.diff(&["--numstat", "--no-renames", "-z", from, to])
             .map(|out| {
                 records(&out)
                     .filter_map(|record| {
                         let mut parts = record.splitn(3, '\t');
                         // 바이너리 파일은 줄 수가 `-`다
-                        let mut count = || parts.next().map(|n| n.parse().unwrap_or(0));
+                        let mut count = || parts.next().map(|n| n.parse::<u32>().ok());
                         let (added, deleted) = (count()?, count()?);
                         Some(FileStat {
-                            added,
-                            deleted,
+                            binary: added.is_none(),
+                            added: added.unwrap_or(0),
+                            deleted: deleted.unwrap_or(0),
                             path: parts.next()?.to_string(),
                         })
                     })
@@ -595,28 +613,36 @@ impl Git for GitCli {
     }
 
     fn name_status(&self, from: &str, to: &str) -> Known<Vec<NameStatus>> {
-        self.read(&["diff", "--name-status", "-z", from, to])
-            .map(|out| {
-                let mut list = Vec::new();
-                let mut items = records(&out);
-                while let Some(code) = items.next() {
-                    let status = code.chars().next().unwrap_or('M');
-                    let renamed = matches!(status, 'R' | 'C');
-                    let old_path = if renamed { items.next() } else { None };
-                    let Some(path) = items.next() else { break };
-                    list.push(NameStatus {
-                        status,
-                        path,
-                        old_path,
-                    });
-                }
-                list
-            })
+        self.diff(&["--name-status", "-z", from, to]).map(|out| {
+            let mut list = Vec::new();
+            let mut items = records(&out);
+            while let Some(code) = items.next() {
+                let status = code.chars().next().unwrap_or('M');
+                let renamed = matches!(status, 'R' | 'C');
+                let old_path = if renamed { items.next() } else { None };
+                let Some(path) = items.next() else { break };
+                list.push(NameStatus {
+                    status,
+                    path,
+                    old_path,
+                });
+            }
+            list
+        })
     }
 
     fn diff_u0(&self, from: &str, to: &str) -> Known<String> {
-        self.read(&["diff", "-U0", "--no-color", "--no-ext-diff", from, to])
-            .map(|out| text(&out))
+        // 머리줄의 접두어와 hunk 모양도 설정(`diff.noprefix` 등)을 따르지 않게 한다
+        let args = [
+            "-U0",
+            "--no-color",
+            "--inter-hunk-context=0",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            from,
+            to,
+        ];
+        self.diff(&args).map(|out| text(&out))
     }
 
     fn mv(&self, from: &str, to: &str) -> Result<(), ExtError> {

@@ -161,14 +161,19 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         let now_head = head(&git)?;
         // X-01과 같은 함수로 변경 범위와 lint 통과 인정을 본다(설계 6.6절)
         let mut gate = GitGate::cli(repo.root.clone());
+        let anchor = caller.session.as_ref().and_then(|s| s.anchor.clone());
+        let candidate = changes::start_candidate(repo, config, actor, anchor);
         if already {
-            evidence = changes::pass_covers(&mut gate, repo, &now_head, None)
-                .yes()
-                .flatten();
+            // 인박스를 옮긴 뒤에도 통과 기록이 덮는 범위를 본다(좁힌 `lint --from`을 받지 않는다)
+            let base_ref = config.base_ref();
+            let start = changes::start_point(&mut gate, &now_head, &base_ref, candidate).yes();
+            evidence = start.and_then(|start| {
+                changes::pass_covers(&mut gate, repo, &now_head, Some(&start))
+                    .yes()
+                    .flatten()
+            });
         } else {
             // R-03
-            let anchor = caller.session.as_ref().and_then(|s| s.anchor.clone());
-            let candidate = changes::start_candidate(repo, config, actor, anchor);
             let merged = if actor.is_lead() {
                 changes::merged_in(&state, &mut |sha| super::hold::landing(&git, config, sha))
             } else {

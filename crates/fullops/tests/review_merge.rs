@@ -253,6 +253,20 @@ impl World {
         fullops_store::write_json(&path, &result).unwrap();
     }
 
+    /// 세션 `s`의 hook 이벤트 하나(Claude Code의 입력 모양)를 넣고 출력을 돌려준다.
+    fn hook(&self, who: &str, event: &str, more: Value) -> Value {
+        let cwd = self.sb.path(who);
+        let mut input = json!({ "hook_event_name": event, "session_id": "s", "cwd": cwd });
+        let fields = more.as_object().unwrap().clone();
+        input.as_object_mut().unwrap().extend(fields);
+        let stdin = input.to_string();
+        let run = self
+            .sb
+            .fullops(&self.sb.home, &["hook", "claude"], &[], stdin.as_bytes());
+        assert_eq!(run.code, Some(0), "{}", run.stderr);
+        serde_json::from_str(&run.stdout).unwrap_or(Value::Null)
+    }
+
     /// `review cleanup`이 묻는 터미널 목록에 "없음"으로 답한다.
     fn no_terminals(&self) {
         self.sb.orca_rule(
@@ -389,8 +403,8 @@ fn merge_requires_lead_and_lint_evidence() {
     let words = ["FullOps[M-05]", "fullops lint", "--accept-missing-lint"];
     expect(&w.cli(&["merge", "A-1"]), 2, &words);
 
-    // worker 워크트리의 pass.json이 덮으면 통과한다. 그 뒤에 기록 경로만 바꾼 커밋이 있어도 덮는다
-    let pass = LintPass {
+    // head만 맞고 병합할 변경을 검사하지 않은 통과 기록(`lint --from HEAD`의 모양)은 증거가 아니다
+    let narrow = LintPass {
         v: 1,
         base: sha.clone(),
         head: sha.clone(),
@@ -400,6 +414,13 @@ fn merge_requires_lead_and_lint_evidence() {
         at: fullops_store::now(),
     };
     let dev = fullops_store::discover(&w.dev()).unwrap().unwrap();
+    fullops_store::write_json(&dev.lint_dir().join("pass.json"), &narrow).unwrap();
+    expect(&w.cli(&["merge", "A-1"]), 2, &["FullOps[M-05]"]);
+    // worker 워크트리의 pass.json이 merge-base부터 덮으면 통과한다. 그 뒤에 기록 경로만 바꾼 커밋이 있어도 덮는다
+    let pass = LintPass {
+        base: Sha::new(w.git("lead", &["merge-base", "main", sha.as_str()])).unwrap(),
+        ..narrow
+    };
     fullops_store::write_json(&dev.lint_dir().join("pass.json"), &pass).unwrap();
     let log = ".fullops-squad/handovers/logs/A-1.dev.r0.md";
     let recorded = w.commit(
@@ -656,6 +677,12 @@ fn large_change_asks_once_then_waives() {
         ),
         (&json!("D001"), &json!("user"), &json!(400))
     );
+    // hook이 돌지 않는 환경이라 사람의 답인지 확인하지 못했다. 그 사실이 결정과 면제 기록에 남는다
+    assert_eq!(
+        (&waiver["via"], &waiver["human_turn"]),
+        (&json!("user"), &json!(false))
+    );
+    assert_eq!(w.state().decisions[0].extra["human_turn"], json!(false));
 
     expect(&w.cli(&["merge", "A-1"]), 0, &[]);
     assert!(w.contains(sha.as_str(), "origin/main"));
@@ -1325,4 +1352,312 @@ fn merge_commit_runs_lint_with_uncommitted_review_files() {
     assert_eq!(driver.sb.git_ok(&lead, &["status", "--porcelain"]), "");
     let tracked = driver.sb.git_ok(&lead, &["ls-files", memo]);
     assert_eq!(tracked, memo);
+}
+
+/// 기준 설정에 항상 실패하는 test 명령을 둔다.
+const FAILING_LINT: &str = r#"{"schema_version":1,"commands":[{"name":"unit","kind":"test","run":["git","no-such-subcommand"]}],"exclude":[],"rules":[]}"#;
+
+/// 기본 브랜치의 lint 설정을 바꿔 push하고 worker 브랜치에 반영한다.
+fn base_lint(w: &World, text: &str) {
+    w.commit("lead", ".fullops-squad/lint/lint.json", text);
+    w.git("lead", &["push", "-q", "origin", "main"]);
+    w.git("dev", &["merge", "-q", "main"]);
+}
+
+/// 검증 R1-1: `lint --from HEAD`는 아무것도 검사하지 않고 통과 기록을 쓴다. merge의 M-05는 그 기록을 받지 않는다.
+#[test]
+fn lint_narrowed_by_from_is_not_merge_evidence() {
+    let mut w = World::new();
+    base_lint(&w, FAILING_LINT);
+    let sha = w.commit("dev", "src/a.py", "x = eval(input())\n");
+    expect(&w.sb.cli(&w.dev(), &["lint"]), 2, &["ANTI-002", "unit"]);
+    expect(&w.sb.cli(&w.dev(), &["lint", "--from", "HEAD"]), 0, &[]);
+    // `done --no-checks`가 남기는 모양: lint_head가 없어 merge가 worker의 pass.json을 본다
+    w.report("A-1", &sha);
+    w.edit(|state| state.dispatches[0].reported.as_mut().unwrap().lint_head = None);
+    expect(&w.cli(&["merge", "A-1"]), 2, &["FullOps[M-05]"]);
+    assert!(!w.contains(sha.as_str(), "origin/main"));
+    assert!(!w.contains(sha.as_str(), "main"));
+}
+
+/// 검증 R1-1: 리뷰 check 9번도 리뷰 base부터 검사하지 않은 lint 결과를 받지 않는다.
+#[test]
+fn lint_narrowed_by_from_fails_review_check() {
+    let mut w = World::new();
+    base_lint(&w, FAILING_LINT);
+    let sha = w.work("src/big.py", 400);
+    expect(&w.sb.cli(&w.dev(), &["lint", "--from", "HEAD"]), 0, &[]);
+    w.report("A-1", &sha);
+    expect(&w.cli(&["review", "snapshot", "A-1"]), 0, &[]);
+    let dir = w.review_dir("A-1", &sha);
+    assert!(dir.join("lint.json").is_file());
+    w.review("A-1", &sha, "sid-reviewer", None);
+    expect(
+        &w.cli(&["review", "check", "A-1"]),
+        2,
+        &["FullOps[RV-09]", "merge_base"],
+    );
+    assert!(!dir.join("accepted.json").exists());
+}
+
+/// 검증 R1-3: 기본 브랜치에 들어간 `.gitattributes`의 `-diff`도, 저장소의 `info/attributes`도
+/// 리뷰 필요 판정의 줄 수와 lint의 추가 줄 검사를 끄지 못한다.
+#[test]
+fn attributes_do_not_hide_large_changes() {
+    let mut w = World::new();
+    let attr = w.commit("dev", ".gitattributes", "*.py -diff\n");
+    w.report("A-1", &attr);
+    expect(&w.cli(&["merge", "A-1"]), 0, &[]);
+
+    let body: String = (0..500).map(|i| format!("v{i} = eval('{i}')\n")).collect();
+    let sha = w.commit("dev", "src/big.py", &body);
+    expect(&w.sb.cli(&w.dev(), &["lint"]), 2, &["ANTI-002"]);
+    w.report("B-2", &sha);
+    let need = out(&w.cli(&["review", "need", "B-2", "--json"]));
+    assert_eq!(
+        (&need["required"], &need["code_lines"]),
+        (&json!(true), &json!(500))
+    );
+    expect(&w.cli(&["merge", "B-2"]), 3, &["FullOps[M-04]"]);
+    assert!(!w.contains(sha.as_str(), "main"));
+
+    // 빈 트리로도 끌 수 없는 속성(`info/attributes`): 줄 수를 세지 못한 코드 파일은 리뷰 대상이고, lint는 모든 줄을 본다
+    let info = w.repo().common_dir.join("info");
+    std::fs::create_dir_all(&info).unwrap();
+    std::fs::write(info.join("attributes"), "*.py -diff\n").unwrap();
+    let need = out(&w.cli(&["review", "need", "B-2", "--json"]));
+    assert_eq!(need["required"], json!(true));
+    let reason = need["reason"].as_str().unwrap();
+    assert!(reason.contains("줄 수를 세지 못한"), "{reason}");
+    expect(&w.sb.cli(&w.dev(), &["lint"]), 2, &["ANTI-002"]);
+}
+
+/// 검증 R1-4: 날것 `git merge`로 먼저 넣은 SHA도 push 전이면 M-04·M-05를 다시 판정한다.
+/// 이미 통합 기준 ref에 들어간 SHA는 막을 수 없으므로 게이트를 거치지 않았다는 것을 출력과 병합 기록 커밋에 남긴다.
+#[test]
+fn raw_merge_does_not_skip_gates() {
+    let mut w = World::new();
+    base_lint(&w, FAILING_LINT);
+    let body: String = (0..500).map(|i| format!("v{i} = eval('{i}')\n")).collect();
+    let sha = w.commit("dev", "src/big.py", &body);
+    w.report("A-1", &sha);
+    w.edit(|state| state.dispatches[0].reported.as_mut().unwrap().lint_head = None);
+    expect(&w.cli(&["merge", "A-1"]), 3, &["FullOps[M-04]", "D001"]);
+
+    w.git("lead", &["merge", "-q", "--ff-only", sha.as_str()]);
+    expect(
+        &w.cli(&["merge", "A-1"]),
+        3,
+        &["FullOps[M-04]", "D001", "판정을 다시"],
+    );
+    assert!(!w.contains(sha.as_str(), "origin/main"));
+    assert_eq!(w.state().pending().count(), 1);
+    // 리뷰를 면제해도 lint 증거(M-05)가 남는다
+    let answer = ["decision", "answer", "D001", "--answer", "생략", "--sha"];
+    expect(&w.cli(&[&answer[..], &[sha.as_str()]].concat()), 0, &[]);
+    let waive = ["review", "waive", "A-1", "--decision", "D001", "--reason"];
+    expect(&w.cli(&[&waive[..], &["사용자 지시"]].concat()), 0, &[]);
+    expect(&w.cli(&["merge", "A-1"]), 2, &["FullOps[M-05]"]);
+    assert!(!w.contains(sha.as_str(), "origin/main"));
+
+    // 날것 push까지 끝난 SHA
+    w.git("lead", &["push", "-q", "origin", "main"]);
+    let run = w.cli(&["merge", "A-1", "--json"]);
+    expect(&run, 0, &[]);
+    assert_eq!(
+        (&out(&run)["ungated"], &out(&run)["landing"]),
+        (&json!(true), &json!("landed"))
+    );
+    let record = w.git("lead", &["log", "-1", "--format=%s%n%b"]);
+    assert!(
+        record.contains("병합 기록 A-1") && record.contains("병합 기록 커밋 없이 통합된 SHA"),
+        "{record}"
+    );
+    assert!(w.state().completions.is_empty());
+}
+
+/// 지금 시각이 `at`을 지날 때까지 기다린다(시각은 초 단위다).
+fn after(at: i64) {
+    while fullops_store::now() <= at {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// 검증 R1-5: hook이 도는 세션에서는 결정을 연 뒤의 사람 턴이 있어야 답을 받는다. 에이전트가 스스로 답하지 못한다.
+#[test]
+fn decision_answer_needs_a_human_turn() {
+    let mut w = World::new();
+    let sha = w.work("src/big.py", 400);
+    w.report("A-1", &sha);
+    w.hook("lead", "SessionStart", json!({ "source": "startup" }));
+    w.hook(
+        "lead",
+        "UserPromptSubmit",
+        json!({ "prompt": "A-1을 병합해 줘" }),
+    );
+    expect(&w.cli(&["merge", "A-1"]), 3, &["D001"]);
+    let asked = w.state().decisions[0].asked_at;
+    let answer = [
+        "decision",
+        "answer",
+        "D001",
+        "--answer",
+        "생략",
+        "--sha",
+        sha.as_str(),
+    ];
+    expect(&w.cli(&answer), 2, &["FullOps[DC-04]", "사용자에게 물어"]);
+    // 사용자의 결정에 봇이라고 적어 답해도, Orca가 깨운 턴이 있어도 사람 턴이 아니다
+    after(asked);
+    let wake = "\nYou have 1 orchestration message. Run `orca orchestration check --run run_1`.\n";
+    w.hook("lead", "UserPromptSubmit", json!({ "prompt": wake }));
+    expect(&w.cli(&answer), 2, &["FullOps[DC-04]"]);
+    let as_bot = [&answer[..], &["--via", "bot"]].concat();
+    expect(&w.cli(&as_bot), 2, &["FullOps[DC-04]"]);
+    let open = w.state().decisions[0].clone();
+    assert_eq!((open.status.as_str(), open.answer), ("open", None));
+
+    w.hook(
+        "lead",
+        "UserPromptSubmit",
+        json!({ "prompt": "리뷰는 생략해" }),
+    );
+    expect(&w.cli(&answer), 0, &[]);
+    assert_eq!(w.state().decisions[0].extra["human_turn"], json!(true));
+    let waive = ["review", "waive", "A-1", "--decision", "D001", "--reason"];
+    expect(
+        &w.cli(&[&waive[..], &["사용자가 생략을 지시했다"]].concat()),
+        0,
+        &[],
+    );
+    let waiver: Value = serde_json::from_str(
+        &std::fs::read_to_string(w.review_dir("A-1", &sha).join("waiver.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        (&waiver["decided_by"], &waiver["via"], &waiver["human_turn"]),
+        (&json!("user"), &json!("user"), &json!(true))
+    );
+}
+
+/// 검증 R1-6: 구현자 세션을 모르면 snapshot을 만들지 않고, check는 리뷰어가 쓰는 result.json이 아니라
+/// snapshot을 만들 때 적은 구현자 세션과 견준다.
+#[test]
+fn review_needs_a_known_implementer() {
+    let mut w = World::new();
+    let sha = w.work("src/big.py", 400);
+    w.lint_result(&sha);
+    w.report("A-1", &sha);
+    w.edit(|state| state.dispatches[0].bound_session = None);
+    expect(
+        &w.cli(&["review", "snapshot", "A-1"]),
+        2,
+        &["FullOps[RV-00]", "--implementer-session"],
+    );
+    assert!(w.state().snapshots.is_empty());
+    let snapshot = [
+        "review",
+        "snapshot",
+        "A-1",
+        "--implementer-session",
+        "sid-dev",
+    ];
+    expect(&w.cli(&snapshot), 0, &[]);
+
+    // 구현한 세션이 리뷰를 쓰고 result.json의 구현자 칸을 바꿔도 걸린다
+    w.review("A-1", &sha, "sid-dev", None);
+    let path = w.review_dir("A-1", &sha).join("result.json");
+    let mut result: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    result["implementer_session"] = json!(null);
+    fullops_store::write_json(&path, &result).unwrap();
+    expect(&w.cli(&["review", "check", "A-1"]), 2, &["FullOps[RV-04]"]);
+    result["reviewer_session"] = json!("sid-reviewer");
+    fullops_store::write_json(&path, &result).unwrap();
+    expect(&w.cli(&["review", "check", "A-1"]), 0, &["accepted.json"]);
+    let accepted: Value = serde_json::from_str(
+        &std::fs::read_to_string(w.review_dir("A-1", &sha).join("accepted.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(accepted["implementer_session"], json!("sid-dev"));
+}
+
+/// 검증 R1-7: lead의 X-01은 병합으로 들어온 그대로인 파일만 뺀다. lead가 그 파일을 더 고쳤으면 lead의 변경이다.
+#[test]
+fn lead_edit_on_merged_file_is_a_lead_change() {
+    let mut w = World::new();
+    w.hook("lead", "SessionStart", json!({ "source": "startup" }));
+    let sha = w.work("src/a.py", 1);
+    w.report("A-1", &sha);
+    w.edit(|state| {
+        state
+            .messages
+            .iter_mut()
+            .for_each(|m| m.acked_at = Some(30))
+    });
+    w.git("lead", &["merge", "-q", "--no-edit", "fullops/dev"]);
+    let reason = |out: Value| out["reason"].as_str().unwrap_or_default().to_string();
+    let merged = reason(w.hook("lead", "Stop", json!({})));
+    assert!(!merged.contains("X-01"), "{merged}");
+
+    w.commit("lead", "src/a.py", "print(0)\nx = eval(input())\n");
+    let edited = reason(w.hook("lead", "Stop", json!({})));
+    assert!(
+        edited.contains("FullOps[X-01]") && edited.contains("src/a.py"),
+        "{edited}"
+    );
+}
+
+/// 검증 R1-8: push 전에 다른 사람이 원격 기본 브랜치에 먼저 push했으면, 다시 실행한 merge가 통합 기준 ref를 합치고
+/// 합친 결과에 lint를 돌린 뒤 push한다. 합치다 충돌하면 종료 코드 3이고 `--continue`로 잇는다.
+#[test]
+fn merge_rerun_joins_a_remote_that_moved_first() {
+    let mut w = World::new();
+    let origin = w.sb.root.join("origin.git");
+    w.sb.git_ok(
+        &w.sb.root,
+        &["clone", "-q", &origin.to_string_lossy(), "other"],
+    );
+    let sha = w.work("src/a.py", 3);
+    w.report("A-1", &sha);
+    expect(&w.cli(&["merge", "A-1", "--no-push"]), 0, &[]);
+    let theirs = w.commit("other", "src/other.py", "print(2)\n");
+    w.git("other", &["push", "-q", "origin", "main"]);
+    // 시험 환경은 오프라인이라 merge가 fetch하지 않는다
+    w.git("lead", &["fetch", "-q", "origin", "main"]);
+    let run = w.cli(&["merge", "A-1", "--json"]);
+    expect(&run, 0, &[]);
+    assert_eq!(
+        (
+            &out(&run)["lint"],
+            &out(&run)["pushed"],
+            &out(&run)["landing"]
+        ),
+        (&json!("ran"), &json!(true), &json!("landed"))
+    );
+    assert!(w.contains(sha.as_str(), "origin/main") && w.contains(theirs.as_str(), "origin/main"));
+    assert!(w.state().completions.is_empty());
+
+    // 같은 파일을 양쪽이 바꿨다
+    let next = w.commit("dev", "src/b.py", "print('ours')\n");
+    w.report("B-2", &next);
+    expect(&w.cli(&["merge", "B-2", "--no-push"]), 0, &[]);
+    w.git("other", &["pull", "-q", "--no-rebase", "origin", "main"]);
+    w.commit("other", "src/other.py", "print(3)\n");
+    w.git("other", &["push", "-q", "origin", "main"]);
+    w.commit("lead", "src/other.py", "print(4)\n");
+    w.git("lead", &["fetch", "-q", "origin", "main"]);
+    expect(
+        &w.cli(&["merge", "B-2"]),
+        3,
+        &["FullOps[M-03]", "src/other.py", "--continue"],
+    );
+    w.sb.write(&w.lead().join("src/other.py"), "print(34)\n");
+    w.git("lead", &["add", "-A"]);
+    let run = w.cli(&["merge", "B-2", "--continue", "--json"]);
+    expect(&run, 0, &[]);
+    assert_eq!(
+        (&out(&run)["lint"], &out(&run)["landing"]),
+        (&json!("ran"), &json!("landed"))
+    );
+    assert!(w.contains(next.as_str(), "origin/main"));
 }

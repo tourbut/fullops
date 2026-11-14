@@ -153,7 +153,7 @@ pub struct Changes {
 }
 
 /// 세션이 만든 변경(6.6절 `changed()`). `merged`는 `merged_in`의 결과이고 lead가 아니면 비운다:
-/// 병합으로 들어온 커밋이 바꾼 파일은 대상에서 뺀다(그 통합은 X-06이 맡는다).
+/// 병합으로 들어온 그대로인 파일(내용이 그 SHA의 것과 같다)은 대상에서 뺀다(그 통합은 X-06이 맡는다).
 pub fn changed(
     git: &mut GitGate,
     repo: &Repo,
@@ -172,8 +172,9 @@ pub fn changed(
             if names.is_empty() {
                 break;
             }
-            let theirs = know!(git.ask(|g| g.diff_names(start.as_str(), sha.as_str())));
-            names.retain(|path| !theirs.contains(path));
+            // 경로가 아니라 내용으로 가린다: 병합 뒤 lead가 그 파일을 더 고쳤으면 lead의 변경이다
+            let differs = know!(git.ask(|g| g.diff_names(sha.as_str(), head.as_str())));
+            names.retain(|path| differs.contains(path));
         }
     }
     let mut status = know!(git.ask(|g| g.status(None)));
@@ -254,11 +255,24 @@ pub fn pass_covers(
     if pass.head != *head && !know!(git.only_records_since(&pass.head, head)) {
         return Known::Yes(None);
     }
+    // 검사한 범위(pass.base..pass.head)가 요구 범위를 덮어야 한다. `--from HEAD`처럼 좁힌 기록은 인정하지 않는다
     let covers = match start {
         Some(start) if pass.base != *start => {
             know!(git.ask(|g| g.is_ancestor(pass.base.as_str(), start.as_str())))
+                && pass.config_sha256 == know!(config_at(git, start))
         }
         _ => true,
     };
     Known::Yes(covers.then_some(pass))
+}
+
+/// 그 커밋의 `lint.json` 지문. 더 옛 조상부터 돈 lint가 그때의 느슨한 설정으로 통과한 것을 가려낸다.
+fn config_at(git: &mut GitGate, rev: &Sha) -> Known<String> {
+    let item = [(rev.to_string(), LINT_JSON.to_string())];
+    let blobs = know!(git.ask(|g| g.show_blobs(&item)));
+    let blob = blobs.first().and_then(|blob| blob.as_deref());
+    Known::Yes(fullops_core::lint_rules::config_sha256(
+        blob,
+        assets::LINT_JSON,
+    ))
 }

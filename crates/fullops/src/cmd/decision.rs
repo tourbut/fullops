@@ -2,7 +2,9 @@
 
 use super::hold::{commit, load_state, refused, task_key, value};
 use crate::cli::{CliError, Ctx, EXIT_OK};
-use fullops_core::model::{Decision, DecisionId, DecisionStatus, Origin, Sha, State, TaskKey};
+use fullops_core::model::{
+    Decision, DecisionId, DecisionStatus, Origin, Sha, State, TaskKey, TurnKind,
+};
 use fullops_ext::GitCli;
 use lexopt::prelude::*;
 use serde_json::json;
@@ -54,6 +56,17 @@ pub(super) fn open(state: &mut State, ask: Ask, now: i64) -> DecisionId {
 
 pub(super) fn expired(decision: &Decision, now: i64) -> bool {
     decision.expires_at.is_some_and(|at| now > at)
+}
+
+/// 결정을 연 뒤에 사람 턴(`turns.jsonl`의 human. lead 세션의 사람 입력만 이 종류로 적힌다)이 있는가.
+/// 에이전트가 사람 결정을 스스로 답하지 못하게 한다. `None`은 턴 기록이 없는 환경(hook이 돌지 않는다)이라 가릴 수 없다는 뜻이다.
+fn human_turn(ctx: &Ctx, decision: &Decision) -> Result<Option<bool>, CliError> {
+    let turns = fullops_store::read_turns(ctx.repo()?)
+        .yes()
+        .unwrap_or_default();
+    let after =
+        |t: &fullops_core::model::Turn| t.kind == TurnKind::Human && t.at > decision.asked_at;
+    Ok((!turns.is_empty()).then(|| turns.iter().any(after)))
 }
 
 fn origin(text: &str) -> Result<Origin, CliError> {
@@ -154,6 +167,7 @@ fn close(ctx: &Ctx, mut args: lexopt::Parser, drop: bool) -> Result<u8, CliError
     if decision.status != DecisionStatus::Open {
         return already(decision);
     }
+    let mut verified = false;
     if !drop {
         if let Some(fixed) = &decision.sha
             && given.as_ref() != Some(fixed)
@@ -171,6 +185,16 @@ fn close(ctx: &Ctx, mut args: lexopt::Parser, drop: bool) -> Result<u8, CliError
                 &[&id, who, &decision.allow.join(", ")],
             ));
         }
+        // 봇이 연 결정에 봇이 답하는 길(8.10절)은 턴 기록과 무관하다
+        let bot = via == Some(Origin::Bot) && decision.origin == Origin::Bot;
+        match human_turn(ctx, decision)? {
+            _ if bot => {}
+            Some(false) => return Err(refused("DC-04", "", &[&id])),
+            Some(true) => verified = true,
+            None => ctx.note(
+                "사람 턴 기록이 없어(hook이 돌지 않는 환경) 사람의 답인지 확인하지 못했습니다. 기록에 `human_turn: false`로 남깁니다.",
+            ),
+        }
     }
     // 잠금 안에서 다시 본다: 그 사이 다른 쪽이 먼저 닫았으면 덮어쓰지 않는다
     let closed = ctx.update_state(None, |state| {
@@ -185,6 +209,7 @@ fn close(ctx: &Ctx, mut args: lexopt::Parser, drop: bool) -> Result<u8, CliError
                 decision.answer = Some(text.clone());
                 decision.decided_by = by.clone();
                 decision.via = Some(via.unwrap_or(Origin::User));
+                decision.extra.insert("human_turn".into(), verified.into());
             }
             return None;
         }

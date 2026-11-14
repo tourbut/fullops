@@ -1,5 +1,6 @@
 //! `fullops merge`: 리뷰 판정, 병합, lint, push, 기록, 동기화(설계 8.8절).
-//! 어느 단계에서 끊겨도 다시 실행하면 이어 간다: 이미 병합된 SHA는 M-04~M-06을, 병합 기록 커밋이 있으면 M-07·M-08을 건너뛴다.
+//! 어느 단계에서 끊겨도 다시 실행하면 이어 간다: 병합 기록 커밋이 있으면 M-04~M-08을 건너뛴다.
+//! 기록 커밋 없이 기본 브랜치에 들어와 있는 SHA(날것 `git merge`)는 push 전이면 M-04·M-05를 다시 판정한다.
 
 use super::decision::{self, Ask};
 use super::hold::{
@@ -10,6 +11,7 @@ use super::review::{self, Evidence};
 use super::sync::{self, SyncReport};
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK, session_handle};
+use crate::hook::changes::{self, GitGate};
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
     AckBy, Completion, Decision, DecisionId, DecisionStatus, Derived, Dispatch, DispatchId,
@@ -96,11 +98,13 @@ fn review_gate(ctx: &Ctx, state: &State, key: &TaskKey, need: &Need) -> Result<(
 }
 
 /// M-05: `reported.lint_head`, 없으면 worker 워크트리의 `lint/pass.json`이 SHA를 덮는가.
+/// `mb`는 병합할 변경의 시작(merge-base)이다. `done`이 범위를 확인하지 않은 `pass.json`은 `mb`부터 검사한 것만 받는다.
 fn lint_ok(
     git: &GitCli,
     state: &State,
     worktrees: &[Worktree],
     completion: &Completion,
+    mb: &Sha,
     sha: &Sha,
 ) -> bool {
     let dispatch = completion
@@ -110,17 +114,19 @@ fn lint_ok(
     let reported = dispatch
         .and_then(|d| d.reported.as_ref())
         .and_then(|r| r.lint_head.clone());
-    let passed = || {
-        let of_branch = |w: &&Worktree| w.branch.is_some() && w.branch == completion.branch;
-        let path = dispatch
-            .map(|d| PathBuf::from(&d.worktree))
-            .or_else(|| worktrees.iter().find(of_branch).map(|w| w.path.clone()))?;
-        let repo = fullops_store::discover(&path).ok()??;
-        Some(fullops_store::read_lint_pass(&repo).yes()??.head)
-    };
-    reported
-        .or_else(passed)
-        .is_some_and(|head| review::covers(git, &head, sha))
+    if let Some(head) = reported {
+        return review::covers(git, &head, sha);
+    }
+    let of_branch = |w: &&Worktree| w.branch.is_some() && w.branch == completion.branch;
+    let path = dispatch
+        .map(|d| PathBuf::from(&d.worktree))
+        .or_else(|| worktrees.iter().find(of_branch).map(|w| w.path.clone()));
+    let repo = path.and_then(|path| fullops_store::discover(&path).ok().flatten());
+    repo.is_some_and(|repo| {
+        let mut gate = GitGate::cli(git.repo_root.clone());
+        let pass = changes::pass_covers(&mut gate, &repo, sha, Some(mb));
+        pass.yes().flatten().is_some()
+    })
 }
 
 /// 기본 워크트리에서 `fullops lint --from <병합 전 tip>`을 한 번 돌린다(M-07). 실패하면 출력의 끝 몇 줄을 돌려준다.
@@ -360,7 +366,37 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         return Err(refused("M-03", "nowt", &[&config.base]));
     };
     let base = GitCli::cli(base_wt.clone());
-    let merging = base.rev_parse("MERGE_HEAD").yes().is_some();
+    let merge_head = base.rev_parse("MERGE_HEAD").yes();
+    let merging = merge_head.is_some();
+    let upstream = config.base_ref();
+    let unmerged = || -> String {
+        let entries = base.status(None).yes().unwrap_or_default();
+        let conflicted = entries.into_iter().filter(|e| {
+            matches!(
+                (e.index, e.worktree),
+                ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D')
+            )
+        });
+        conflicted.map(|e| e.path).collect::<Vec<_>>().join(", ")
+    };
+    // 충돌을 푼 병합을 끝낸다(`--continue`)
+    let finish = || {
+        let argv = ["commit", "--no-edit", "--quiet"];
+        let out = git_in(&base_wt, &argv, Duration::from_secs(60));
+        if out.ok() {
+            return Ok(());
+        }
+        let why = out.stderr_text();
+        let why = why.lines().next().unwrap_or("해결되지 않은 파일이 있다");
+        Err(CliError::Human {
+            decision: None,
+            message: msg::human("M-06", "", &[k, why]),
+        })
+    };
+    // 진행 중인 병합이 이 과제의 SHA면 게이트(M-04·M-05)를 다시 본 뒤 M-06에서 끝낸다
+    let ours = merge_head.as_ref() == Some(&sha);
+    // 원격이 먼저 나아가 통합 기준 ref를 합쳤으면, 합치기 전의 로컬 tip
+    let mut rejoined = None;
     if abort {
         if merging {
             base.merge_abort(&base_wt)?;
@@ -377,18 +413,12 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         if !resume {
             return Err(refused("M-03", "merging", &[k]));
         }
-        let out = git_in(
-            &base_wt,
-            &["commit", "--no-edit", "--quiet"],
-            Duration::from_secs(60),
-        );
-        if !out.ok() {
-            let why = out.stderr_text();
-            let why = why.lines().next().unwrap_or("해결되지 않은 파일이 있다");
-            return Err(CliError::Human {
-                decision: None,
-                message: msg::human("M-06", "", &[k, why]),
-            });
+        if !ours {
+            let local = known(base.rev_parse("HEAD"), "기본 브랜치 tip")?;
+            finish()?;
+            if merge_head == git.rev_parse(&upstream).yes() {
+                rejoined = Some(local);
+            }
         }
     } else {
         // 기록 경로의 미커밋 변경(리뷰 파일, PLANS.md)은 병합 기록 커밋이 담으므로 더러운 것으로 세지 않는다
@@ -403,26 +433,58 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             return Err(refused("M-03", "dirty", &[&path, &dirty.join(", ")]));
         }
         fetch(ctx, &git, config)?;
-        let upstream = config.base_ref();
-        if config.remote.is_some() && git.rev_parse(&upstream).yes().is_some() {
-            base.merge(&base_wt, &upstream, MergeMode::FfOnly)
-                .map_err(|e| {
-                    CliError::External(format!(
+        if config.remote.is_some()
+            && git.rev_parse(&upstream).yes().is_some()
+            && let Err(e) = base.merge(&base_wt, &upstream, MergeMode::FfOnly)
+        {
+            // 로컬에 push하지 못한 커밋이 있는데 원격이 먼저 나아갔다: 통합 기준 ref를 병합해 잇는다
+            let local = known(base.rev_parse("HEAD"), "기본 브랜치 tip")?;
+            match base.merge(&base_wt, &upstream, MergeMode::NoEdit) {
+                Ok(MergeOutcome::Done) => rejoined = Some(local),
+                Ok(MergeOutcome::Conflict) => {
+                    return Err(CliError::Human {
+                        decision: None,
+                        message: msg::human("M-03", "diverged", &[k, &upstream, &unmerged()]),
+                    });
+                }
+                Err(_) => {
+                    return Err(CliError::External(format!(
                         "기본 브랜치를 {upstream}로 fast-forward하지 못했습니다: {e}"
-                    ))
-                })?;
+                    )));
+                }
+            }
         }
     }
 
     let before = known(base.rev_parse("HEAD"), "기본 브랜치 tip")?;
     let merged = known(base.is_ancestor(sha.as_str(), "HEAD"), "조상 관계")?;
     let landed = known(landing(&git, config, &sha), "통합 위치")? == Landing::Landed;
+    // 병합 기록 커밋이 있으면 `fullops merge`가 게이트를 거쳐 병합한 SHA다
+    let subject = format!("fullops: 병합 기록 {key}");
+    let range = format!("{sha}..HEAD");
+    let log = git_in(
+        &base_wt,
+        &["log", "--ancestry-path", "--format=%s", &range],
+        Duration::from_secs(30),
+    );
+    let recorded = log.ok() && log.stdout_text().lines().any(|l| l == subject);
+    // 게이트 없이(날것 git merge·push) 통합 기준 ref에 이미 들어간 SHA. 막을 것이 없으므로 그 사실만 남긴다
+    let ungated = landed && !recorded;
     let mut body = Vec::new();
-    if merged {
-        body.push("리뷰 판정: 이미 기본 브랜치에 병합된 SHA라 다시 판정하지 않았다".to_string());
-    } else {
-        // M-04
-        let mb = known(git.merge_base(before.as_str(), sha.as_str()), "merge-base")?;
+    if ungated {
+        body.push(
+            "리뷰 판정: 병합 기록 커밋 없이 통합된 SHA라 리뷰·lint를 판정하지 못했다".to_string(),
+        );
+    } else if !recorded {
+        // M-04. 날것 git merge로 먼저 들어온 SHA는 통합 기준 ref에서 갈라진 곳부터 본다
+        if merged {
+            ctx.note(&format!(
+                "{k} {}: 병합 기록 커밋 없이 기본 브랜치에 들어와 있어 push 전에 리뷰·lint 판정을 다시 합니다.",
+                sha.short(7)
+            ));
+        }
+        let from = if merged { &upstream } else { before.as_str() };
+        let mb = known(git.merge_base(from, sha.as_str()), "merge-base")?;
         let (need, fell_back) = review::need_for(&git, &mb, &sha)?;
         if fell_back {
             ctx.note("기준 시점 설정을 읽지 못해 기본값을 썼습니다.");
@@ -435,30 +497,21 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         match &accept_lint {
             Some(reason) => body.push(format!("lint 증거 없이 병합: {reason}")),
             None if need.code_files > 0
-                && !lint_ok(&git, &state, &worktrees, &completion, &sha) =>
+                && !lint_ok(&git, &state, &worktrees, &completion, &mb, &sha) =>
             {
                 return Err(refused("M-05", "", &[k, sha.short(7)]));
             }
             None => {}
         }
         // M-06
-        if base.merge(&base_wt, sha.as_str(), MergeMode::NoEdit)? == MergeOutcome::Conflict {
-            let unmerged: Vec<String> = base
-                .status(None)
-                .yes()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|e| {
-                    matches!(
-                        (e.index, e.worktree),
-                        ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D')
-                    )
-                })
-                .map(|e| e.path)
-                .collect();
+        if ours {
+            finish()?;
+        } else if !merged
+            && base.merge(&base_wt, sha.as_str(), MergeMode::NoEdit)? == MergeOutcome::Conflict
+        {
             return Err(CliError::Human {
                 decision: None,
-                message: msg::human("M-06", "", &[k, &unmerged.join(", ")]),
+                message: msg::human("M-06", "", &[k, &unmerged()]),
             });
         }
     }
@@ -470,34 +523,30 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         (false, true) => "ff",
         (false, false) => "merge",
     };
-    let subject = format!("fullops: 병합 기록 {key}");
-    let range = format!("{sha}..HEAD");
-    let log = git_in(
-        &base_wt,
-        &["log", "--ancestry-path", "--format=%s", &range],
-        Duration::from_secs(30),
-    );
-    let recorded = log.ok() && log.stdout_text().lines().any(|l| l == subject);
     let mut lint = "reused";
-    if !recorded {
-        // 병합 전 tip: 이번에 병합했으면 그때의 HEAD, 다시 실행이면 병합 커밋의 첫 부모
-        let pre = match merged {
-            false => Some(before.clone()),
-            true if base.rev_parse("HEAD^2").yes().as_ref() == Some(&sha) => {
-                base.rev_parse("HEAD^1").yes()
-            }
-            true => None,
-        };
-        let tree = |rev: &str| base.rev_parse(&format!("{rev}^{{tree}}")).yes();
-        if let (false, Some(pre)) = (landed, pre)
-            && tree("HEAD") != tree(sha.as_str())
-        {
-            if let Err(tail) = run_lint(&base_wt, &pre) {
-                base.reset_keep(&base_wt, pre.as_str())?;
-                return Err(refused("M-07", "", &[k, pre.short(7), &tail]));
-            }
-            lint = "ran";
+    // 병합 전 tip: 이번에 병합했으면 그때의 HEAD, 다시 실행이면 병합 커밋의 첫 부모.
+    // 원격의 변경을 합쳤으면 push할 전부(통합 기준 ref부터)를 다시 본다
+    let pre = match (&rejoined, merged) {
+        (Some(_), _) => git.rev_parse(&upstream).yes(),
+        _ if recorded || landed => None,
+        (None, false) => Some(before.clone()),
+        (None, true) if base.rev_parse("HEAD^2").yes().as_ref() == Some(&sha) => {
+            base.rev_parse("HEAD^1").yes()
         }
+        (None, true) => None,
+    };
+    let tree = |rev: &str| base.rev_parse(&format!("{rev}^{{tree}}")).yes();
+    if let Some(pre) = pre
+        && (rejoined.is_some() || tree("HEAD") != tree(sha.as_str()))
+    {
+        if let Err(tail) = run_lint(&base_wt, &pre) {
+            let back = rejoined.as_ref().unwrap_or(&pre);
+            base.reset_keep(&base_wt, back.as_str())?;
+            return Err(refused("M-07", "", &[k, back.short(7), &tail]));
+        }
+        lint = "ran";
+    }
+    if !recorded {
         body.push(
             match lint {
                 "ran" => "lint: 병합 결과의 트리가 달라 병합 뒤 한 번 실행했다",
@@ -513,7 +562,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         (Some(remote), false) => {
             git.push(remote, &config.base).map_err(|e| {
                 CliError::External(format!(
-                    "git push {remote} {}가 실패했습니다: {e} 완료 보고는 통합 대기로 남았습니다. 다시 실행하면 push만 합니다.",
+                    "git push {remote} {}가 실패했습니다: {e} 완료 보고는 통합 대기로 남았습니다. 다시 실행하면 push만 합니다. 원격이 먼저 나아가 거절됐으면 `FULLOPS_OFFLINE` 없이 다시 실행해 원격의 변경을 합칩니다.",
                     config.base
                 ))
             })?;
@@ -657,8 +706,13 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     let left_text: Vec<&str> = left.iter().map(String::as_str).collect();
     ctx.print(
         &format!(
-            "{key} 병합: {} ({how}, lint {lint}, 통합 위치 {place}).\n동기화한 역할: {}. 예약으로 남은 역할: {}.\n미처리 메시지: {}. 미정산 dispatch: {}.\n준비된 행: {}.\n다음: {}",
+            "{key} 병합: {} ({how}, lint {lint}, 통합 위치 {place}).{}\n동기화한 역할: {}. 예약으로 남은 역할: {}.\n미처리 메시지: {}. 미정산 dispatch: {}.\n준비된 행: {}.\n다음: {}",
             sha.short(7),
+            if ungated {
+                " 이 SHA는 병합 기록 커밋 없이 통합돼 있어 리뷰·lint 게이트를 판정하지 못했습니다."
+            } else {
+                ""
+            },
             list(&done),
             list(&left_text),
             list(&unacked),
@@ -668,6 +722,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         ),
         json!({
             "key": key, "sha": sha, "merge": how, "lint": lint, "pushed": pushed, "landing": place,
+            "ungated": ungated,
             "synced": done, "sync_pending": left, "unacked": unacked, "unsettled": working,
             "ready": ready, "next": next,
         }),

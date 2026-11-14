@@ -357,6 +357,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     }
 
     // 4. 바뀐 파일과 추가된 줄
+    // 추가 줄은 git의 diff에서 얻는다. git이 그 파일의 diff를 내지 않았는데 글이 다르면 아래에서 모든 줄을 추가된 것으로 본다
     let items = known(git.name_status(mb.as_str(), head.as_str()))?;
     let added = rules::added_lines(&known(git.diff_u0(mb.as_str(), head.as_str()))?);
     let old_path = |item: &fullops_ext::NameStatus| match item.status {
@@ -409,15 +410,18 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             findings.extend(rules::deleted_test_finding(&item.path));
             continue;
         }
-        let old = match &old_path {
-            Some(path) => match contents.get(&at(&mb, path)) {
-                Some(old) => Some(old.as_str()),
-                None => continue,
-            },
-            None => None,
-        };
+        // 기준 시점의 글이 바이너리(UTF-16 등)였으면 새 파일처럼 검사한다
+        let old = old_path
+            .as_ref()
+            .and_then(|path| contents.get(&at(&mb, path)))
+            .map(String::as_str);
         let Some(new) = new else { continue };
-        let lines = added.get(&item.path).cloned().unwrap_or_default();
+        let lines = match added.get(&item.path) {
+            Some(lines) => lines.clone(),
+            // 속성·설정이 diff를 가렸거나 옛 글이 바이너리였다: 검사하지 못한 줄을 통과로 치지 않는다
+            None if old != Some(new) => (1..=new.lines().count() as u32).collect(),
+            None => Vec::new(),
+        };
         added_total += lines.len() as u32;
         let change = FileChange {
             path: &item.path,

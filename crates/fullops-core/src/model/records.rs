@@ -167,8 +167,14 @@ pub struct Waiver {
     pub head: Sha,
     pub reason: String,
     pub decision: DecisionId,
-    /// 항상 `user`.
+    /// 결정에 답한 사람(`--by`). 없으면 답이 온 길(`user`·`bot`)이다.
     pub decided_by: String,
+    /// 결정의 `via`.
+    #[serde(default)]
+    pub via: Option<Origin>,
+    /// 결정을 연 뒤의 사람 턴을 확인하고 받은 답인가(8.10절). hook이 돌지 않는 환경의 답은 거짓이다.
+    #[serde(default)]
+    pub human_turn: bool,
     pub need: Need,
     pub at: i64,
 }
@@ -181,12 +187,14 @@ pub enum ReviewEvidence {
     None,
 }
 
-/// `git diff --numstat`의 한 줄. 바이너리 파일은 줄 수가 0이다.
+/// `git diff --numstat`의 한 줄. 바이너리 파일은 줄 수가 0이고 `binary`가 참이다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileStat {
     pub path: String,
     pub added: u32,
     pub deleted: u32,
+    /// git이 줄 수를 세지 못했다.
+    pub binary: bool,
 }
 
 /// `git ls-tree -r`의 한 줄(설계 10.2절). `fullops-store::update_index`도 받으므로 core에 둔다.

@@ -356,8 +356,23 @@ fn snapshot(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     };
     let caller = ctx.caller()?;
     let reporter = || {
-        let dispatch = state.dispatch(completion.as_ref()?.dispatch.as_ref()?)?;
-        Some(dispatch.bound_session.as_ref()?.to_string())
+        let reported = || state.dispatch(completion.as_ref()?.dispatch.as_ref()?);
+        // 보고가 없는 SHA(`--sha`)는 그 과제의 가장 늦은 구현 배정이 만든 것으로 본다
+        let work = |d: &&fullops_core::model::Dispatch| d.key == key && d.counts() && d.is_work();
+        let latest = || {
+            state
+                .dispatches
+                .iter()
+                .filter(work)
+                .max_by_key(|d| d.started_at)
+        };
+        Some(
+            reported()
+                .or_else(latest)?
+                .bound_session
+                .as_ref()?
+                .to_string(),
+        )
     };
     let own = || {
         caller
@@ -370,7 +385,12 @@ fn snapshot(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         .get("implementer-session")
         .map(str::to_string)
         .or_else(reporter)
-        .or_else(own);
+        .or_else(own)
+        .filter(|s| !s.trim().is_empty());
+    // 구현자를 모르면 check가 독립 검토인지 가릴 수 없다(RV-04)
+    if implementer.is_none() {
+        return Err(refused("RV-00", "implementer", &[key.as_str()]));
+    }
     let record = Snapshot {
         review: review.clone(),
         path: path_text(&path),
@@ -521,10 +541,16 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     if targets.base != subject.base || targets.head != subject.head || subject.stale {
         fail(1, "targets.json의 base·head가 지금 리뷰할 것과 다릅니다.");
     }
-    for (item, why) in check_result(&targets, &result) {
+    let review = format!("{key}@{}", subject.head.short(12));
+    // 구현자 세션은 snapshot을 만들 때 state에 적은 값이다. 그 기록이 정리됐을 때만 result.json의 값을 쓴다
+    let snapshot = state.snapshots.iter().rev().find(|s| s.review == review);
+    let implementer = match snapshot {
+        Some(snapshot) => snapshot.implementer_session.clone(),
+        None => result.implementer_session.clone(),
+    };
+    for (item, why) in check_result(&targets, &result, implementer.as_deref()) {
         fail(item as usize, &why);
     }
-    let review = format!("{key}@{}", subject.head.short(12));
     let active = |s: &&Snapshot| s.review == review && s.state == SnapshotState::Active;
     if let Some(snapshot) = state.snapshots.iter().find(active) {
         let path = PathBuf::from(&snapshot.path);
@@ -561,6 +587,16 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
             fail(9, "lint.json의 head가 리뷰 head를 덮지 못합니다.")
         }
         Some(lint) => {
+            // 검사한 범위가 리뷰 범위를 덮어야 한다. `lint --from HEAD`처럼 좁힌 결과는 받지 않는다
+            let from = lint.merge_base.as_str();
+            if lint.merge_base != targets.base
+                && git.is_ancestor(from, targets.base.as_str()).yes() != Some(true)
+            {
+                fail(
+                    9,
+                    "lint가 리뷰 base부터 검사하지 않았습니다(lint.json의 merge_base가 리뷰 base나 그 조상이 아니다).",
+                );
+            }
             let at = blobs(&git, &targets.base, &[LINT_JSON.to_string()]);
             if lint.config_sha256 != config_sha256(at[0].as_deref(), assets::LINT_JSON) {
                 fail(
@@ -596,7 +632,7 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
             result_sha256: hash("result.json"),
             lint_sha256: hash("lint.json"),
             reviewer_session: result.reviewer_session.clone().unwrap_or_default(),
-            implementer_session: result.implementer_session.clone(),
+            implementer_session: implementer,
             at: fullops_store::now(),
         };
         fullops_store::write_json(&dir.join("accepted.json"), &record)?;
@@ -652,6 +688,13 @@ fn waive(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         return Err(refused("RV-00", "exists", &[&rel(repo, path)]));
     }
     let (need, _) = need_for(&git, &subject.base, &subject.head)?;
+    let via = decision.via.unwrap_or(fullops_core::model::Origin::User);
+    let human_turn = decision.extra.get("human_turn") == Some(&json!(true));
+    if !human_turn {
+        ctx.note(&format!(
+            "결정 {id}의 답은 사람 턴을 확인하지 못한 채 기록된 것입니다. 면제 기록에 그대로 남깁니다."
+        ));
+    }
     let record = Waiver {
         v: 1,
         key: key.clone(),
@@ -659,7 +702,12 @@ fn waive(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         head: subject.head.clone(),
         reason: reason.to_string(),
         decision: decision.id.clone(),
-        decided_by: "user".into(),
+        decided_by: decision
+            .decided_by
+            .clone()
+            .unwrap_or_else(|| via.to_string()),
+        via: Some(via),
+        human_turn,
         need,
         at: fullops_store::now(),
     };

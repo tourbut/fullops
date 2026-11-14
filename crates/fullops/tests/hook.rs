@@ -1055,6 +1055,8 @@ fn direct_dev_needs_review_evidence() {
         reason: "긴급".into(),
         decision: DecisionId::from_number(1),
         decided_by: "user".into(),
+        via: None,
+        human_turn: true,
         need,
         at: 2,
     };
@@ -1305,7 +1307,9 @@ fn snapshot_session_is_a_reviewer() {
         "role": "dev", "branch": "fullops/dev", "sha": sha, "sha_source": "done",
         "outcome": "succeeded", "received_at": 20}]}),
     );
-    let made = h.sb.cli(&lead, &["review", "snapshot", "A-1"]);
+    // 보고에 묶인 dispatch가 없어 구현자 세션을 직접 준다
+    let args = ["review", "snapshot", "A-1", "--implementer-session", "w"];
+    let made = h.sb.cli(&lead, &args);
     assert_eq!(made.code, Some(0), "{}", made.stderr);
     let snapshot = h.state().snapshots[0].clone();
     assert_eq!(snapshot.state, SnapshotState::Active);

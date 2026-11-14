@@ -27,8 +27,16 @@ pub fn review_need(
         .filter(|f| always.is_match(&f.path))
         .map(|f| f.path.clone())
         .collect();
-    let required =
-        !forced.is_empty() || lines >= policy.min_code_lines || files >= policy.min_code_files;
+    // git이 줄 수를 세지 못한 코드 파일(속성으로 바이너리가 된 것 포함)은 작다고 보지 않는다
+    let uncounted: Vec<&str> = numstat
+        .iter()
+        .filter(|f| f.binary && is_code(&f.path, code, exclude))
+        .map(|f| f.path.as_str())
+        .collect();
+    let required = !forced.is_empty()
+        || !uncounted.is_empty()
+        || lines >= policy.min_code_lines
+        || files >= policy.min_code_files;
     let limits = format!(
         "기준 {}개 또는 {}줄",
         policy.min_code_files, policy.min_code_lines
@@ -36,6 +44,9 @@ pub fn review_need(
     let reason = if !forced.is_empty() {
         let shown: Vec<&str> = forced.iter().take(5).map(String::as_str).collect();
         format!("review.always 경로 변경: {}", shown.join(", "))
+    } else if !uncounted.is_empty() {
+        let shown: Vec<&str> = uncounted.iter().take(5).copied().collect();
+        format!("줄 수를 세지 못한 코드 파일 변경: {}", shown.join(", "))
     } else if required {
         format!("대규모 코드 변경: 코드 파일 {files}개, {lines}줄({limits})")
     } else {
@@ -211,7 +222,12 @@ impl ReviewResult {
 }
 
 /// `check`의 2·3·4·6·7번(설계 8.9절). 걸린 항목의 번호와 사유를 돌려준다.
-pub fn check_result(targets: &Targets, result: &ReviewResult) -> Vec<(u8, String)> {
+/// `implementer`는 snapshot을 만들 때 적어 둔 구현자 세션이다. 리뷰어가 쓰는 `result.json`의 값은 믿지 않는다.
+pub fn check_result(
+    targets: &Targets,
+    result: &ReviewResult,
+    implementer: Option<&str>,
+) -> Vec<(u8, String)> {
     let mut out = Vec::new();
     let mut expected: Vec<(&str, &str)> = targets
         .files
@@ -246,10 +262,17 @@ pub fn check_result(targets: &Targets, result: &ReviewResult) -> Vec<(u8, String
         ));
     }
     let reviewer = result.reviewer_session.as_deref().unwrap_or("").trim();
-    if reviewer.is_empty() || Some(reviewer) == result.implementer_session.as_deref() {
+    let implementer = implementer.map(str::trim).filter(|s| !s.is_empty());
+    if reviewer.is_empty() || Some(reviewer) == implementer {
         out.push((
             4,
             "reviewer_session이 비었거나 구현자 세션과 같습니다.".into(),
+        ));
+    } else if implementer.is_none() {
+        // 구현자를 모르면 독립 검토인지 확인할 수 없다
+        out.push((
+            4,
+            "구현자 세션이 기록되지 않아 독립 검토인지 확인할 수 없습니다.".into(),
         ));
     } else if !result.read_only {
         out.push((4, "read_only가 참이 아닙니다.".into()));
@@ -307,6 +330,7 @@ mod tests {
                 path: path.to_string(),
                 added: *added,
                 deleted: *deleted,
+                binary: false,
             })
             .collect();
         let exclude = globs(&["**/vendor/**".to_string()]);
@@ -391,7 +415,8 @@ mod tests {
         };
         let mut result = result_skeleton(&targets, Some("impl".into()), "/tmp/snap");
         let numbers = |r: &ReviewResult| -> Vec<u8> {
-            check_result(&targets, r).iter().map(|(n, _)| *n).collect()
+            let found = check_result(&targets, r, Some("impl"));
+            found.iter().map(|(n, _)| *n).collect()
         };
         // 뼈대 그대로면 미검토 파일, 리뷰어 없음, 결론 없음
         assert_eq!(numbers(&result), [3, 4, 6]);
@@ -400,6 +425,12 @@ mod tests {
         result.conclusion = Some("accept".into());
         assert_eq!(numbers(&result), [4]);
         result.reviewer_session = Some("rev".into());
+        // 구현자 세션을 모르면 어떤 리뷰어도 독립 검토로 인정하지 않는다. result.json의 값은 보지 않는다
+        let unknown: Vec<u8> = check_result(&targets, &result, None)
+            .iter()
+            .map(|(n, _)| *n)
+            .collect();
+        assert_eq!(unknown, [4]);
         result.findings.push(ReviewFinding {
             severity: "high".into(),
             ..ReviewFinding::default()

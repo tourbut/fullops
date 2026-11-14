@@ -664,3 +664,69 @@ fn doc_stamp_rewrites_front_matter_in_fixed_order() {
     assert_eq!(run.code, Some(1), "{run:?}");
     assert!(run.stderr.contains("front matter를 읽을 수 없습니다"));
 }
+
+/// 검증 R1-2: 브랜치가 커밋한 `.gitattributes`의 `-diff`나 저장소 설정 `diff.noprefix`가 추가 줄 검사를 끄지 못한다.
+#[test]
+fn attributes_and_diff_config_do_not_blind_added_line_checks() {
+    let sb = Sandbox::with(&Setup::default());
+    let dev = sb.path("dev");
+    let codes = |run: &Run| -> Vec<String> {
+        let findings = stdout_json(run)["findings"].as_array().unwrap().clone();
+        let code = |f: &Value| f["code"].as_str().unwrap().to_string();
+        findings.iter().map(code).collect()
+    };
+    sb.write(
+        &dev.join("src/a.py"),
+        "x = eval(input())\npassword = \"hunter2hunter2\"\n",
+    );
+    commit(&sb, &dev, "구현");
+    let honest = sb.cli(&dev, &["lint", "--json"]);
+    assert_eq!(honest.code, Some(2), "{honest:?}");
+
+    sb.write(&dev.join(".gitattributes"), "*.py -diff\n");
+    commit(&sb, &dev, "속성");
+    for (key, value) in [
+        ("diff.noprefix", "true"),
+        ("diff.mnemonicPrefix", "true"),
+        ("diff.external", "git --version"),
+    ] {
+        sb.git_ok(&dev, &["config", key, value]);
+        let run = sb.cli(&dev, &["lint", "--json"]);
+        assert_eq!(run.code, Some(2), "{key}: {run:?}");
+        assert_eq!(codes(&run), codes(&honest), "{key}");
+    }
+    assert!(codes(&honest).contains(&"ANTI-002".to_string()));
+    assert!(codes(&honest).contains(&"SEC-001".to_string()));
+}
+
+/// 검증 R1-9: 기준 시점의 글이 바이너리(UTF-16)였던 파일을 텍스트로 바꾸면 새 파일처럼 모든 줄을 검사한다.
+#[test]
+fn text_that_replaces_a_binary_blob_is_checked() {
+    let sb = Sandbox::with(&Setup::default());
+    let (lead, dev) = (sb.path("lead"), sb.path("dev"));
+    let utf16: Vec<u8> = "print(1)\n"
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect();
+    std::fs::create_dir_all(lead.join("src")).unwrap();
+    std::fs::write(lead.join("src/tool.py"), utf16).unwrap();
+    commit(&sb, &lead, "utf16");
+    sb.git_ok(&lead, &["push", "-q", "origin", "main"]);
+    sb.git_ok(&dev, &["merge", "-q", "main"]);
+    sb.write(
+        &dev.join("src/tool.py"),
+        "print(1)\nx = eval(input())\npassword = \"hunter2hunter2\"\n",
+    );
+    commit(&sb, &dev, "utf8");
+    let run = sb.cli(&dev, &["lint", "--json"]);
+    assert_eq!(run.code, Some(2), "{run:?}");
+    let findings = stdout_json(&run)["findings"].as_array().unwrap().clone();
+    let at = |code: &str| {
+        let hit = findings.iter().find(|f| f["code"] == code);
+        hit.map(|f| f["line"].clone())
+    };
+    assert_eq!(
+        (at("ANTI-002"), at("SEC-001")),
+        (Some(json!(2)), Some(json!(3)))
+    );
+}
