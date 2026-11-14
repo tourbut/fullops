@@ -730,3 +730,83 @@ fn text_that_replaces_a_binary_blob_is_checked() {
         (Some(json!(2)), Some(json!(3)))
     );
 }
+
+/// R2-7: lint.json의 명령도 PATH의 상대 항목(`.`)에 심은 실행 파일을 집지 않는다(다른 외부 호출과 같은 찾기 규칙).
+#[test]
+fn lint_commands_ignore_relative_path_entries() {
+    let sb = Sandbox::with(&Setup {
+        remote: false,
+        roles: Default::default(),
+        ..Setup::default()
+    });
+    let lead = sb.path("lead");
+    let exe = |name: &str| format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    // 확장자까지 적은 이름은 절대 경로 항목에서 그대로 찾는다
+    let config = json!({"schema_version": 1, "commands": [
+        {"name": "planted", "run": ["planted-tool"]},
+        {"name": "git", "run": [exe("git"), "--version"]}]});
+    sb.write(
+        &lead.join(".fullops-squad/lint/lint.json"),
+        &config.to_string(),
+    );
+    let base = commit(&sb, &lead, "기준");
+    sb.write(&lead.join("notes/a.txt"), "메모\n");
+    commit(&sb, &lead, "변경");
+    sb.write(
+        &lead.join(".git/info/exclude"),
+        &format!("{}\n", exe("planted-tool")),
+    );
+    std::fs::copy(
+        fullops_testkit::bin("fake-host"),
+        lead.join(exe("planted-tool")),
+    )
+    .unwrap();
+    let real_git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .find(|dir| dir.is_absolute() && dir.join(exe("git")).is_file())
+        .expect("PATH에 git이 있다");
+    let path = std::env::join_paths([PathBuf::from("."), sb.bin_dir.clone(), real_git]).unwrap();
+    // `Sandbox::fullops`는 상대 PATH를 절대 경로로 바꾸므로 명령을 직접 만든다
+    let mut cmd = sb.command(fullops_testkit::bin("fullops"), &lead);
+    cmd.args(["lint", "--from", &base]).env("PATH", path);
+    let run = sb.run(cmd, b"");
+    let result = read_json(&lint_dir(&sb, &lead).join("result.json"));
+    assert_eq!(result["commands"][0]["status"], "unrunnable", "{run:?}");
+    assert_eq!(result["commands"][1]["status"], "passed", "{run:?}");
+    assert!(sb.host_calls().is_empty(), "{:?}", sb.host_calls());
+}
+
+/// 설계 8.12절: `updated`는 지역 시간대의 오늘이다(UTC가 아니다). 시간대는 git이 아는 값(TZ)을 따른다.
+#[test]
+fn doc_stamp_dates_follow_the_local_time_zone() {
+    let sb = Sandbox::with(&Setup {
+        remote: false,
+        roles: Default::default(),
+        ..Setup::default()
+    });
+    let lead = sb.path("lead");
+    let note = squad(&sb).join("docs/notes/tz.md");
+    let date_in = |tz: &str| {
+        sb.write(&note, "# 시간대\n\n내용\n");
+        let args = [
+            "doc",
+            "stamp",
+            "--path",
+            "docs/notes/tz.md",
+            "--owner",
+            "lead",
+            "--summary",
+            "시간대",
+        ];
+        let run = sb.fullops(&lead, &args, &[("TZ", tz)], b"");
+        assert_eq!(run.code, Some(0), "{run:?}");
+        let text = std::fs::read_to_string(&note).unwrap();
+        text.lines()
+            .find_map(|l| l.strip_prefix("updated: "))
+            .unwrap()
+            .to_string()
+    };
+    // UTC+14와 UTC-11은 25시간 떨어져 있어 언제 돌려도 날짜가 다르다
+    let (east, west) = (date_in("XYZ-14"), date_in("XYZ+11"));
+    assert!(is_date(&east) && is_date(&west));
+    assert!(east > west, "{east} / {west}");
+}

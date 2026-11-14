@@ -10,10 +10,10 @@ pub mod trace;
 pub mod turns;
 
 pub use files::{
-    DepsError, append_archive, append_line, archive_keys, baseline, fixed_bin, fullops_home, home,
-    load_config, load_deps, now, parse_config, parse_deps, read_archive, read_current,
-    read_deps_state, read_inbox, read_json, read_lint_pass, read_plan, read_route, read_text,
-    write_atomic, write_current, write_deps_state, write_json, write_route,
+    DepsError, append_archive, append_line, archive_keys, archive_landed, baseline, fixed_bin,
+    fullops_home, home, load_config, load_deps, now, parse_config, parse_deps, read_archive,
+    read_current, read_deps_state, read_inbox, read_json, read_lint_pass, read_plan, read_route,
+    read_text, write_atomic, write_current, write_deps_state, write_json, write_route,
 };
 pub use fullops_core::model::{DepsState, Derived, HostInstall, path_text, same_path};
 pub use lock::{CLI_WAIT, HOOK_WAIT, LockGuard, StoreError};

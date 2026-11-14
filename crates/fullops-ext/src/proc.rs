@@ -152,12 +152,17 @@ pub fn find_program(name: &str) -> Option<PathBuf> {
         return known.clone();
     }
     let exts: Vec<String> = if cfg!(windows) {
-        std::env::var("PATHEXT")
+        let list: Vec<String> = std::env::var("PATHEXT")
             .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
             .split(';')
             .filter(|e| !e.is_empty())
             .map(str::to_lowercase)
-            .collect()
+            .collect();
+        // 확장자까지 적은 이름(`git.exe`, `npx.cmd`)은 그대로도 본다
+        let given = list
+            .iter()
+            .any(|e| name.to_lowercase().ends_with(e.as_str()));
+        given.then(String::new).into_iter().chain(list).collect()
     } else {
         vec![String::new()]
     };

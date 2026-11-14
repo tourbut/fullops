@@ -472,6 +472,7 @@ fn report(
     left: &[String],
 ) -> (Vec<Json>, String) {
     let (mut merges, mut ack_ids): (Vec<String>, Vec<&str>) = (Vec::new(), Vec::new());
+    let mut questions = Vec::new();
     // 과제 키 → 통합 대기인 보고들(받은 순서)
     let mut by_key: Vec<(&TaskKey, Vec<&MessageId>)> = Vec::new();
     let mut actionable = Vec::new();
@@ -495,6 +496,13 @@ fn report(
                 "`fullops completion set-sha {} <SHA> --key <KEY>` 뒤 `fullops merge <KEY>`",
                 m.id
             )),
+            (AckBy::Ack, _) if m.kind == "question" => {
+                questions.push(fullops_core::messages::flow::answer_question(
+                    run.as_str(),
+                    m.id.as_str(),
+                    key.map(TaskKey::as_str),
+                ))
+            }
             (AckBy::Ack, _) => ack_ids.push(m.id.as_str()),
         }
         let seen = received.seen.get(&m.id);
@@ -532,6 +540,7 @@ fn report(
             flags.join(" ")
         ));
     }
+    next.append(&mut questions);
     if !left.is_empty() {
         next.push(format!("이어서 할 일: {}", left.join(", ")));
     }

@@ -276,24 +276,6 @@ fn watch(pass: &'static str, started: Instant) {
     });
 }
 
-fn on_path(name: &str) -> bool {
-    if name.contains(['/', '\\']) {
-        return Path::new(name).exists();
-    }
-    let exts: Vec<String> = if cfg!(windows) {
-        let list = std::env::var("PATHEXT").unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".into());
-        std::iter::once(String::new())
-            .chain(list.split(';').map(str::to_string))
-            .collect()
-    } else {
-        vec![String::new()]
-    };
-    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).any(|dir| {
-        exts.iter()
-            .any(|ext| dir.join(format!("{name}{ext}")).is_file())
-    })
-}
-
 /// `a.b.c` 꼴의 버전. 읽지 못하면 `None`이다.
 fn version(text: &str) -> Option<(u64, u64, u64)> {
     let core = text.trim().split(['-', '+']).next()?;
@@ -342,7 +324,7 @@ fn scene(args: &HookArgs, repo: &Repo, event: EventKind, root: Option<&Path>) ->
     let mut missing = Vec::new();
     if start {
         for (label, program) in [("git", "git"), ("orca", orca.as_str())] {
-            if !on_path(program) {
+            if fullops_ext::hosts::find_program(program).is_none() {
                 missing.push(label.to_string());
             }
         }

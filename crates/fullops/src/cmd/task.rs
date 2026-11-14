@@ -32,6 +32,29 @@ pub(super) fn date_of(epoch: i64) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// 사람이 읽는 날짜(`updated`, 배정 기록)에 쓰는 지역 시간대 오프셋(초). 기계가 읽는 `*_at`에는 쓰지 않는다.
+/// 날짜 크레이트 없이 git이 아는 값(`git var GIT_COMMITTER_IDENT` 끝의 `+0900`)을 읽는다. 못 읽으면 0(UTC)이다.
+pub(super) fn local_offset(root: &std::path::Path) -> i64 {
+    // 신원 설정이 없는 레포에서도 `git var`가 실패하지 않게 이름·메일을 준다
+    let env = [
+        ("GIT_COMMITTER_NAME", "fullops"),
+        ("GIT_COMMITTER_EMAIL", "fullops@localhost"),
+    ];
+    let argv = ["git", "var", "GIT_COMMITTER_IDENT"].map(String::from);
+    let ident = fullops_ext::run(&argv, root, Duration::from_secs(10), &env, None).stdout_text();
+    let tz = ident.split_whitespace().last().unwrap_or_default();
+    let sign = match tz.get(..1) {
+        Some("+") => 1,
+        Some("-") => -1,
+        _ => return 0,
+    };
+    let num = |range: std::ops::Range<usize>| tz.get(range).and_then(|t| t.parse::<i64>().ok());
+    match (tz.len(), num(1..3), num(3..5)) {
+        (5, Some(h), Some(m)) => sign * (h * 3_600 + m * 60),
+        _ => 0,
+    }
+}
+
 struct Options {
     role: RoleId,
     key: TaskKey,
@@ -272,7 +295,10 @@ fn write_inbox(ctx: &Ctx, options: Options, reopen: bool) -> Result<u8, CliError
         ("id", text(&format!("handover-{role}"))),
         ("title", text(&title)),
         ("status", text("draft")),
-        ("updated", text(&date_of(fullops_store::now()))),
+        (
+            "updated",
+            text(&date_of(fullops_store::now() + local_offset(&repo.root))),
+        ),
         ("owner", text(role.as_str())),
         ("summary", text(&goal)),
         ("key", text(key.as_str())),

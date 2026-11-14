@@ -471,11 +471,10 @@ fn wait_takes_messages_that_arrive_between_peek_and_consume() {
         (json!("ack"), json!("ack"))
     );
     assert_eq!(got["actionable"][1]["body"], "어느 쪽");
+    let next = got["next"].as_str().unwrap();
+    assert!(next.contains("--ack msg_1 --no-wait"), "{got}");
     assert!(
-        got["next"]
-            .as_str()
-            .unwrap()
-            .contains("--ack msg_1 --ack msg_2 --no-wait"),
+        next.contains("`orca orchestration reply --id msg_2 --body \"<답>\"` 뒤 `fullops wait --run run_1 --ack msg_2 --no-wait`"),
         "{got}"
     );
     let st = state(sb);
@@ -490,6 +489,82 @@ fn wait_takes_messages_that_arrive_between_peek_and_consume() {
         .map(|c| c["argv"].to_string().contains("--peek"))
         .collect();
     assert_eq!(checks.get(..2), Some(&[true, false][..]));
+}
+
+/// worker 질문을 받은 lead가 `wait`의 다음 안내만 따라 답하고 표시까지 닫는다(R6-4). hook은 날것 `reply`를 막지 않는다.
+#[test]
+fn wait_question_next_leads_to_reply_and_ack() {
+    let mut d = Driver::new(&Setup::default());
+    steps(&mut d, DISPATCH);
+    let sb = &d.sb;
+    sb.orca_mail(
+        "run_1",
+        orca_shapes::message(
+            "msg_q",
+            "question",
+            "ctx_1",
+            "task_1",
+            "질문",
+            "어느 쪽",
+            None,
+        ),
+    );
+    let lead = sb.path("lead");
+    let got = out(&sb.cli(&lead, &["wait", "--run", "run_1", "--no-wait", "--json"]));
+    let next = got["next"].as_str().unwrap();
+    let pick = |start: &str| {
+        let from = next
+            .find(start)
+            .unwrap_or_else(|| panic!("{start}: {next}"))
+            + 1;
+        next[from..from + next[from..].find('`').unwrap()].to_string()
+    };
+    let (reply, ack) = (pick("`orca orchestration reply"), pick("`fullops wait"));
+    let decision = pick("`fullops decision add");
+    assert_eq!(
+        decision,
+        "fullops decision add --question \"<질문>\" --key A-1 --blocks A-1 --blocks msg_q"
+    );
+    // lead의 PreToolUse가 안내된 답하기 명령을 그대로 통과시킨다
+    let event = json!({"hook_event_name": "PreToolUse", "session_id": "lead", "cwd": lead,
+        "tool_name": "Bash", "tool_input": {"command": reply.replace("<답>", "공개 API는 그대로 둔다")}});
+    let hook = sb.hook(&["claude"], &sb.home, &event);
+    assert_eq!(
+        (hook.code, hook.stdout.trim()),
+        (Some(0), "{}"),
+        "{}",
+        hook.stderr
+    );
+    // 사용자 결정 길도 받아들여진다
+    let decision = decision.replace("<질문>", "범위를 넓힐까");
+    let words: Vec<&str> = decision
+        .split('"')
+        .enumerate()
+        .flat_map(|(i, part)| {
+            if i % 2 == 1 {
+                vec![part]
+            } else {
+                part.split_whitespace().collect()
+            }
+        })
+        .skip(1)
+        .collect();
+    out(&sb.cli(&lead, &[&words[..], &["--json"]].concat()));
+    let ack: Vec<&str> = ack.split_whitespace().skip(1).chain(["--json"]).collect();
+    out(&sb.cli(&lead, &ack));
+    let st = state(sb);
+    let q = st["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == "msg_q")
+        .unwrap();
+    assert!(q["acked_at"].is_u64(), "{st}");
+    assert_eq!(
+        st["decisions"][0]["blocks"],
+        json!(["A-1", "msg_q"]),
+        "{st}"
+    );
 }
 
 #[test]
@@ -2417,6 +2492,37 @@ fn design_merge_leads_to_dispatching_the_written_inbox() {
         d.sb.path("dev")
             .join(".fullops-squad/handovers/to_dev.md")
             .is_file()
+    );
+}
+
+/// (F6): 인박스 없이 받은 설계 과제(설계 문서만 만든 과제, 질문 전달 과제)를 같은 lead 세션에서 병합까지 하면
+/// 배정 기록이 보관으로 옮겨져도 X-04가 '분류만 하고 배정하지 않은 과제'로 막지 않는다.
+#[test]
+fn merged_design_task_without_an_inbox_does_not_trip_x04() {
+    let mut d = Driver::new(&roles(&[("dev", "worker"), ("architecture", "design")]));
+    steps(
+        &mut d,
+        "[[step]]\nact = \"session_starts\"\n\
+         [[step]]\nact = \"lead_routes\"\nkey = \"F-1-Q1\"\nrole = \"architecture\"\nclass = \"design\"\nexpect = { verdict = \"pass\" }\n\
+         [[step]]\nact = \"lead_dispatches\"\nkey = \"F-1-Q1\"\nrole = \"architecture\"\nbare = true\nexpect = { verdict = \"pass\" }\n\
+         [[step]]\nact = \"session_starts\"\nwho = \"architecture\"\n\
+         [[step]]\nact = \"preamble_arrives\"\nwho = \"architecture\"\n\
+         [[step]]\nact = \"writes_file\"\nwho = \"architecture\"\npath = \".fullops-squad/docs/design-docs/f-1-q1.md\"\ncontent = \"---\\nstatus: draft\\n---\\n# 답\\n\"\nexpect = { verdict = \"pass\" }\n\
+         [[step]]\nact = \"commits\"\nwho = \"architecture\"\n\
+         [[step]]\nact = \"runs_fullops\"\nwho = \"architecture\"\nargs = [\"lint\"]\n\
+         [[step]]\nact = \"runs_fullops\"\nwho = \"architecture\"\nargs = [\"done\"]\nexpect = { verdict = \"pass\" }\n\
+         [[step]]\nact = \"orca_sends\"\n\
+         [[step]]\nact = \"lead_waits\"\nexpect = { verdict = \"pass\" }\n\
+         [[step]]\nact = \"lead_merges\"\nkey = \"F-1-Q1\"\nexpect = { verdict = \"pass\" }\n\
+         [[step]]\nact = \"stops\"\nexpect = { verdict = \"pass\" }\n",
+    );
+    // 병합 뒤 새 lead 세션에서 다시 분류만 하고 배정하지 않은 키는 보관 기록으로 면제되지 않는다(시각은 초 단위)
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    steps(
+        &mut d,
+        "[[step]]\nact = \"session_starts\"\nsession = \"lead-2\"\n\
+         [[step]]\nact = \"runs_fullops\"\nargs = [\"route\", \"F-1-Q1\", \"--force\", \"--request\", \"바뀐 요청\", \"--class\", \"design\", \"--role\", \"architecture\", \"--reason\", \"요청 바뀜\"]\nexpect = { verdict = \"pass\" }\n\
+         [[step]]\nact = \"stops\"\nexpect = { verdict = \"block\", rule = \"X-04\" }\n",
     );
 }
 

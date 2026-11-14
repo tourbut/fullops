@@ -20,7 +20,7 @@ use fullops_ext::{
 use fullops_store::Repo;
 use lexopt::prelude::*;
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -66,6 +66,7 @@ pub(super) struct CliFacts<'a> {
     session: Option<Session>,
     state: Known<State>,
     archive: Known<BTreeSet<TaskKey>>,
+    landed: Known<BTreeMap<TaskKey, i64>>,
     plan: Known<Plan>,
 }
 
@@ -79,6 +80,7 @@ impl<'a> CliFacts<'a> {
             session: caller.session.clone(),
             state: fullops_store::read_state(repo),
             archive: fullops_store::archive_keys(repo),
+            landed: fullops_store::archive_landed(repo),
             plan: fullops_store::read_plan(repo, crate::assets::PLANS_MD),
         })
     }
@@ -115,6 +117,9 @@ impl Facts for CliFacts<'_> {
     }
     fn archive_keys(&mut self) -> Known<&BTreeSet<TaskKey>> {
         self.archive.as_ref()
+    }
+    fn archive_landed(&mut self) -> Known<&BTreeMap<TaskKey, i64>> {
+        self.landed.as_ref()
     }
     fn plan(&mut self) -> Known<&Plan> {
         self.plan.as_ref()

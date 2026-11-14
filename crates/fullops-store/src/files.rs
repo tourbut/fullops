@@ -9,7 +9,7 @@ use fullops_core::model::{
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -168,20 +168,33 @@ pub fn read_archive(repo: &Repo) -> Known<Vec<ArchiveLine>> {
     })
 }
 
-/// `stage_of`에 넣는 키 집합: `landed_at`이 있는 과제 줄의 키. 줄마다 두 필드만 뽑는다(줄 전체를 타입으로 풀지 않는다).
+/// `stage_of`에 넣는 키 집합: `landed_at`이 있는 과제 줄의 키.
 pub fn archive_keys(repo: &Repo) -> Known<BTreeSet<TaskKey>> {
+    archive_landed(repo)
+        .map(BTreeMap::into_keys)
+        .map(Iterator::collect)
+}
+
+/// 통합된 과제 키와 그 가장 늦은 `landed_at`. 줄마다 두 필드만 뽑는다(줄 전체를 타입으로 풀지 않는다).
+pub fn archive_landed(repo: &Repo) -> Known<BTreeMap<TaskKey, i64>> {
     #[derive(serde::Deserialize)]
     struct Line {
         key: TaskKey,
         landed_at: Option<i64>,
     }
     read_text(&repo.archive_path()).map(|text| {
-        text.unwrap_or_default()
-            .lines()
-            .filter_map(|line| serde_json::from_str::<Line>(line).ok())
-            .filter(|line| line.landed_at.is_some())
-            .map(|line| line.key)
-            .collect()
+        let mut landed = BTreeMap::new();
+        for line in text.unwrap_or_default().lines() {
+            if let Ok(Line {
+                key,
+                landed_at: Some(at),
+            }) = serde_json::from_str(line)
+            {
+                let entry = landed.entry(key).or_insert(at);
+                *entry = (*entry).max(at);
+            }
+        }
+        landed
     })
 }
 

@@ -46,6 +46,7 @@ pub struct RealFacts {
     session: Option<Known<Option<Session>>>,
     state: Option<Known<State>>,
     archive: Option<Known<BTreeSet<TaskKey>>>,
+    landed: Option<Known<BTreeMap<TaskKey, i64>>>,
     plan: Option<Known<Plan>>,
     head: Option<Known<Sha>>,
     actor: Option<Known<Actor>>,
@@ -74,6 +75,7 @@ impl RealFacts {
             session: None,
             state: None,
             archive: None,
+            landed: None,
             plan: None,
             head: None,
             actor: None,
@@ -321,8 +323,17 @@ impl Facts for RealFacts {
             .as_ref()
     }
     fn archive_keys(&mut self) -> Known<&BTreeSet<TaskKey>> {
+        if self.archive.is_none() {
+            let keys = self.archive_landed().map(|m| m.keys().cloned().collect());
+            self.archive = Some(keys);
+        }
         self.archive
-            .get_or_insert_with(|| fullops_store::archive_keys(&self.repo))
+            .get_or_insert(Known::Unknown("archive"))
+            .as_ref()
+    }
+    fn archive_landed(&mut self) -> Known<&BTreeMap<TaskKey, i64>> {
+        self.landed
+            .get_or_insert_with(|| fullops_store::archive_landed(&self.repo))
             .as_ref()
     }
     fn plan(&mut self) -> Known<&Plan> {

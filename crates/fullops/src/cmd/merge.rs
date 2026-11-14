@@ -233,21 +233,12 @@ fn append_section(text: &mut String, heading: &str, lines: &[String]) {
     }
 }
 
-/// 에폭 초를 `YYYY-MM-DD HH:MM`(UTC)으로 적는다.
+/// 에폭 초를 `YYYY-MM-DD HH:MM`으로 적는다. `at`은 지역 시간대 오프셋을 더한 값이다.
 fn stamp(at: i64) -> String {
-    let (days, seconds) = (at.div_euclid(86_400), at.rem_euclid(86_400));
-    let z = days + 719_468;
-    let (era, doe) = (z.div_euclid(146_097), z.rem_euclid(146_097));
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let (day, month) = (
-        doy - (153 * mp + 2) / 5 + 1,
-        if mp < 10 { mp + 3 } else { mp - 9 },
-    );
-    let year = yoe + era * 400 + i64::from(month <= 2);
+    let seconds = at.rem_euclid(86_400);
     format!(
-        "{year:04}-{month:02}-{day:02} {:02}:{:02}",
+        "{} {:02}:{:02}",
+        super::task::date_of(at),
         seconds / 3_600,
         seconds % 3_600 / 60
     )
@@ -278,6 +269,7 @@ fn record(
         .iter()
         .filter(|d| &d.key == key && !d.is_reservation())
         .collect();
+    let offset = super::task::local_offset(&base.repo_root);
     let assigned: Vec<String> = ours
         .iter()
         .map(|d| {
@@ -294,7 +286,7 @@ fn record(
             };
             format!(
                 "- {} {key} → {} | {}/{}/{} | {} | run {} | 재배정 {again} | {why}",
-                stamp(d.started_at),
+                stamp(d.started_at + offset),
                 d.role,
                 d.tuple.agent,
                 d.tuple.model,

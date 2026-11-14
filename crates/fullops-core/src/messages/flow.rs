@@ -143,6 +143,14 @@ pub fn fix_round(key: &str, role: Option<&str>, design: Option<&str>) -> String 
     )
 }
 
+/// 질문 메시지 한 건의 답하기 안내(`wait`의 다음). 스킬 `fullops-orca`의 "질문: lead가 전달한다"와 같은 절차다.
+pub fn answer_question(run: &str, id: &str, key: Option<&str>) -> String {
+    let key = key.unwrap_or("<KEY>");
+    format!(
+        "질문 {id}는 답을 정해 `orca orchestration reply --id {id} --body \"<답>\"` 뒤 `fullops wait --run {run} --ack {id} --no-wait`(설계·범위 질문은 설계 역할에 넘겨 받은 답으로 답한다. 사용자만 정할 수 있으면 `fullops decision add --question \"<질문>\" --key {key} --blocks {key} --blocks {id}`로 결정을 열고 같은 `--ack`로 표시한 뒤, 사용자의 답을 `fullops decision answer <결정 ID> --answer \"<답>\"`으로 닫고 `reply`한다)"
+    )
+}
+
 /// 배정되지 않은 지시서 한 건의 안내(`leftover`).
 pub fn unassigned_inbox(key: &crate::model::TaskKey, role: &crate::model::RoleId) -> String {
     format!(

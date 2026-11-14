@@ -1779,3 +1779,19 @@ fn wall_clock_report() {
         );
     }
 }
+
+/// R2-7: SessionStart의 'PATH에 없다' 알림은 PATH의 상대 항목(`.`)에 심은 git을 git으로 치지 않는다.
+#[test]
+fn missing_tool_notice_ignores_relative_path_entries() {
+    let h = Hooks::new(&Setup::default());
+    let planted = format!("git{}", std::env::consts::EXE_SUFFIX);
+    std::fs::copy(fullops_testkit::bin("fake-host"), h.sb.home.join(planted)).unwrap();
+    let path = std::env::join_paths([PathBuf::from("."), h.sb.bin_dir.clone()]).unwrap();
+    let input = json!({"hook_event_name": "SessionStart", "session_id": "lead", "cwd": h.sb.path("lead"), "source": "startup"});
+    // `Sandbox::fullops`는 상대 PATH를 절대 경로로 바꾸므로 명령을 직접 만든다
+    let mut cmd = h.sb.command(fullops_testkit::bin("fullops"), &h.sb.home);
+    cmd.args(["hook", "claude"]).env("PATH", path);
+    let run = h.sb.run(cmd, input.to_string().as_bytes());
+    assert_eq!(run.code, Some(0), "{}", run.stderr);
+    assert!(run.stdout.contains("PATH에 `git"), "{}", run.stdout);
+}

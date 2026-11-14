@@ -68,36 +68,11 @@ fn entry(command: &LintCommand, status: LintStatus, reason: String) -> LintComma
     }
 }
 
-/// Windows의 CreateProcess는 `.exe`만 붙여 본다. `npx`처럼 확장자 없이 적은 `.cmd`·`.bat` 도구를 PATH에서 찾아 준다.
-#[cfg(windows)]
-fn resolve_program(name: &str) -> String {
-    if name.contains(['/', '\\', '.']) {
-        return name.to_string();
-    }
-    let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
-    for dir in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
-        for ext in exts.split(';') {
-            let candidate = dir.join(format!("{name}{ext}"));
-            if candidate.is_file() {
-                return candidate.to_string_lossy().into_owned();
-            }
-        }
-    }
-    name.to_string()
-}
-
-#[cfg(not(windows))]
-fn resolve_program(name: &str) -> String {
-    name.to_string()
-}
-
 /// 명령 하나를 셸 없이 실행한다. 출력 전체는 `logs/<name>.log`에, 끝 40줄은 결과에 둔다(설계 8.11절 8번).
 fn execute(root: &Path, logs: &Path, command: &LintCommand, timeout: u64) -> LintCommandResult {
     let seconds = command.timeout_seconds.unwrap_or(timeout);
-    let mut argv = command.run.clone();
-    if let Some(program) = argv.first_mut() {
-        *program = resolve_program(program);
-    }
+    // 실행 파일 찾기는 `fullops_ext::run`이 맡는다: PATHEXT를 붙이고 PATH의 상대 항목은 보지 않는다(R2-7)
+    let argv = command.run.clone();
     let clock = Instant::now();
     let done = fullops_ext::run(
         &argv,

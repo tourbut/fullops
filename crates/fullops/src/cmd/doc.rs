@@ -189,19 +189,6 @@ fn check(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     })
 }
 
-/// 에폭 날수를 `YYYY-MM-DD`로 바꾼다.
-fn civil(days: i64) -> String {
-    let z = days + 719_468;
-    let (era, doe) = (z.div_euclid(146_097), z.rem_euclid(146_097));
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}-{month:02}-{day:02}")
-}
-
 /// front matter를 정해진 순서로 다시 쓰고 `updated`를 오늘로, `--task`를 `tasks`에 더한다. 본문은 건드리지 않는다.
 fn stamp(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     let (mut path, mut owner, mut summary, mut task, mut status) = (None, None, None, None, None);
@@ -312,11 +299,8 @@ fn stamp(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             fm.set("id", FmValue::Text(row.id.clone()));
         }
     }
-    // shortcut: 날짜 라이브러리가 없어 UTC 날짜다(한국에서는 09시 전까지 어제 날짜가 된다), 로컬 시간대를 얻는 공용 함수가 생기면 그 값으로 바꾼다
-    fm.set(
-        "updated",
-        FmValue::Text(civil(fullops_store::now().div_euclid(86_400))),
-    );
+    let today = super::task::date_of(fullops_store::now() + super::task::local_offset(&repo.root));
+    fm.set("updated", FmValue::Text(today));
     let mut tasks = match fm.list("tasks") {
         Some(list) => list.to_vec(),
         None => Some(text_of(&fm, "tasks"))
@@ -349,21 +333,4 @@ fn stamp(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     fullops_store::write_atomic(&target, format!("{}{body}", fm.render()).as_bytes())?;
     ctx.print(&repo_path, json!({ "path": repo_path }));
     Ok(EXIT_OK)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::civil;
-
-    #[test]
-    fn epoch_days_become_dates() {
-        for (days, date) in [
-            (0, "1970-01-01"),
-            (19_782, "2024-02-29"),
-            (20_453, "2025-12-31"),
-            (20_771, "2026-11-14"),
-        ] {
-            assert_eq!(civil(days), date);
-        }
-    }
 }

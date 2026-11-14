@@ -6,7 +6,7 @@ use crate::model::{
     Mode, Need, Plan, ReviewEvidence, RoleId, Route, RunId, Seat, Session, Sha, SkillText,
     SnapshotState, State, TaskKey, same_path,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// 모든 사실은 지연 계산이고, 읽지 못하면 `Unknown`이다. 호출 상한(설계 7.1절)을 넘는 요청도 `Unknown`이다.
@@ -22,6 +22,8 @@ pub trait Facts {
     fn session(&mut self) -> Known<&Session>;
     fn state(&mut self) -> Known<&State>;
     fn archive_keys(&mut self) -> Known<&BTreeSet<TaskKey>>;
+    /// 통합된 과제 키와 그 가장 늦은 통합 시각.
+    fn archive_landed(&mut self) -> Known<&BTreeMap<TaskKey, i64>>;
     fn plan(&mut self) -> Known<&Plan>;
     /// 이 체크아웃의 인박스.
     fn inbox(&mut self, role: &RoleId) -> Known<Option<Inbox>>;

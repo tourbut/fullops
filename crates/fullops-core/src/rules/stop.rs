@@ -138,12 +138,26 @@ pub(super) fn x04(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
         Known::Yes(session) if !session.routed.is_empty() => session.routed.clone(),
         _ => return Finding::None,
     };
-    let dispatched: BTreeSet<TaskKey> = known!(facts.state())
+    let mut dispatched: BTreeSet<TaskKey> = known!(facts.state())
         .dispatches
         .iter()
         .filter(|d| !d.is_reservation())
         .map(|d| d.key.clone())
         .collect();
+    // 병합으로 닫힌 과제는 배정 기록이 보관으로 옮겨진다. 인박스 없는 과제(설계·질문 전달)는 logs도 없어 이것만 남는다.
+    // 다만 병합 뒤에 다시 분류(`route --force`)만 하고 배정하지 않은 키는 면제하지 않는다
+    let landed = known!(facts.archive_landed()).clone();
+    for key in &routed {
+        if let Some(at) = landed.get(key)
+            && facts
+                .route(key)
+                .yes()
+                .flatten()
+                .is_none_or(|route| route.created_at <= *at)
+        {
+            dispatched.insert(key.clone());
+        }
+    }
     let planned: BTreeSet<TaskKey> = known!(facts.plan())
         .rows
         .iter()

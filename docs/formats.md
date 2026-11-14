@@ -3,7 +3,7 @@
 이 문서는 [design.md](design.md) 6절의 형식과 8절·10절의 공용 규약을 필드 단위로 옮겨 적은 것이다. 구현 묶음은 설계 문서 전체를 다시 읽지 않고 이 문서로 형식을 본다. 설계 문서가 정본이고, 둘이 어긋나면 이 문서가 틀린 것이다.
 
 - Rust 타입은 따로 적지 않으면 `fullops_core::model`에 있다. 이 문서의 표는 그 타입의 serde 형식과 같다.
-- 시각은 모두 에폭 초(`i64`)다. 날짜 문자열은 사람이 읽는 두 곳에만 쓴다: 문서 front matter의 `updated`(`YYYY-MM-DD`)와 `PLANS.md` 배정 기록의 `YYYY-MM-DD HH:MM`.
+- 시각은 모두 에폭 초(`i64`)다. 날짜 문자열은 사람이 읽는 두 곳에만 쓴다: 문서 front matter의 `updated`(`YYYY-MM-DD`)와 `PLANS.md` 배정 기록의 `YYYY-MM-DD HH:MM`. 둘 다 지역 시간대다(git이 아는 오프셋. 읽지 못하면 UTC).
 - "쓰는 주체" 열이 비어 있으면 그 객체를 쓰는 주체와 같다.
 - 형식을 바꿔야 하면 `fullops-core::model`과 이 문서를 함께 고친다. 묶음 A 담당에게 요청한다(설계 18.3절).
 - 설계 6.1.1·6.1.4·6.1.5·6.2.1·6.2.3·6.3·10.7절의 예시 JSON·TOML이 타입으로 읽히고 다시 쓰면 같은 값이 되는지는 `crates/fullops-store/tests/store.rs`가 설계 문서에서 예시를 꺼내 확인한다.
