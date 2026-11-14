@@ -10,6 +10,7 @@ expect = { verdict = "pass" }
 # 다른 tuple로는 한도 재배정을 받지 않는다
 [[step]]
 act = "lead_dispatches"
+df = "DF-8"
 key = "A-1"
 role = "dev"
 reason = "limit"
@@ -35,6 +36,7 @@ expect = { verdict = "pass" }
 # 3회째는 결정을 열고 사람에게 올린다
 [[step]]
 act = "lead_dispatches"
+df = "DF-8"
 key = "A-1"
 role = "dev"
 reason = "limit"

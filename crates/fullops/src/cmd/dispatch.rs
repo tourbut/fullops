@@ -3,7 +3,7 @@
 
 use crate::cli::{Caller, CliError, Ctx, EXIT_OK, session_handle};
 use fullops_core::config::PolicyError;
-use fullops_core::facts::Facts;
+use fullops_core::facts::{CommitScope, Facts};
 use fullops_core::flow::{self, ReviewSpec, SpecInput, refusal};
 use fullops_core::messages;
 use fullops_core::model::{
@@ -149,7 +149,7 @@ impl Facts for CliFacts<'_> {
     fn landing(&mut self, _sha: &Sha) -> Known<Landing> {
         Known::Unknown(CLI_ONLY)
     }
-    fn qa_commit_candidates(&mut self, _include_unstaged: bool) -> Known<Vec<String>> {
+    fn qa_commit_candidates(&mut self, _scope: &CommitScope) -> Known<Vec<String>> {
         Known::Unknown(CLI_ONLY)
     }
     fn orca_settled(&mut self, _id: &DispatchId) -> Known<bool> {

@@ -27,18 +27,26 @@ stdout에 JSON 하나를 낸다. 시나리오는 {"name", "steps": [{"act", "ver
 - worker_reports: 위의 넷 뒤에 worker가 `orca orchestration send --type worker_done`을 보내고 lead가 받는다.
 - lead_waits: `orca_wait.py --run …`(가짜 Orca는 기다리지 않으므로 확인 주기를 0.001분으로 준다).
 - lead_merges: `integration.py status`로 SHA를 찾고 `review.py need`, 기본 브랜치 병합, push, 역할 워크트리 동기화, PLANS.md 기록.
-- runs_fullops, worker의 하위 배정이 아닌 `fullops` 전용 인자: 1.24.0에 대응이 없다. 판정 "n/a"로 적는다.
+- runs_fullops: 1.24.0의 스킬이 같은 일에 시키던 스크립트로 옮긴다. `lint` → `lint.py`, `context` → `jev_context.py`(오프라인), `packet build` → `jev_packet.py`,
+  `hold` → `integration.py hold`(통합 대기 기록의 메시지를 찾아), 사용자가 답한 뒤의 `review waive` → `review.py waive --decided-by user`.
+  `decision add`·`answer`는 1.24.0에서 대화로 묻던 일이라 "n/a"다(답했다는 사실만 기억한다). 그 밖은 1.24.0에 대응이 없다. 판정 "n/a"로 적는다.
   단 `raw`인 `fullops migrate …`는 FULLOPS_FAKES 폴더의 새 판 실행본으로 실제로 돌린다(판정은 그대로 "n/a").
   전환·되돌린 레포에서 1.24.0의 hook이 무엇을 내는지 뒤 단계가 보게 하려는 것이다(N3).
+- `fullops <하위 명령>` 하나뿐인 runs_shell: 1.24.0에 그 명령이 없다. "n/a"다(정책 오류에서 1.24.0이 받던 복구 명령은 setup.py였다).
+- 설정: 1.24.0은 `.fullops-squad/fullops.json`을 읽는다. `fullops.toml`을 쓰는 준비 동사(`file`)는 fullops.json의 mode·primary_role·
+  primary_branch·test_level을 바꾸고(TOML로 읽히지 않으면 깨진 JSON을 쓴다), 에이전트가 `fullops.toml`을 쓰는 단계는 1.24.0의 복구 명령
+  `setup.py`로 옮긴다.
+- agy: 1.24.0에는 agy hook이 없다. 준비 동사가 아닌 단계는 모두 "n/a"다.
 - 단계의 `df`(그 단계의 차이를 설명하는 12.3절 ID)와 `py`(이 구동기가 내야 하는 판정)는 `xtask compare`가 읽는다. 이 구동기는 보지 않는다.
 - 준비 동사(file, git, commits, orca_replies, orca_sends, host_replies, curl_replies, fakes): rs 구동기와 같다.
 에이전트가 실행하는 명령은 실제 흐름처럼 셸 도구의 PreToolUse hook과 PostToolUse hook 사이에서 실행한다.
-가짜 Orca는 사실대로 답해야 하므로, 배정한 worker의 `worker-list` 응답은 구동기가 각본 규칙 하나로 유지한다.
+가짜 Orca는 사실대로 답해야 하므로, 배정한 worker의 `worker-list`와 `task-list` 응답은 구동기가 각본 규칙으로 유지한다.
 """
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -58,6 +66,10 @@ DEFAULTS = {'mode': 'coor', 'roles': {'dev': 'worker'}, 'remote': True, 'primary
 PREP = ('file', 'git', 'commits', 'orca_replies', 'orca_sends', 'host_replies', 'curl_replies', 'fakes')
 SHELL = {'claude': 'Bash', 'codex': 'Bash', 'grok': 'run_terminal_command'}
 SUBAGENT = {'claude': ('Agent', 'prompt'), 'codex': ('spawn_agent', 'message'), 'grok': ('spawn_subagent', 'prompt')}
+CONFIG, CONFIG_JSON = '.fullops-squad/fullops.toml', '.fullops-squad/fullops.json'
+OPERATING = ('mode', 'primary_role', 'primary_branch', 'test_level')  # 1.24.0의 fullops.json에도 있는 운영 값
+PACKET_FLAGS = {'--role': '--role', '--seed': '--seeds', '--update-doc': '--update-docs', '--required': '--required',
+                '--decisions': '--decisions'}  # fullops packet build → jev_packet.py
 
 
 def quote(arg):
@@ -109,7 +121,8 @@ class Driver:
         self.seq = self.tool_seq = 0
         self.ms = 0.0
         self.continuing = set()  # Stop이 막혀 이어 가는 세션. 호스트가 다음 Stop에 stop_hook_active를 싣는다
-        self.workers_rule = None
+        self.workers_rule = self.tasks_rule = None
+        self.decided = False  # 사용자가 결정에 답했다(1.24.0은 대화로 물었다). 그 뒤의 review waive만 1.24.0의 waive로 옮긴다
         self.build()
 
     # --- 프로세스 ---
@@ -178,6 +191,7 @@ class Driver:
         done = self.run(self.real(['python3', self.script('setup.py'), *args]), lead)
         if done.returncode:
             raise RuntimeError(f'setup.py 실패: {done.stderr}')
+        self.config_base = json.loads((lead / CONFIG_JSON).read_text(encoding='utf-8'))
         marks = [f'- 설계 역할: `{self.designer}`']
         marks += [f'- {label} 역할: `{role}`' for role, kind in roles.items()
                   for label in [{'coordinator': 'coordinator', 'tester': 'tester'}.get(kind)] if label]
@@ -246,12 +260,28 @@ class Driver:
             self.sync_workers()
 
     def sync_workers(self):
-        """1.24.0의 Stop이 묻는 `worker-list`에 배정한 worker의 지금 상태를 답하게 한다."""
+        """1.24.0의 Stop이 묻는 `worker-list`와, 키 없는 완료 보고의 키를 찾는 `task-list`에 배정한 것을 사실대로 답하게 한다."""
         workers = [{'dispatchId': d['dispatch'], 'taskId': d['task'], 'runId': d['run'], 'terminal': d['terminal'],
                     'state': 'succeeded' if d['settled'] else 'ready', 'stage': 'settled' if d['settled'] else 'input_accepted',
                     'liveness': 'live'} for d in self.dispatched]
         rule = {'when': ['orchestration', 'worker-list'], 'stdout': {'ok': True, 'result': {'workers': workers}}}
         self.workers_rule = self.rule('orca', rule, self.workers_rule)
+        tasks = [{'id': d['task'], 'status': 'ready', 'title': d['key'], 'spec': d['spec']} for d in self.dispatched]
+        rule = {'when': ['orchestration', 'task-list'], 'stdout': {'ok': True, 'result': {'tasks': tasks}}}
+        self.tasks_rule = self.rule('orca', rule, self.tasks_rule)
+
+    def config_json(self, text):
+        """`fullops.toml` 글을 1.24.0이 읽는 fullops.json 글로 옮긴다. TOML로 읽히지 않으면 깨진 JSON이다."""
+        try:
+            new = tomllib.loads(text)
+        except tomllib.TOMLDecodeError:
+            return '{ "schema_version": = 1\n'
+        config = {k: v for k, v in self.config_base.items() if k not in OPERATING}
+        config.update({k: new[k] for k in OPERATING if k in new})
+        return json.dumps(config, ensure_ascii=False, indent=2) + '\n'
+
+    def route_file(self, key):
+        return self.dir('lead') / f'.fullops-squad/docs/evaluations/jev/{key}-route.json'
 
     # --- hook ---
 
@@ -360,7 +390,9 @@ class Driver:
     # --- 흐름 동사 ---
 
     def lead_routes(self, act, key, role, kind):
-        if kind != 'unresolved':  # Jev의 답. 폴백(unresolved)은 답을 걸지 않는다
+        # Jev의 답. 폴백(unresolved)은 답을 걸지 않는다. 결과 파일이 이미 있으면 jev_route.py가 Jev를 부르지 않으므로
+        # 답을 걸지 않는다(쓰이지 않은 답이 남아 다음 분류가 먹으면 안 된다)
+        if kind != 'unresolved' and not self.route_file(key).is_file():
             split = self.setup['routing'] == 'split'
             scope = {'direct': 'implementation' if split else 'simple', 'product': 'product'}.get(kind, 'design')
             labels = ('implementation', 'product') if split else ('simple', 'design')
@@ -432,8 +464,13 @@ class Driver:
     def lead_dispatches(self, step, key, role):
         act, purpose = step['act'], step.get('purpose', 'build')
         lead, work = self.dir('lead'), purpose in ('build', 'fix')
+        if purpose == 'fix':
+            reopened = self.reopen(act, key, role)
+            if reopened and reopened['flow'] == 'stopped':
+                return reopened
         if not step.get('bare'):
-            if key not in self.routed:
+            # 1.24.0의 lead는 이미 분류한 키(결과 파일이 있다)를 다시 분류하지 않는다
+            if key not in self.routed and not self.route_file(key).is_file():
                 routed = self.lead_routes(act, key, role, 'direct')
                 if routed['flow'] == 'stopped':
                     return routed
@@ -459,12 +496,31 @@ class Driver:
                    for word in (f'--{name}', step[name])]
         return self.dispatch(act, 'lead', key, role, spec, options, step.get('run'), bool(step.get('chat')))
 
-    def worker_works(self, role, key, path, lines):
+    def reopen(self, act, key, role):
+        """완료한 과제의 수정 배정: 1.24.0은 `work.py reopen`으로 새 시도를 연다. 병합 전에는 완료 기록이 역할 브랜치에만
+        있으므로 비워진 인박스와 완료 기록이 있는 체크아웃(역할 워크트리, 없으면 lead)에서 연다. 열 것이 없으면 None."""
+        inbox = '.fullops-squad/handovers/to_' + role + '.md'
+        logs = lambda where: (where / '.fullops-squad/handovers/logs').glob(f'*_to_{role}.md')
+        where = next((w for w in (self.dir(role), self.dir('lead')) if (w / inbox).is_file() and not (w / inbox).read_bytes()
+                      and any(f'## {key} — ' in p.read_text(encoding='utf-8') for p in logs(w))), None)
+        if not where:
+            return None
+        step, _ = self.cli(act, 'lead', ['python3', self.script('work.py'), 'reopen', '--repo', where.as_posix(), '--role', role,
+                                         '--key', key, '--goal', f'{key} 수정'],
+                           ['git', '-C', where.as_posix(), 'add', '-A'],
+                           ['git', '-C', where.as_posix(), 'commit', '-q', '-m', f'docs: {key} 수정 지시'])
+        return step
+
+    def start_worker(self, role):
+        """배정받은 worker 세션이 처음 일을 시작한다: SessionStart와 preamble이 든 첫 프롬프트."""
         fresh = next((d for d in reversed(self.dispatched) if d['role'] == role and not d['sub'] and not d['started']), None)
         if fresh:
             fresh['started'] = True
             self.hook('SessionStart', role, subject='startup', source='startup')
             self.prompt(role, None, self.preamble(fresh))
+
+    def worker_works(self, role, key, path, lines):
+        self.start_worker(role)
         file = self.dir(role) / (path or f'src/{key.lower()}.py')
         file.parent.mkdir(parents=True, exist_ok=True)
         file.write_text(f'"""{key} 구현."""\n' + ''.join(f'print({i})\n' for i in range(lines)), encoding='utf-8', newline='\n')
@@ -479,20 +535,23 @@ class Driver:
         return next((d for d in reversed(self.dispatched) if d['role'] == role and not d['sub']), None)
 
     def worker_finishes(self, act, role, followup=None, env=None):
-        d = self.current(role)
-        if not d:
-            raise ValueError(f'{role}에 배정이 없다')
         inbox = f'.fullops-squad/handovers/to_{role}.md'
-        head = self.git(self.dir(role), 'rev-parse', 'HEAD')
-        report = (f"브랜치 fullops/{role} / SHA {head} / 변경 이유: {d['key']} 구현 / 검증: lint 통과 / "
-                  f"남은 일: {followup or '없음'}\n")
         text = (self.dir(role) / inbox).read_text(encoding='utf-8') if (self.dir(role) / inbox).is_file() else ''
+        # 1.24.0의 `work.py finish`는 --key가 있어야 한다. 배정이 막혔으면(예: DF-16) 인박스 제목 `# <KEY> — `의 키로 끝낸다
+        d = self.current(role)
+        title = re.search(r'^# (\S+) — ', text, re.M)
+        key = d['key'] if d else title and title.group(1)
+        if not key:
+            raise Unsupported(f'{role}에 배정과 인박스 과제가 없다(1.24.0의 work.py finish는 --key와 인박스 과제가 있어야 한다)')
+        head = self.git(self.dir(role), 'rev-parse', 'HEAD')
+        report = (f"브랜치 fullops/{role} / SHA {head} / 변경 이유: {key} 구현 / 검증: lint 통과 / "
+                  f"남은 일: {followup or '없음'}\n")
         verdict, out = self.write_tool(role, None, inbox, text.partition('## 완료 보고\n')[0] + '## 완료 보고\n\n' + report, env)
         if flow_of(verdict) == 'stopped':
             return result(act, verdict, out)
         return self.cli(act, role, ['python3', self.script('work.py'), 'finish', '--repo', self.dir(role).as_posix(),
-                                    '--role', role, '--key', d['key']],
-                        ['git', 'add', '-A'], ['git', 'commit', '-q', '-m', f"docs({role}): {d['key']} 완료 기록"], env=env)[0]
+                                    '--role', role, '--key', key],
+                        ['git', 'add', '-A'], ['git', 'commit', '-q', '-m', f"docs({role}): {key} 완료 기록"], env=env)[0]
 
     def worker_reports(self, step, role, key):
         act = step['act']
@@ -543,7 +602,9 @@ class Driver:
                                             '--from', self.base(), '--to', sha])
         if step['verdict'] != 'pass':
             return step
-        if json.loads(done.stdout)['required']:  # 1.24.0은 여기서 사용자에게 진행·생략을 묻는다
+        waiver = lead / f'.fullops-squad/docs/evaluations/qa-reports/{key}-review/waiver.json'
+        # 1.24.0은 여기서 사용자에게 진행·생략을 묻는다. 생략으로 답해 `review.py waive`를 남겼으면 병합한다
+        if json.loads(done.stdout)['required'] and not waiver.is_file():
             return result(act, 'human', done.stdout, 3)
         before = self.git(lead, 'rev-parse', 'HEAD')
         update = [['git', 'fetch', '-q', 'origin'], ['git', 'merge', '-q', '--ff-only', 'origin/main']] if remote else []
@@ -576,8 +637,52 @@ class Driver:
 
     # --- 단계 ---
 
+    def runs_fullops(self, act, who, args, env):
+        """`fullops` 명령을 1.24.0의 스킬이 같은 일에 시키던 스크립트로 옮긴다. 대응이 없으면 Unsupported."""
+        repo = self.dir(who).as_posix()
+        status = lambda: json.loads(self.run(self.real(['python3', self.script('integration.py'), '--repo', repo, 'status']),
+                                             self.dir(who)).stdout or '{}').get('pending', [])
+        option = lambda name: args[args.index(name) + 1] if name in args else None
+        if args[:1] == ['lint']:
+            level = ['--level', option('--level')] if '--level' in args else []
+            return self.cli(act, who, ['python3', self.script('lint.py'), '--repo', repo, '--from', option('--from') or self.base(),
+                                       *level], env=env)[0]
+        if args[:2] == ['packet', 'build'] and len(args) > 2:
+            grouped, rest = {}, []
+            words = iter(args[3:])
+            for word in words:
+                if word in PACKET_FLAGS:
+                    grouped.setdefault(PACKET_FLAGS[word], []).append(next(words))
+                else:
+                    rest.append(word)
+            converted = [w for flag, values in grouped.items() for w in (flag, *values)]
+            return self.cli(act, who, ['python3', self.script('jev_packet.py'), '--repo', repo, '--key', args[2],
+                                       *converted, *rest], env=env)[0]
+        if args[:1] == ['context'] and len(args) > 1:  # 인자 모양이 같다(--role, --paths, --required, --force)
+            return self.cli(act, who, ['python3', self.script('jev_context.py'), '--repo', repo, '--key', args[1], *args[2:]],
+                            env=env)[0]
+        if args[:1] == ['hold'] and len(args) > 1:
+            item = next((i for i in status() if i.get('key') == args[1]), None)
+            if not item:
+                return result(act, 'deny', f'{args[1]}의 통합 대기 기록이 없다', 2)
+            return self.cli(act, who, ['python3', self.script('integration.py'), '--repo', repo, 'hold', '--message',
+                                       item['message'], '--reason', option('--reason'), '--owner', option('--owner'),
+                                       '--resume', option('--resume')], env=env)[0]
+        if args[:2] == ['decision', 'answer']:
+            self.decided = True
+        if args[:2] == ['review', 'waive'] and len(args) > 2 and self.decided:
+            item = next((i for i in status() if i.get('key') == args[2] and i.get('sha')), None)
+            head = item['sha'] if item else self.git(self.dir(who), 'rev-parse', 'HEAD')
+            base = self.git(self.dir(who), 'merge-base', head, self.base())
+            return self.cli(act, who, ['python3', self.script('review.py'), 'waive', '--repo', repo, '--key', args[2],
+                                       '--from', base, '--to', head, '--reason', option('--reason'),
+                                       '--decided-by', 'user'], env=env)[0]
+        raise Unsupported('1.24.0에는 `fullops` 명령이 없다')
+
     def step(self, step):
         act, who, session, env = step['act'], step.get('who', 'lead'), step.get('session'), step.get('env')
+        if self.host == 'agy' and act not in PREP:
+            raise Unsupported('1.24.0에는 agy hook이 없다')
 
         def req(name):
             if name not in step:
@@ -602,7 +707,23 @@ class Driver:
             name = 'PowerShell' if step.get('dialect') == 'powershell' and self.host == 'claude' else SHELL.get(self.host)
             if not name:
                 raise Unsupported(f'{self.host}의 셸 도구')
-            return result(act, *self.tool_hook(who, session, name, {'command': req('command')}, env=env)[:2])
+            command = req('command')
+            if re.fullmatch(r'fullops( [\w-]+)*', command):
+                raise Unsupported('1.24.0에는 `fullops` 명령이 없다(정책 오류의 복구 명령은 setup.py였다)')
+            # 소비형 check는 실제로 실행해야 메일이 읽힌다(1.24.0의 Stop이 Orca의 미처리 메일을 본다). 다른 명령은 hook만 본다
+            if command.startswith('orca orchestration check') and name != 'PowerShell':
+                return result(act, *self.shell(who, shlex.split(command), session=session, env=env)[:2])
+            return result(act, *self.tool_hook(who, session, name, {'command': command}, env=env)[:2])
+        if act == 'writes_file' and req('path') == CONFIG:
+            # 1.24.0에는 에이전트가 고칠 설정 편집 통로가 없다. 오류 문구가 시키는 복구 명령 setup.py로 옮긴다
+            try:
+                new = tomllib.loads(req('content'))
+            except tomllib.TOMLDecodeError:
+                new = {}
+            flags = [w for k in ('mode', 'primary_role', 'test_level') if new.get(k)
+                     for w in ('--' + k.replace('_', '-'), new[k])]
+            return self.cli(act, who, ['python3', self.script('setup.py'), '--repo', self.dir(who).as_posix(),
+                                       *(flags or ['--mode', 'coor'])], env=env)[0]
         if act in ('writes_file', 'edits_file', 'deletes_file'):
             content = None if act == 'deletes_file' else req('new' if act == 'edits_file' else 'content')
             return result(act, *self.write_tool(who, session, req('path'), content, env, step.get('old') if act == 'edits_file' else None))
@@ -624,9 +745,12 @@ class Driver:
             return result(act, *self.hook('StopFailure', who, session, env=env, error='rate_limit',
                                           error_details=step.get('error', 'API Error: usage limit reached')))
         if act == 'file':
-            path = self.dir(who) / req('path')
+            path, content = req('path'), req('content')
+            if path == CONFIG:  # 1.24.0이 읽는 설정은 fullops.json이다
+                path, content = CONFIG_JSON, self.config_json(content)
+            path = self.dir(who) / path
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(req('content'), encoding='utf-8', newline='\n')
+            path.write_text(content, encoding='utf-8', newline='\n')
             return fixture()
         if act == 'git':
             self.git(self.dir(who), *req('args'))
@@ -662,6 +786,7 @@ class Driver:
             return self.lead_dispatches(step, req('key'), req('role'))
         if act == 'worker_subdispatches':
             role, key = req('role'), req('key')
+            self.start_worker(role)  # 하위 배정은 preamble을 받은 worker 세션이 한다
             options = [word for name in ('agent', 'model', 'effort') if step.get(name) for word in (f'--{name}', step[name])]
             return self.dispatch(act, role, key, role, f"Task key: {key}; Purpose: implementation; {req('brief')}", options)
         if act == 'worker_works':
@@ -680,7 +805,8 @@ class Driver:
             # migrate는 레포의 판을 바꾸는 일이다. 새 판 실행본으로 실제로 돌려, 뒤 단계가 전환·되돌린 레포에서 1.24.0의 판정을 받게 한다(N3)
             if step.get('raw') and req('args')[:1] == ['migrate']:
                 self.run([self.fakes / f'fullops{EXE}', *step['args']], self.dir(who), self.env(who, env))
-            raise Unsupported('1.24.0에는 `fullops` 명령이 없다')
+                raise Unsupported('1.24.0에는 `fullops` 명령이 없다')
+            return self.runs_fullops(act, who, req('args'), env)
         raise ValueError(f'모르는 동사입니다: {act}')
 
     # --- 성능 측정(설계 12.4절) ---

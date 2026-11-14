@@ -68,11 +68,13 @@ expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "lead_merges"
+df = "DF-13"
 key = "A-1"
 expect = { verdict = "pass" }
 
 [[step]]
 act = "lead_dispatches"
+df = "DF-13"
 key = "B-2"
 role = "art"
 expect = { verdict = "pass", flow = "continues" }

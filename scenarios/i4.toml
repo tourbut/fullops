@@ -67,11 +67,13 @@ expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
+df = "DF-18"
 expect = { verdict = "pass", flow = "continues" }
 
 # 실패한 구현 보고도 통합 대기가 아니다. 앞의 Run은 닫혔으므로 새 Run으로 배정한다
 [[step]]
 act = "lead_dispatches"
+df = "DF-18"
 key = "C-3"
 role = "dev"
 run = "run_3"
@@ -117,4 +119,5 @@ expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
+df = "DF-18"
 expect = { verdict = "pass", flow = "continues" }

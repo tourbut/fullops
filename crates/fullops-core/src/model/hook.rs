@@ -185,7 +185,12 @@ pub enum Intent {
     GitCommit {
         all: bool,
     },
-    GitAdd,
+    /// `paths`는 명령에 적힌 경로(작업 위치 기준) 그대로다. `-A`·`--all`·`git -C`·pathspec 파일은 `"."` 하나로 넓힌다.
+    /// `update`는 `-u`(추적 중인 파일 전부).
+    GitAdd {
+        paths: Vec<String>,
+        update: bool,
+    },
     Fullops {
         sub: String,
     },

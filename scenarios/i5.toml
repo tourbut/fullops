@@ -9,6 +9,7 @@ expect = { verdict = "pass" }
 
 [[step]]
 act = "stops"
+df = "DF-13"
 session = "new"
 env = { ORCA_TERMINAL_HANDLE = "term_lead2" }
 expect = { verdict = "block", rule = "X-05" }

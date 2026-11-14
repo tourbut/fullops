@@ -22,6 +22,7 @@ expect = { verdict = "deny", rule = "T-00", flow = "stopped", escape = "fullops 
 
 [[step]]
 act = "session_starts"
+df = "DF-25"
 source = "resume"
 expect = { verdict = "context", flow = "continues", escape = "정책 오류" }
 

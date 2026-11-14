@@ -111,6 +111,7 @@ act = "commits"
 
 [[step]]
 act = "runs_fullops"
+df = "DF-33"
 raw = true
 args = ["lint", "--from", "base"]
 expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

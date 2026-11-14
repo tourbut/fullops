@@ -46,11 +46,13 @@ session = "2"
 
 [[step]]
 act = "stops"
+df = "DF-15"
 session = "2"
 expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "fullops wait --run" }
 
 [[step]]
 act = "stops"
+df = "DF-15"
 session = "2"
 expect = { verdict = "warn", flow = "continues" }
 
@@ -76,5 +78,6 @@ expect = { verdict = "pass", flow = "continues" }
 # 백그라운드 대기가 살아 있는 동안의 통과는 crates/fullops/tests/hook.rs의 lead_stop_rules_follow_state가 본다(구동기에 백그라운드 실행 동사가 없다).
 [[step]]
 act = "stops"
+df = "DF-15"
 session = "2"
 expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "fullops wait --run" }

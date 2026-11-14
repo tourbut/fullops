@@ -435,10 +435,12 @@ fn orca(args: &[Token], vars: &BTreeMap<String, Option<String>>) -> Vec<Intent> 
 
 fn git(args: &[Token]) -> Intent {
     let mut args = args.iter();
+    let mut moved = false;
     let sub = loop {
         match args.next() {
             // `-C <경로>`와 `-c <설정>`은 값을 하나 먹는다
             Some(t) if t.text == "-C" || t.text == "-c" => {
+                moved |= t.text == "-C";
                 args.next();
             }
             Some(t) if t.text.starts_with('-') => {}
@@ -459,7 +461,34 @@ fn git(args: &[Token]) -> Intent {
                 t.text == "--all" || short.is_some_and(before_value)
             }),
         },
-        "add" => Intent::GitAdd,
+        "add" => {
+            let (mut paths, mut update, mut options) = (Vec::new(), false, true);
+            for t in args {
+                let text = t.text.as_str();
+                let short = text.strip_prefix('-').filter(|s| !s.starts_with('-'));
+                match text {
+                    "--" if options => options = false,
+                    _ if options && (text == "--all" || short.is_some_and(|s| s.contains('A'))) => {
+                        paths.push(".".to_string())
+                    }
+                    _ if options
+                        && (text == "--update" || short.is_some_and(|s| s.contains('u'))) =>
+                    {
+                        update = true
+                    }
+                    // 작업 위치를 따라가지 않고 레포 전체로 본다(넓게 보는 쪽이 안전하다)
+                    _ if options && text.starts_with("--pathspec-from-file") => {
+                        paths.push(".".to_string())
+                    }
+                    _ if options && text.starts_with('-') => {}
+                    _ => paths.push(text.to_string()),
+                }
+            }
+            if moved && !paths.is_empty() {
+                paths = vec![".".to_string()];
+            }
+            Intent::GitAdd { paths, update }
+        }
         _ => Intent::Other,
     }
 }
@@ -665,6 +694,10 @@ mod tests {
             run: run.map(str::to_string),
         };
         let fullops = |sub: &str| Intent::Fullops { sub: sub.into() };
+        let add = |paths: &[&str], update| Intent::GitAdd {
+            paths: paths.iter().map(|p| p.to_string()).collect(),
+            update,
+        };
         let cases: Vec<(&str, Dialect, Vec<Intent>)> = vec![
             ("ls -la", Bash, vec![Intent::Other]),
             (
@@ -795,8 +828,17 @@ mod tests {
             (
                 "git add -A; git commit --all",
                 Bash,
-                vec![Intent::GitAdd, Intent::GitCommit { all: true }],
+                vec![add(&["."], false), Intent::GitCommit { all: true }],
             ),
+            (
+                "git add -u src/a.png -- -x.png && git commit -m x",
+                Bash,
+                vec![
+                    add(&["src/a.png", "-x.png"], true),
+                    Intent::GitCommit { all: false },
+                ],
+            ),
+            ("git -C sub add a.png", Bash, vec![add(&["."], false)]),
             ("git status", Bash, vec![Intent::Other]),
             (
                 "fullops dispatch A-1 --role dev",

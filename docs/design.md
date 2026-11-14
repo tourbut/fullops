@@ -1079,7 +1079,7 @@ T-08의 조건: 글은 `ToolCall.text`다.
 - 1.24.0은 `standard`·`full`에서도 `Purpose:`를 요구했다. 새 판은 `on`·`ultra`에서 형식을 요구하지 않는다(DF-22). 이유: 방침이 권장으로 바뀌었고, 형식 때문에 막으면 병렬 진행이 한 번씩 늦어진다.
 
 
-T-09의 계산: `git status --porcelain -z --untracked-files=all -- .fullops-squad/docs/evaluations/qa-reports`를 한 번 부른다. 커밋 대상은 인덱스 칸이 공백·`?`가 아닌 항목이고, 같은 명령에 `GitAdd`가 있거나 `GitCommit { all: true }`면 모든 항목이다. 그 가운데 확장자가 `.png`·`.jpg`·`.jpeg`·`.webp`·`.gif`·`.mp4`·`.webm`·`.mov`이고 경로에 `/raw/` 부분이 없는 파일이 미디어다. 미디어가 속한 과제 폴더(`qa-reports/` 바로 아래 폴더)의 `report.md`가 그 파일의 폴더 기준 상대 경로(슬래시 표기)를 글 안에 담고 있으면 링크된 것이다. 링크 안 된 미디어가 하나라도 있으면 걸린다. 문구에는 최대 5개를 적는다.
+T-09의 계산: `git status --porcelain -z --untracked-files=all -- .fullops-squad/docs/evaluations/qa-reports`를 한 번 부른다. 커밋 대상은 git이 실제로 담을 항목이다: 인덱스 칸이 공백·`?`가 아닌 항목(이미 인덱스에 든 것), `GitCommit { all: true }`(`commit -a`)나 `git add -u`가 있으면 추적 중인 항목(`??` 제외) 전부, 같은 명령의 `git add <경로>`가 있으면 그 경로(작업 위치 기준을 레포 상대로 푼 것) 아래의 항목은 `??`까지. `git add -A`·`--all`·`.`, pathspec 마법(glob, `:/`), `git -C`, 같은 명령의 작업 위치 이동(`cd`·`pushd`·`Set-Location`), 레포 밖이나 풀지 못한 경로는 레포 전체로 본다(1.24.0의 `harness_gate`도 `add`의 범위로 좁혔다). 그 가운데 확장자가 `.png`·`.jpg`·`.jpeg`·`.webp`·`.gif`·`.mp4`·`.webm`·`.mov`이고 경로에 `/raw/` 부분이 없는 파일이 미디어다. 미디어가 속한 과제 폴더(`qa-reports/` 바로 아래 폴더)의 `report.md`가 그 파일의 폴더 기준 상대 경로(슬래시 표기)를 글 안에 담고 있으면 링크된 것이다. 링크 안 된 미디어가 하나라도 있으면 걸린다. 문구에는 최대 5개를 적는다.
 
 T-10의 계산: 편집 대상이 `.fullops-squad/docs/evaluations/qa-reports/<N>/…`이고 폴더 N이 없다. N 끝의 `-test`·`-review`를 뗀 것을 K라 한다. K에 차수 접미사 `-FIX`·`-RECHECK`·`-RETEST`·`-LOWS`·`-R<숫자>`(대소문자 무시, 뒤에 `-<숫자>`가 더 붙을 수 있고, K의 끝이거나 뒤에 `-`가 온다)가 있으면 그것을 뗀 것을 B라 한다. `qa-reports/` 아래에 `B`, `B-test`, `B-review` 가운데 하나가 있으면 걸린다.
 
@@ -3088,19 +3088,19 @@ expect = { verdict = "pass", flow = "continues" }
 |---|---|---|---|---|
 | A1 | 표식 없는 레포에서 다섯 이벤트 | 통과 | 통과 | 영향 없음 |
 | A2 | 깨진 stdin, 모르는 도구 이름 | 통과 | 통과 | 영향 없음 |
-| A3 | 깨진 설정 파일에서 Edit, 이어서 복구 명령 | 거부, 통과 | T-00 거부, 통과 | 복구 뒤 이어짐 |
-| A4 | 세션 도중 모드 변경 뒤 도구 호출과 Stop | 거부, 차단 1회 | T-00, X-00 | 새 세션에서 이어짐 |
+| A3 | 깨진 설정 파일에서 Edit, 이어서 복구 명령 | 거부, 복구 명령(`setup.py`)이 깨진 JSON을 읽지 못해 실패 | T-00 거부, `fullops doctor`와 설정 편집 통과(DF-26), 안내는 `Context`(DF-25) | 복구 뒤 이어짐 |
+| A4 | 세션 도중 모드 변경 뒤 도구 호출과 Stop | 거부, 차단 1회 | T-00, X-00. `resume`에도 S-00 안내(DF-25), `fullops status` 통과(DF-26) | 새 세션에서 이어짐 |
 | B1 | coor: 기본 브랜치 세션 시작 | lead 안내 | lead 안내(S-01) | - |
 | B2 | coor: 역할 브랜치 세션 시작 / coordinator 역할 브랜치 | worker 안내 / lead 안내 | 같음 | - |
 | B3 | dev: 주 담당 브랜치 / 다른 등록 역할 | dev 주 담당 안내 / worker 안내 | 같음 | - |
 | B4 | detached HEAD 세션, 등록된 리뷰 snapshot 세션 | coordinator 안내(오판) | `Other`·`Reviewer` 한 줄(DF-4) | 리뷰어가 lead 규칙에 안 걸림 |
 | B5 | preamble을 받은 기본 브랜치 세션의 Stop | 미정산 차단 | X-03 | lead 규칙 미적용 |
-| B6 | compact 뒤 SessionStart | 안내 없음 | 현재 인박스 한 줄(S-05) | 진행 복구 |
+| B6 | compact 뒤 SessionStart | 안내 없음 | 현재 인박스 한 줄(S-05, DF-27) | 진행 복구 |
 | C1 | 날것 `worker-start`(`--run` 없음) | 거부 | T-01 | `fullops dispatch`로 배정 |
 | C2 | 날것 `worker-start --run`(조건 충족) | 통과 | T-01 거부(DF-1) | 감싼 명령으로 같은 배정 |
 | C3 | PowerShell `& "C:\…\orca.exe" orchestration worker-start …` | 통과(인식 못 함) | T-01(DF-5) | - |
 | C4 | `terminal send --text`에 지시서 경로 / lead의 21자 글 / 20자 글 | 거부 / 거부 / 통과 | T-02 / T-03 / 통과 | - |
-| C5 | lead의 날것 `task-create`: 분류된 키 있음 / 없음 | 통과 / 거부 | 통과 / T-04 | - |
+| C5 | lead의 날것 `task-create`: 분류된 키 있음 / 없음 / `--spec-file`·풀리지 않는 변수의 spec | 통과 / 거부 / 거부 | 통과 / T-04 / 통과(DF-28) | - |
 | D1 | route 없는 키 배정 / unresolved 키 배정 | 거부 | D-01 | 분류 뒤 이어짐 |
 | D2 | 인박스의 키가 다른 배정 | 거부 | D-02 | - |
 | D3 | 다른 키의 미통합 결과가 있는 배정(그 키는 다른 역할에 배정한다. 같은 역할이면 `task new`의 H-03이 먼저 걸린다) / 같은 키의 수정 배정 | 거부 / 통과 | D-03 / 통과 | 병합 뒤 이어짐 |
@@ -3114,7 +3114,7 @@ expect = { verdict = "pass", flow = "continues" }
 | E3 | 같은 경우를 Codex `apply_patch`로 | 거부 | T-05 | - |
 | E4 | lead가 design 과제의 타 역할 지시서 작성 | 거부 | H-02 거절, T-06 | 설계 역할 배정 |
 | E5 | 설계 역할의 코드 파일 Edit / `.fullops-squad/` 아래 Edit | 거부 / 통과 | T-07 / 통과 | - |
-| F1 | 보고서가 링크 안 한 PNG를 커밋 / 링크한 PNG / `raw/` | 거부 / 통과 / 통과 | T-09 / 통과 / 통과 | - |
+| F1 | 보고서가 링크 안 한 PNG를 커밋(`git add .`·`git add <캡처 경로>`로 담음 포함) / 추적하지 않는 캡처가 있을 때 `commit -am`·다른 경로의 `git add` / 링크한 PNG / `raw/` | 거부 / 통과 / 통과 / 통과 | T-09 / 통과 / 통과 / 통과 | - |
 | F2 | `qa-reports/A-1-FIX-test/` 생성(기존 `A-1-test` 있음) | 거부 | T-10 | 기존 보고서에 덧붙임 |
 | G1 | worker: 코드 변경 뒤 lint 없이 Stop, 같은 턴에 다시 Stop | 차단, 경고 통과 | X-01, 경고 통과 | - |
 | G2 | worker: lint 통과 뒤 기록 전용 커밋, Stop | 통과 | 통과 | - |
@@ -3123,7 +3123,7 @@ expect = { verdict = "pass", flow = "continues" }
 | G5 | dev 직접 작업: 400줄 변경, lint 통과, 리뷰 없음 / 면제 기록 / 수락 리뷰 | 차단 / 통과 / 통과 | X-02 / 통과 / 통과 | - |
 | H1 | dispatch 받은 세션이 보고 없이 Stop, 다시 Stop | 차단, 경고 통과 | X-03, 경고 통과 | - |
 | H2 | 날것 `worker_done` 전송 뒤 Stop(fake-orca가 정산을 보고) | 통과 | 통과 | - |
-| H3 | Orca가 응답하지 않을 때 dispatch 받은 세션의 Stop | 통과 | 통과 | 갇히지 않음 |
+| H3 | Orca가 응답하지 않을 때 dispatch 받은 세션의 Stop | 차단 1회 뒤 경고(Orca 상태와 무관) | 통과(DF-32) | 갇히지 않음 |
 | H4 | `fullops done`: lint 없음 / 완료 보고 빈칸 / 정상 | - | R-03·R-04 거절 / 본문 출력 | - |
 | H5 | hook이 돌지 않은 세션(agy의 데스크톱 앱, hook 신뢰 전의 Codex)의 worker가 `fullops done`(세션 파일과 `current.json`이 없다): 세션 핸들이 dispatch의 터미널과 같음 / 핸들 없음, 이 워크트리에 그 과제의 dispatch 하나 / dispatch 기록 없음. 이어서 lead의 `wait`가 그 본문의 `worker_done`을 받음 | - | `reported` 기록과 본문 출력 / 같음(R-08의 둘째 길) / 본문 출력과 알림, `reported` 없음. `wait`는 앞의 둘에서 `sha_source = done`, 셋째에서 `sha_source = body`로 completion을 만든다 | hook이 돌지 않은 worker도 완료 보고가 병합까지 간다 |
 | I1 | lead: 분류만 하고 Stop / `PLANS.md`에 보류로 적고 Stop | 차단 / 통과 | X-04 / 통과 | - |
@@ -3199,7 +3199,7 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 | DF-2 | 지시서 `--level`, 보고서 분량, `raw/` 링크 알림이 편집 직후가 아니라 `dispatch`·`done` 시점에 나온다 | PostToolUse hook을 없애 도구 호출당 프로세스를 줄인다. 알림은 알림으로 남는다 |
 | DF-3 | 현황판 단계 미갱신 확인이 없다 | 현황판을 없앴다(#18) |
 | DF-4 | detached 세션은 lead가 아니고, 등록된 리뷰 snapshot은 `Reviewer`다 | 1.24.0의 오판(추정)을 고친다 |
-| DF-5 | PowerShell `&` 호출과 역슬래시 경로의 Orca 명령을 인식한다 | 1.24.0의 알려진 한계. Windows 우선 |
+| DF-5 | PowerShell `&` 호출, 역슬래시 경로, 서브셸 `( … )`·묶음 `{ …; }`·명령 치환·중첩 셸로 감싼 Orca 명령을 인식한다 | 1.24.0의 알려진 한계(첫 단어가 `orca`일 때만 Orca 명령으로 봤다). Windows 우선. 감싼 명령도 같은 주입·배정이라 막는 목적이 같고 정당한 작업을 막지 않는다 |
 | DF-6 | lite 위임의 수정 동사 휴리스틱이 없고 `Purpose`와 읽기 전용 선언만 본다. 폭·테마 캡처 요구 탐지가 없다 | 산문 휴리스틱의 오탐. 값어치가 측정되지 않았다 |
 | DF-7 | 후속 요청을 완료 보고 산문에서 뽑지 않고 `done --followup`으로 받으며, `PLANS.md` 등재는 `merge`가 한다 | 산문 해석 제거, worker 브랜치의 `PLANS.md` 충돌 제거 |
 | DF-8 | `done`이 lint 통과 없이 거절하고(`--no-checks`로 진행), `dispatch --reason limit`이 3회째와 다른 tuple을 거절한다 | 1.24.0은 알림·지침이다. 같은 게이트를 명령 안으로 당겼다. 사람 결정(H5) |
@@ -3207,7 +3207,7 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 | DF-10 | Stop에 여러 사유가 걸리면 하나의 차단에 모아 낸다 | Stop 프로세스가 하나다. 에이전트가 한 턴에 다 처리한다 |
 | DF-11 | 재시도 판정이 `stop_hook_active`가 아니라 턴 기준이다 | 호스트 차이를 없앤다(7.6절). 결과는 같다 |
 | DF-12 | python3·orca 경로 안내와 긴 출력 줄이기가 없다. caveman 주입은 있되 (1) 별도 hook 프로세스가 아니고 (2) 본문은 앞 3,000자까지이며 (3) 스킬이 없을 때 경고를 내지 않는다. 레포를 가리지 않는 것(비활성 레포의 새 세션에도 붙인다)과 `resume`·`compact`에 붙이지 않는 것은 1.24.0과 같다 | SessionStart의 프로세스를 하나로 두고 문맥 한도를 지킨다. 빠진 스킬은 `doctor`가 알린다 |
-| DF-13 | 새 lead 세션도 열린 Run의 대기 의무를 진다(I5). 기준선이 낡은 워크트리는 `dispatch`가 동기화한다(D4). SHA 없는 보고를 스스로 채운다(J5) | 흐름이 더 이어진다 |
+| DF-13 | 새 lead 세션도 열린 Run의 대기 의무를 진다(I5). 기준선이 낡은 워크트리는 `dispatch`가 동기화하고, 더러워 동기화할 수 없으면 배정하지 않고 종료 코드 2로 멈춘다(D4). SHA 없는 보고를 스스로 채운다(J5) | 흐름이 더 이어진다 |
 | DF-14 | 탐색 색인이 정의를 Python AST가 아니라 모든 언어 공통의 줄 훑기로 뽑고 docstring을 담지 않는다 | 실행 중 Python이 없다. 지도의 설명 글이 조금 달라질 뿐이고 결과는 추천이다 |
 | DF-15 | worker가 실행 중이어도, Run을 연 세션이 Orca가 깨울 수 있는 세션이면 대기 프로세스 없이 Stop을 통과시킨다(I2·I3). 1.24.0은 막고 `orca_wait`를 걸게 했다 | 현재 Orca는 조율자가 턴을 끝내면 메일이 올 때 깨운다. 그 위에 폴링을 겹치면 스크립트의 소비형 `check`가 조율자의 메일을 가져간다. Codex·grok lead도 포그라운드로 턴을 잡고 있지 않아도 된다 |
 | DF-16 | 패킷과 지시서의 연결이 `attempt` 값이 아니라 `round`와 지시서 지문이고, 지문에 front matter가 들지 않는다. 배정 때 패킷의 `head`는 worker `HEAD`와 같을 필요 없이 조상이면 된다 | 준비 커밋이 패킷을 담으므로 같을 수 없다. front matter의 `status`·`updated` 변경이 패킷을 무효로 만들지 않는다 |
@@ -3219,6 +3219,16 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 | DF-22 | 하위 위임의 기본이 제한(`subagent_level`, 신규 기본 `lite`)에서 권장(`parallel`, 기본 `on`)으로 바뀌었다. `on`·`ultra`에서는 서브에이전트 지시에 `Purpose:`를 요구하지 않는다. SessionStart 안내와 배정 spec이 병렬 진행을 요청한다. `migrate`가 `lite`를 `on`으로 옮긴다 | 레포 주인의 결정(2026-11-14): 서브에이전트로 병렬 작업해 개발을 빨리 끝내는 것이 Rust판의 특징이다. 리뷰·테스트의 "최소·표적"은 그대로다 |
 | DF-23 | worker가 띄운 하위 worker가 남아 있으면 `done`이 거절한다(R-11). 하위 배정은 부모의 워크트리·키·역할로만 되고(D-13) completion을 만들지 않는다. 하위 worker에게는 X-01을 적용하지 않고 `done`을 받지 않는다. 하위 worker가 남아 있는 동안 부모의 Stop은 X-01·X-03을 건너뛰고 X-05만 본다 | 1.24.0은 "부모가 하위 결과를 취합한 뒤 보고한다"가 스킬 규약이었다. 보고 하나가 변경 전부를 담고 하위 보고가 lead의 통합 대기에 섞이지 않게 한다. 사람 결정(H5) |
 | DF-24 | grok에서 세션 시작 안내와 프롬프트 문맥을 내지 않는다(사용자에게 한 줄, 모델은 `fullops status`로 받는다). grok의 hook 등록이 플러그인이 아니라 전역 파일이다. grok·agy의 플러그인을 마켓플레이스가 아니라 조립한 로컬 폴더로 설치한다. agy에서 hook이 돈다 | 1.24.0이 grok에 낸 안내는 모델에게 닿지 않았고 agy에서는 hook이 돌지 않았다(묶음 0b). Windows의 PowerShell에서 확실히 도는 등록이 exec form뿐이다 |
+| DF-25 | 정책 오류(설정 파손, 세션 도중 모드 변경)를 모델에게 `Context`로 알린다. SessionStart는 `source`와 무관하게(S-00, `resume`·`compact` 포함), UserPromptSubmit은 세션당 한 번(P-03)이다. 1.24.0은 `startup`·`clear`의 SessionStart와 매 프롬프트에 사용자만 보는 `systemMessage`를 냈고 `resume`에서는 모드 변경을 알리지 않았다 | `systemMessage`는 모델에게 가지 않는다(7.5절 P-03). 이어 가는 세션의 모델도 첫 도구 호출이 거부되기 전에 사유와 복구 방법을 안다. 같은 사유는 T-00 거부와 X-00 차단이 계속 전하므로 안내를 되풀이하지 않는다 |
+| DF-26 | 정책 오류에서도 `.fullops-squad/fullops.toml` 편집과 `fullops`의 진단·복구 단일 명령(`doctor`·`status` 등 T-00의 통과 목록)을 받는다. 1.24.0은 `setup.py` 단일 명령만 받았고, `setup.py`는 깨진 `fullops.json`을 읽지 못해 실패했다(세션 안에서 고칠 길이 없었다) | 막는 목적(깨진 설정이나 바뀐 모드로 작업을 잇지 않는다)은 T-00·X-00이 그대로 지킨다. 받는 것은 설정을 고치거나 상태를 보는 일뿐이라 그 목적을 해치지 않고, 사람 손 없이 복구까지 간다 |
+| DF-27 | `compact` 뒤 SessionStart가 역할 한 줄과 현재 인박스 경로·과제 키를 다시 준다(S-05). 1.24.0은 `compact`에 안내를 내지 않았다 | 요약으로 잘린 문맥에서 역할과 현재 과제를 되찾아 진행을 잇는다(더 나음). 안내는 1,500자 이하의 역할 글이고(7.7절) 아무것도 막지 않는다 |
+| DF-28 | lead의 날것 `task-create`에서 spec을 읽을 수 없으면(`--spec-file`, 같은 명령에서 풀리지 않는 변수) T-04가 통과시킨다(모름은 통과). 1.24.0은 명령 글에 분류된 키가 보이지 않으면 거부했다 | hook은 파일과 stdin을 읽지 않는다. 1.24.0 스킬도 긴 내용은 파일로 주라고 시켰으므로 파일 spec은 정당한 사용이다. 분류되지 않은 과제가 worker를 얻는 길은 날것 `worker-start` 거부(T-01, DF-1)와 `fullops dispatch`의 D-01이 막는다 |
+| DF-29 | 1.24.0의 route 기록(`docs/evaluations/jev/<KEY>-route.json`)이 있는 키를 `fullops route`로 처음 분류하면 `routes/<KEY>.json`을 새로 만들고 옛 기록의 `requires_packet`만 옮긴다. 옛 파일은 고치지 않는다. 1.24.0의 `jev_route.py`는 결과 파일이 있으면 `--force` 없이 분류를 거절했다 | 1.24.0의 기록은 새 판의 route 기록이 아니다(13.2절). 기존 결과를 보존한다는 목적은 옛 파일을 읽기만 하는 것과 새 기록의 덮어쓰기 보호(8.3절 4항)가 지키고, 패킷 요구는 옮긴 `requires_packet`이 이어 간다(J-17) |
+| DF-30 | 인박스의 과제 키를 첫 제목 `# <KEY> — <목표>`가 아니라 front matter `key`에서 읽는다. 그래서 front matter의 `key`만 바꾸는 편집과 front matter를 잃는 덮어쓰기(키를 읽을 수 없는 글)는 T-05(d)로 거부하고, 제목만 바꾸는 편집은 키 변경으로 보지 않는다. 1.24.0은 제목에서만 키를 읽었고, 새 글에서 키를 읽지 못하면 기존 키로 보아 통과시켰다 | key·round·budget·route를 front matter에서만 읽으므로(6.1.3절) 이것을 잃은 인박스는 판정에서 빠진다. 다른 과제로 덮어쓰기를 막는 목적은 두 판이 같고, 같은 과제의 본문 편집은 그대로 통과한다 |
+| DF-31 | T-06은 lead가 쓴 인박스(`from: lead`)의 수정을 막지 않는다. 1.24.0은 과제가 design으로 분류됐으면 누가 썼든 lead의 타 역할 지시서 수정을 막았다 | 작성 권한은 `task new`·`task reopen`의 H-02가 만들 때 지킨다(설계 역할이 있으면 lead는 design 과제의 지시서를 만들지 못한다). T-06은 설계 역할이 쓴 지시서를 lead가 덮지 않게 한다. `from: lead`인 design 인박스는 설계 역할이 없을 때 lead가 만든 것뿐이다(H-02 (4)). 설계 역할을 나중에 등록한 레포에서 lead가 자기가 쓴 design 지시서를 계속 고칠 수 있다는 점만 1.24.0과 다르다 |
+| DF-32 | dispatch가 묶인 세션의 X-03은 Orca 조회(`worker-show`, 3초)로도 정산이 확인되지 않을 때 막고, 조회가 시간 초과되거나 실패하면(`Unknown`) 통과한다. 1.24.0은 Orca 상태와 무관하게 로컬 상태만으로 한 번 막고 반복 Stop에서 경고로 놓아 주었다 | PostToolUse hook이 없어(DF-2) 날것 `worker_done` 전송을 로컬에서 알 수 없다. Orca가 답하지 않으면 `worker_done`도 보낼 수 없으므로 막아도 풀 길이 없다. Orca가 답하면 X-03이 막으므로 알림의 목적은 지켜지고, 잃는 것은 Orca가 3초 넘게 느린 경우의 알림 한 번이다 |
+| DF-33 | DOC-003(공통 front matter)이 인박스·로그·템플릿·`rules/`·`FULLOPS.md`·`PLANS.md`를 보지 않는다(8.11절 표). 1.24.0은 `rules/common/`과 `_`로 시작하는 파일만 빼고 바뀐 `.fullops-squad` Markdown 전부에 요구했다 | 인박스는 6.1.3절의 자기 front matter가 있고, 로그는 `done`이 쓰는 기록이며, `PLANS.md`·`FULLOPS.md`·`rules/`는 `init`이 까는 지도·규칙 글이라 산출물이 아니다. 1.24.0에서는 이 글을 손으로 고친 커밋마다 lint가 ERROR로 막아 `deliverables.py --stamp`를 거쳐야 했다. 산출물·맥락 문서(`contexts/`, `project.md`, 보고서)의 front matter 요구는 그대로다 |
+| DF-34 | lint 명령마다 `timeout_seconds`를 둘 수 있다(없으면 설정의 `timeout_seconds`, 8.11절 8번). 1.24.0은 설정 전체의 값 하나만 썼다 | 느린 명령 하나 때문에 전체 상한을 늘리지 않고, 멈춘 명령을 짧게 끊어 게이트가 오래 묶이지 않게 한다. 상한을 넘으면 `timeout`으로 실패시켜 막는 것은 같다 |
 
 ### 12.4 합격 기준
 

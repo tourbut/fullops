@@ -38,26 +38,31 @@ expect = { verdict = "deny", rule = "T-00", flow = "stopped" }
 
 [[step]]
 act = "user_prompts"
+df = "DF-25"
 text = "왜 막히지?"
 expect = { verdict = "context", flow = "continues", escape = "fullops doctor" }
 
 [[step]]
 act = "user_prompts"
+df = "DF-25"
 text = "다시 물어본다"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "writes_file"
+df = "DF-26"
 path = ".fullops-squad/fullops.toml"
 content = "schema = 2\napplied_version = \"2.0.0\"\nmode = \"coor\"\nrouting = \"legacy\"\ntest_level = \"lite\"\nparallel = \"on\"\n\n[git]\nbase = \"main\"\nremote = \"origin\"\n\n[roles.dev]\nbranch = \"fullops/dev\"\nkind = \"worker\"\n"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "writes_file"
+df = "DF-26"
 path = "notes.md"
 content = "메모\n"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
+df = "DF-26"
 expect = { verdict = "pass", flow = "continues" }

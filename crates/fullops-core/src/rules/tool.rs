@@ -3,7 +3,7 @@
 use super::decide::{HANDOVERS, QA_REPORTS};
 use super::{Effect, Finding, call, hit, hit_case};
 use crate::config::is_code;
-use crate::facts::Facts;
+use crate::facts::{CommitScope, Facts};
 use crate::frontmatter::{inbox_of, parse_front_matter};
 use crate::model::{
     HookInput, Intent, Known, Parallel, RoleId, RouteClass, RunId, TaskKey, ToolKind, TurnKind,
@@ -18,6 +18,15 @@ const MEDIA: [&str; 8] = [
     ".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov",
 ];
 pub(super) const CONFIG: &str = ".fullops-squad/fullops.toml";
+/// 셸에서 작업 위치를 옮기는 명령(bash·PowerShell). T-09가 `git add`의 상대 경로를 풀 수 없게 된다.
+const MOVES: [&str; 6] = [
+    "cd",
+    "chdir",
+    "pushd",
+    "set-location",
+    "sl",
+    "push-location",
+];
 
 /// `handovers/` 바로 아래의 `.md` 파일 이름. `_TEMPLATE.md`는 뺀다.
 fn handover_name(rel: &str) -> Option<&str> {
@@ -249,7 +258,7 @@ pub(super) fn t08(input: &HookInput, facts: &mut dyn Facts) -> Finding {
 }
 
 /// T-09
-pub(super) fn t09(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
+pub(super) fn t09(input: &HookInput, facts: &mut dyn Facts) -> Finding {
     let intents = call::intents();
     let Some(all) = intents.iter().find_map(|i| match i {
         Intent::GitCommit { all } => Some(*all),
@@ -257,8 +266,33 @@ pub(super) fn t09(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
     }) else {
         return Finding::None;
     };
-    let unstaged = all || intents.contains(&Intent::GitAdd);
-    let Known::Yes(paths) = facts.qa_commit_candidates(unstaged) else {
+    let mut scope = CommitScope {
+        tracked: all,
+        added: Vec::new(),
+    };
+    // 같은 명령 안에서 작업 위치를 옮기면(`cd` 등) `add`의 상대 경로를 풀 수 없다: 레포 전체로 본다
+    let command = input
+        .tool
+        .as_ref()
+        .and_then(|t| t.command.as_deref())
+        .unwrap_or("");
+    let moved = command
+        .split(|c: char| !(c.is_alphanumeric() || c == '-'))
+        .any(|w| MOVES.iter().any(|m| w.eq_ignore_ascii_case(m)));
+    for intent in &intents {
+        if let Intent::GitAdd { paths, update } = intent {
+            scope.tracked |= update;
+            for path in paths {
+                // pathspec 마법(glob, `:/`)과 레포 밖·루트는 레포 전체로 본다(넓게 보는 쪽이 안전하다)
+                let magic = moved || path.starts_with(':') || path.contains(['*', '?', '[']);
+                let rel = (!magic)
+                    .then(|| call::rel_path(std::path::Path::new(path), input, facts))
+                    .flatten();
+                scope.added.push(rel.unwrap_or_default());
+            }
+        }
+    }
+    let Known::Yes(paths) = facts.qa_commit_candidates(&scope) else {
         return Finding::Unknown;
     };
     let root = call::root();

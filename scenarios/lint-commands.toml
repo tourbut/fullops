@@ -272,12 +272,14 @@ act = "commits"
 
 [[step]]
 act = "runs_fullops"
+df = "DF-34"
 raw = true
 args = ["lint", "--from", "base4"]
 expect = { verdict = "deny", exit = 2, escape = "[timeout] hang" }
 
 [[step]]
 act = "runs_fullops"
+df = "DF-34"
 raw = true
 args = ["lint", "--from", "base4"]
 expect = { verdict = "deny", escape = "[passed] quick" }

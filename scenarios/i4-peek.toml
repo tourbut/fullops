@@ -56,6 +56,7 @@ expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "A-1(msg
 # 기록된 completion에 `done`의 SHA가 있어 그대로 통합된다
 [[step]]
 act = "lead_merges"
+df = "DF-13"
 key = "A-1"
 expect = { verdict = "pass", flow = "continues" }
 
@@ -66,4 +67,5 @@ expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
+df = "DF-13"
 expect = { verdict = "pass", flow = "continues" }

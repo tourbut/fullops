@@ -375,7 +375,7 @@ fn intent_names(input: &HookInput, scene: &Scene) -> Vec<String> {
                 Intent::OrcaTerminalSend { .. } => "OrcaTerminalSend",
                 Intent::OrcaCheck { .. } => "OrcaCheck",
                 Intent::GitCommit { .. } => "GitCommit",
-                Intent::GitAdd => "GitAdd",
+                Intent::GitAdd { .. } => "GitAdd",
                 Intent::Fullops { .. } => "Fullops",
                 Intent::Other => "Other",
                 Intent::Unparsed => "Unparsed",

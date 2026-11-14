@@ -33,4 +33,5 @@ expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
+df = "DF-3"
 expect = { verdict = "pass", flow = "continues" }

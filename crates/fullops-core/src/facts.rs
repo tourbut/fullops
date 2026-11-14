@@ -39,13 +39,38 @@ pub trait Facts {
     fn review_need(&mut self, base: &Sha, head: &Sha) -> Known<Need>;
     fn review_evidence(&mut self, head: &Sha) -> Known<ReviewEvidence>;
     fn landing(&mut self, sha: &Sha) -> Known<Landing>;
-    fn qa_commit_candidates(&mut self, include_unstaged: bool) -> Known<Vec<String>>;
+    /// T-09: `scope`가 담는 qa-reports 항목의 레포 상대 경로.
+    fn qa_commit_candidates(&mut self, scope: &CommitScope) -> Known<Vec<String>>;
     fn orca_settled(&mut self, id: &DispatchId) -> Known<bool>;
     fn waiter_alive(&mut self, run: &RunId) -> Known<bool>;
     /// 세션 핸들(설계 4절). 환경 변수 `ORCA_AGENT_SESSION_ID` → `ORCA_TERMINAL_HANDLE`에서 읽는다.
     fn session_handle(&self) -> Option<String>;
     /// S-06: 설치된 사용자 스킬의 본문. 파일이 없으면 `Yes(None)`.
     fn user_skill(&mut self, name: &str) -> Known<Option<SkillText>>;
+}
+
+/// T-09의 커밋 대상(설계 7.5절): 이미 인덱스에 든 항목, `tracked`면 추적 중인 항목 전부(`commit -a`, `add -u`),
+/// `added`(같은 명령의 `git add` 경로, 레포 상대. `""`은 레포 전체) 아래의 항목은 추적하지 않는 것(`??`)까지.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CommitScope {
+    pub tracked: bool,
+    pub added: Vec<String>,
+}
+
+impl CommitScope {
+    /// `git status --porcelain`의 인덱스 칸과 경로로 그 항목이 커밋에 들어갈 수 있는지 본다.
+    pub fn takes(&self, index: char, path: &str) -> bool {
+        let under = |p: &String| {
+            p.is_empty()
+                || path == p
+                || path
+                    .strip_prefix(p.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'))
+        };
+        !matches!(index, ' ' | '?')
+            || (self.tracked && index != '?')
+            || self.added.iter().any(under)
+    }
 }
 
 /// 호출자 판정의 입력. 모두 git 프로세스 없이 얻는 값이다.
@@ -358,6 +383,27 @@ mod tests {
             })
             .actor
             .is_lead()
+        );
+    }
+
+    #[test]
+    fn commit_scope_takes_what_git_would_commit() {
+        let shot = "q/A-1/shot.png";
+        let scope = |tracked, added: &[&str]| CommitScope {
+            tracked,
+            added: added.iter().map(|p| p.to_string()).collect(),
+        };
+        // 인덱스에 든 것은 늘 들어간다. 추적하지 않는 캡처는 `commit -a`로는 들어가지 않는다
+        assert!(scope(false, &[]).takes('A', shot));
+        assert!(!scope(false, &[]).takes(' ', shot) && !scope(true, &[]).takes('?', shot));
+        assert!(scope(true, &[]).takes(' ', shot));
+        // `git add`는 그 경로 아래만 넓힌다
+        assert!(scope(false, &[""]).takes('?', shot));
+        assert!(
+            scope(false, &["q/A-1"]).takes('?', shot) && scope(false, &[shot]).takes('?', shot)
+        );
+        assert!(
+            !scope(false, &["q/A"]).takes('?', shot) && !scope(false, &["src"]).takes('?', shot)
         );
     }
 

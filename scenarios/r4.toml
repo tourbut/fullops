@@ -34,6 +34,7 @@ message = "완료 보고 작성"
 # 하위 worker가 정산 전이다
 [[step]]
 act = "worker_finishes"
+df = "DF-23"
 role = "dev"
 no_checks = "시나리오"
 expect = { verdict = "deny", rule = "R-11", escape = "fullops wait --run run_2" }
@@ -64,6 +65,7 @@ expect = { verdict = "block", rule = "X-05", escape = "fullops wait --run run_2"
 # 세션 핸들이 하위 Run의 coordinator다
 [[step]]
 act = "stops"
+df = "DF-23"
 who = "dev"
 expect = { verdict = "pass" }
 
@@ -90,6 +92,7 @@ expect = { verdict = "deny", rule = "R-11" }
 
 [[step]]
 act = "stops"
+df = "DF-23"
 who = "dev"
 expect = { verdict = "block", rule = "X-05" }
 
@@ -101,6 +104,7 @@ expect = { verdict = "pass" }
 
 [[step]]
 act = "stops"
+df = "DF-23"
 who = "dev"
 expect = { verdict = "block", rule = "X-01" }
 
@@ -111,11 +115,13 @@ message = "하위 worker의 변경을 확인해 커밋"
 
 [[step]]
 act = "worker_lints"
+df = "DF-23"
 role = "dev"
 expect = { verdict = "pass" }
 
 [[step]]
 act = "worker_finishes"
+df = "DF-23"
 role = "dev"
 expect = { verdict = "pass", escape = "[완료] A-1" }
 

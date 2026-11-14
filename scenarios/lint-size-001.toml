@@ -5,11 +5,11 @@ origin = "8.11절 9번 SIZE-001"
 remote = false
 roles = {}
 
-# 기준 시점: 코드 5줄, 문서 6줄이 상한이다(나머지 size 값은 내장 템플릿 그대로)
+# 기준 시점: 코드 5줄, 문서 6줄이 상한이다(나머지 size 값은 내장 템플릿과 같다. 1.24.0의 lint.py는 size 키를 모두 요구한다)
 [[step]]
 act = "file"
 path = ".fullops-squad/lint/lint.json"
-content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}], "size": {"max_code_lines": 5, "max_doc_lines": 6}}'
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}], "size": {"severity": "WARNING", "max_code_lines": 5, "max_doc_lines": 6, "max_diff_added": 400}}'
 
 # 기준 시점에 이미 상한을 넘은 파일
 [[step]]

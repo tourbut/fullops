@@ -13,26 +13,31 @@ expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
 
 [[step]]
 act = "runs_shell"
+df = "DF-1"
 command = "bash -lc \"orca orchestration worker-start --run run_1\""
 expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
 
 # 감싼 꼴도 같은 명령이다: 제어 키워드, 앞붙이 명령, 서브셸, 큰따옴표 안의 명령 치환
 [[step]]
 act = "runs_shell"
+df = "DF-1"
 command = "if true; then orca orchestration worker-start --run run_1 --spec x; fi"
 expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
 
 [[step]]
 act = "runs_shell"
+df = "DF-1"
 command = "env ORCA_X=1 orca orchestration worker-start --run run_1 --spec x"
 expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
 
 [[step]]
 act = "runs_shell"
+df = "DF-1"
 command = "(orca orchestration worker-start --run run_1 --spec x)"
 expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
 
 [[step]]
 act = "runs_shell"
+df = "DF-1"
 command = "echo \"started: $(orca orchestration worker-start --run run_1)\""
 expect = { verdict = "deny", rule = "T-01", flow = "stopped" }

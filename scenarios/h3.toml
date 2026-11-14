@@ -17,6 +17,7 @@ times = 1
 
 [[step]]
 act = "stops"
+df = "DF-32"
 who = "dev"
 expect = { verdict = "pass", flow = "continues" }
 
@@ -29,6 +30,7 @@ stdout = { ok = false, error = { code = "runtime_unavailable", message = "Orcaê°
 
 [[step]]
 act = "stops"
+df = "DF-32"
 who = "dev"
 expect = { verdict = "pass", flow = "continues" }
 

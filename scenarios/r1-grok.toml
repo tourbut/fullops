@@ -7,6 +7,7 @@ parallel = "on"
 
 [[step]]
 act = "session_starts"
+df = "DF-24"
 expect = { verdict = "warn", flow = "continues", escape = "fullops status" }
 
 [[step]]

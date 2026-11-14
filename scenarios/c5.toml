@@ -13,11 +13,13 @@ expect = { verdict = "deny", rule = "T-04", flow = "stopped" }
 
 [[step]]
 act = "runs_shell"
+df = "DF-28"
 command = "orca orchestration task-create --spec-file spec.txt"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "runs_shell"
+df = "DF-28"
 command = "orca orchestration task-create --spec \"$SPEC\""
 expect = { verdict = "pass", flow = "continues" }
 

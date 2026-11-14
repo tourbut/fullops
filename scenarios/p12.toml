@@ -123,6 +123,7 @@ expect = { verdict = "pass", exit = 0, flow = "continues" }
 # 배정의 준비 커밋과 동기화가 패킷과 인박스를 역할 워크트리로 옮긴다
 [[step]]
 act = "lead_dispatches"
+df = "DF-16"
 key = "PAY-12"
 role = "dev"
 expect = { verdict = "pass", flow = "continues" }
@@ -152,6 +153,7 @@ expect = { verdict = "pass", exit = 0, flow = "continues" }
 # 다시 배정이 D-12를 통과한다
 [[step]]
 act = "lead_dispatches"
+df = "DF-16"
 key = "PAY-12"
 role = "dev"
 expect = { verdict = "pass", flow = "continues" }

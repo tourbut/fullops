@@ -8,6 +8,7 @@ parallel = "off"
 
 [[step]]
 act = "session_starts"
+df = "DF-24"
 expect = { verdict = "warn", flow = "continues", escape = "fullops status" }
 
 [[step]]
@@ -18,6 +19,7 @@ content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev
 
 [[step]]
 act = "edits_file"
+df = "DF-30"
 who = "dev"
 path = ".fullops-squad/handovers/to_dev.md"
 old = "key: A-1"
@@ -78,5 +80,6 @@ expect = { verdict = "block", rule = "X-03", flow = "stopped", escape = "fullops
 
 [[step]]
 act = "stops"
+df = "DF-24"
 who = "dev"
 expect = { verdict = "pass", flow = "continues" }

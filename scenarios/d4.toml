@@ -34,6 +34,7 @@ content = "커밋하지 않은 파일\n"
 
 [[step]]
 act = "lead_dispatches"
+df = "DF-13"
 key = "B-2"
 role = "art"
 expect = { verdict = "deny", exit = 2, flow = "stopped", escape = "fullops sync --role art" }

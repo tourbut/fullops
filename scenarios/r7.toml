@@ -12,6 +12,7 @@ act = "spawns_subagent"
 who = "dev"
 prompt = "src/a.py를 맡는다. 완료 조건: 함수 하나"
 expect = { verdict = "pass", flow = "continues" }
+df = "DF-22"
 
 [[step]]
 act = "file"
@@ -36,6 +37,12 @@ expect = { verdict = "block", rule = "X-01", flow = "stopped" }
 [[step]]
 act = "worker_lints"
 role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+# 커밋과 lint 뒤에는 종료가 통과한다(1.24.0도 lint 통과 기록으로 통과시킨다)
+[[step]]
+act = "stops"
+who = "dev"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]

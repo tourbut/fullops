@@ -5,14 +5,14 @@ origin = "설계 12.2절 O1"
 act = "file"
 who = "dev"
 path = ".fullops-squad/handovers/to_dev.md"
-content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
+content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1 — A-1 구현\n\n## 완료 보고\n"
 
 [[step]]
 act = "edits_file"
 who = "dev"
 path = ".fullops-squad/handovers/to_dev.md"
-old = "key: A-1"
-new = "key: B-2"
+old = "key: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1 — A-1 구현"
+new = "key: B-2\nrole: dev\ngoal: B-2 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# B-2 — B-2 구현"
 expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops plan add" }
 
 [[step]]

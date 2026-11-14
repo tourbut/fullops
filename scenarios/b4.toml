@@ -26,6 +26,7 @@ who = "dev"
 
 [[step]]
 act = "stops"
+df = "DF-4"
 who = "dev"
 expect = { verdict = "pass", flow = "continues" }
 

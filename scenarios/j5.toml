@@ -34,5 +34,6 @@ expect = { verdict = "pass", escape = "병합 전" }
 
 [[step]]
 act = "lead_merges"
+df = "DF-13"
 key = "A-1"
 expect = { verdict = "pass" }

@@ -99,7 +99,7 @@ pub(super) fn root() -> PathBuf {
 
 /// 편집 대상의 레포 루트 기준 상대 경로. 경로를 보는 규칙(T-00, T-05, T-06, T-07, T-10과 후보 가리기)이 모두 이 함수를 거친다.
 /// 판정 전에 실제 경로로 푼다: 링크나 junction을 거친 경로와 Windows에서 대소문자만 다른 경로도 같은 파일이다.
-fn rel_path(path: &Path, input: &HookInput, facts: &mut dyn Facts) -> Option<String> {
+pub(super) fn rel_path(path: &Path, input: &HookInput, facts: &mut dyn Facts) -> Option<String> {
     let real_root = match with(|call| call.real_root.clone()) {
         Some(root) => root,
         None => {

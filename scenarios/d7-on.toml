@@ -11,6 +11,7 @@ expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "spawns_subagent"
+df = "DF-22"
 prompt = "결제 모듈의 재시도 경로를 찾아 보고한다."
 expect = { verdict = "pass", flow = "continues" }
 

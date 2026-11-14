@@ -5,7 +5,7 @@ use super::changes::{self, Criteria, GitGate};
 use crate::assets;
 use fullops_core::config::{PolicyError, mode_changed};
 use fullops_core::derive::landing_of;
-use fullops_core::facts::{ActorInput, Facts, resolve_actor};
+use fullops_core::facts::{ActorInput, CommitScope, Facts, resolve_actor};
 use fullops_core::model::{
     Actor, Caps, ChangeSet, Config, Derived, DispatchId, EventKind, HeadRef, HookInput, HostId,
     Inbox, Known, Landing, Need, Plan, ReviewEvidence, RoleId, Route, RunId, Session, SessionId,
@@ -457,12 +457,12 @@ impl Facts for RealFacts {
         self.landings.insert(sha.to_string(), landing);
         Known::Yes(landing)
     }
-    fn qa_commit_candidates(&mut self, include_unstaged: bool) -> Known<Vec<String>> {
+    fn qa_commit_candidates(&mut self, scope: &CommitScope) -> Known<Vec<String>> {
         let entries = know!(self.git(|g| g.status(Some(QA_REPORTS))));
         Known::Yes(
             entries
                 .into_iter()
-                .filter(|e| include_unstaged || !matches!(e.index, ' ' | '?'))
+                .filter(|e| scope.takes(e.index, &e.path))
                 .map(|e| e.path)
                 .collect(),
         )

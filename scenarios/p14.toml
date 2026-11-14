@@ -67,6 +67,7 @@ expect = { verdict = "pass", exit = 0, flow = "continues" }
 # 배정이 대상 워크트리에서 같은 검사를 하고 통과한다
 [[step]]
 act = "lead_dispatches"
+df = "DF-16"
 key = "PAY-12"
 role = "dev"
 expect = { verdict = "pass", flow = "continues" }

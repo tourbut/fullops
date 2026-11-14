@@ -49,11 +49,13 @@ session = "2"
 
 [[step]]
 act = "stops"
+df = "DF-15"
 session = "2"
 expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "fullops wait --run" }
 
 [[step]]
 act = "stops"
+df = "DF-15"
 session = "2"
 expect = { verdict = "warn", flow = "continues" }
 
@@ -77,5 +79,6 @@ expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "stops"
+df = "DF-15"
 session = "2"
 expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "fullops wait --run" }
