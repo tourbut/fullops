@@ -1,0 +1,20 @@
+{
+  "interface": {
+    "displayName": "FullOps"
+  },
+  "name": "fullops",
+  "plugins": [
+    {
+      "category": "Productivity",
+      "name": "fullops",
+      "policy": {
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
+      },
+      "source": {
+        "path": "./dist/native/fullops",
+        "source": "local"
+      }
+    }
+  ]
+}

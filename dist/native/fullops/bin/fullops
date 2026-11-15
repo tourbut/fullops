@@ -1,0 +1,18 @@
+#!/bin/sh
+# fullops 런처: OS와 CPU에 맞는 바이너리로 바꿔 실행한다(프로세스는 하나다).
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+case "$(uname -s)" in
+  Darwin)
+    case "$(uname -m)" in
+      arm64 | aarch64) bin=fullops-darwin-arm64 ;;
+      *) bin=fullops-darwin-x64 ;;
+    esac
+    ;;
+  Linux) bin=fullops-linux-x64 ;;
+  MINGW* | MSYS* | CYGWIN*) bin=fullops.exe ;;
+  *)
+    echo "fullops: 지원하지 않는 OS입니다: $(uname -s)" >&2
+    exit 1
+    ;;
+esac
+exec "$dir/$bin" "$@"

@@ -1,0 +1,54 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "exec sh -c 'B=\"$HOME/.fullops/bin/fullops\"; [ -x \"$B\" ] || B=\"$1/bin/fullops\"; exec \"$B\" hook codex --plugin-root \"$1\"' sh \"${PLUGIN_ROOT}\"",
+            "commandWindows": "if exist \"%USERPROFILE%\\.fullops\\bin\\fullops.exe\" (\"%USERPROFILE%\\.fullops\\bin\\fullops.exe\" hook codex --plugin-root \"${PLUGIN_ROOT}\") else (\"${PLUGIN_ROOT}\\bin\\fullops.exe\" hook codex --plugin-root \"${PLUGIN_ROOT}\")",
+            "timeout": 8,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|apply_patch|spawn_agent"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "additionalContextLimit": 20000,
+            "command": "exec sh -c 'B=\"$HOME/.fullops/bin/fullops\"; [ -x \"$B\" ] || B=\"$1/bin/fullops\"; exec \"$B\" hook codex --plugin-root \"$1\"' sh \"${PLUGIN_ROOT}\"",
+            "commandWindows": "if exist \"%USERPROFILE%\\.fullops\\bin\\fullops.exe\" (\"%USERPROFILE%\\.fullops\\bin\\fullops.exe\" hook codex --plugin-root \"${PLUGIN_ROOT}\") else (\"${PLUGIN_ROOT}\\bin\\fullops.exe\" hook codex --plugin-root \"${PLUGIN_ROOT}\")",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "exec sh -c 'B=\"$HOME/.fullops/bin/fullops\"; [ -x \"$B\" ] || B=\"$1/bin/fullops\"; exec \"$B\" hook codex --plugin-root \"$1\"' sh \"${PLUGIN_ROOT}\"",
+            "commandWindows": "if exist \"%USERPROFILE%\\.fullops\\bin\\fullops.exe\" (\"%USERPROFILE%\\.fullops\\bin\\fullops.exe\" hook codex --plugin-root \"${PLUGIN_ROOT}\") else (\"${PLUGIN_ROOT}\\bin\\fullops.exe\" hook codex --plugin-root \"${PLUGIN_ROOT}\")",
+            "timeout": 20,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "exec sh -c 'B=\"$HOME/.fullops/bin/fullops\"; [ -x \"$B\" ] || B=\"$1/bin/fullops\"; exec \"$B\" hook codex --plugin-root \"$1\"' sh \"${PLUGIN_ROOT}\"",
+            "commandWindows": "if exist \"%USERPROFILE%\\.fullops\\bin\\fullops.exe\" (\"%USERPROFILE%\\.fullops\\bin\\fullops.exe\" hook codex --plugin-root \"${PLUGIN_ROOT}\") else (\"${PLUGIN_ROOT}\\bin\\fullops.exe\" hook codex --plugin-root \"${PLUGIN_ROOT}\")",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}
