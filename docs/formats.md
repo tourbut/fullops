@@ -632,7 +632,10 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `deps-state.json` | 의존 설치 기록(아래) |
 | `package/<버전>/grok/`, `package/<버전>/agy/` | `install`의 `plugin` 단계가 통합 패키지의 `hosts/` 재료로 조립한 패키지 |
 | `package/<버전>/<호스트>.old-<시각>/` | 다시 조립하기 전에 있던 패키지 폴더 |
-| `skill-backups/<호스트>/<스킬 이름>/<폴더 sha256 앞 12자>/` | 스킬을 다시 설치하기 전에 있던 폴더의 사본 |
+| `package/<버전>/source/`, `package/<버전>/source.old-<시각>/` | 실행본 단계가 보관한 통합 패키지(`install.json`의 `source`)와 바꿔 넣기 전의 것 |
+| `skill-backups/<호스트>/<스킬 이름>/<폴더 sha256 앞 12자>/` | 스킬을 다시 설치하기 전에 있던 폴더의 사본. `install --prune`은 지우지 않는다 |
+| `skill-backups/…/<앞 12자>/.fullops-origin.json` | `{"origins":[원래 경로…],"at":<처음 백업한 시각>}`. `install --restore-skills`가 되돌릴 자리 |
+| `py-retired/<시각>/<번호>-<이름>`, `py-retired/<시각>/moved.json` | `install --retire-python --apply`가 옮겨 둔 옛 판 파일과 `[{"from","to"}]` 기록 |
 | `cache/jev/<요청 sha256>.json` | Jev 응답 캐시(분류와 탐색이 함께 쓴다) |
 
 `~/.fullops/` 밖에 fullops가 직접 쓰는 파일은 하나다: `<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`(grok의 hook 등록 파일. 내용은 `fullops_core::deps::grok_hook_json`. `install`이 쓰고 `install --remove-hooks`가 지운다).

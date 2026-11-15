@@ -526,8 +526,19 @@ fn n2_runtime_swap_while_a_hook_is_running() {
                 .ok()
         })
         .expect("고정 위치 실행본을 띄우지 못했다");
-    // 플러그인이 또 갱신됐다: 새 VERSION의 통합 패키지에서 실행본 단계를 사람이 다시 한다
+    // 플러그인이 또 갱신됐다: 새 VERSION의 통합 패키지에서 실행본 단계를 사람이 다시 한다.
+    // S-04가 기록의 source를 보관본(package/2.0.1/source)으로 바꿨으므로 새 배포본 폴더의 실행본으로 돌린 것처럼 source를 그 폴더로 둔다
     sb.write(&pkg.join("VERSION"), "2.0.2\n");
+    let mut kept = record();
+    assert!(
+        kept["source"]
+            .as_str()
+            .unwrap()
+            .replace('\\', "/")
+            .ends_with(".fullops/package/2.0.1/source")
+    );
+    kept["source"] = serde_json::json!(plugin_root);
+    sb.write(&sb.home.join(".fullops/install.json"), &kept.to_string());
     let swapped = sb.fullops(
         &lead,
         &["install", "--only", "runtime"],

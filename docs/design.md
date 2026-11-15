@@ -628,7 +628,9 @@ token, 이슈 본문, 댓글, 프롬프트는 넣지 않는다. 필드는 두 �
 | `~/.fullops/deps.toml` | 실행본을 복사할 때 통합 패키지에서 함께 복사한 의존 목록(10.7절) |
 | `~/.fullops/deps-state.json` | 의존 설치 기록(10.3절) |
 | `~/.fullops/package/<버전>/grok/`, `~/.fullops/package/<버전>/agy/` | `install`의 `plugin` 단계가 통합 패키지의 재료로 조립한 grok 패키지와 agy 패키지(10.3절 "조립하는 패키지"). 두 호스트의 `plugin install`에 이 경로를 넘긴다. `install --prune`이 지금 버전이 아닌 것과 `.old-<시각>` 폴더를 지운다 |
-| `~/.fullops/skill-backups/<호스트>/<스킬 이름>/<폴더 sha256 앞 12자>/` | 스킬을 다시 설치하기 전에 있던 폴더의 사본. 같은 내용은 한 번만 둔다. `install --prune`이 지운다 |
+| `~/.fullops/package/<버전>/source/`, `source.old-<시각>/` | 실행본 단계가 보관한 통합 패키지(10.3절 "설치·정리 보강" P1). `install.json`의 `source`가 가리킨다. `.old-<시각>`은 `install --prune`이 지운다 |
+| `~/.fullops/skill-backups/<호스트>/<스킬 이름>/<폴더 sha256 앞 12자>/` | 스킬을 다시 설치하기 전에 있던 폴더의 사본과 원래 자리 기록 `.fullops-origin.json`(10.3절 P9). 같은 내용은 한 번만 둔다. `install --restore-skills`의 원본이라 `install --prune`은 지우지 않는다(지우려면 사람이 지운다) |
+| `~/.fullops/py-retired/<시각>/<번호>-<이름>`, `moved.json` | `install --retire-python --apply`가 옮겨 둔 옛 판(1.24.0)의 파일과 그 기록(10.3절 P4). `--restore <시각>`이 되돌린다 |
 | `~/.fullops/cache/jev/<요청 sha256>.json` | Jev 응답 캐시(분류와 탐색이 함께 쓴다) |
 
 홈은 Windows에서 `USERPROFILE`, 그 밖에서는 `HOME`이다. hook 등록 문자열 가운데 Windows용은 `%USERPROFILE%`, POSIX 셸용은 `$HOME`을 쓴다. Git Bash의 `$HOME`은 사용자가 `HOME`을 따로 정하면 `USERPROFILE`과 다를 수 있으므로 Windows에서 `$HOME`을 쓰는 문자열을 두지 않는다(10.4절).
@@ -2616,9 +2618,12 @@ Claude Code가 PowerShell 도구의 PATH에 실제로 `bin/`을 넣는지와 그
 **`fullops install`.**
 
 ```
-fullops install [--hosts <claude,codex,grok,agy>|all] [--only runtime|plugin|deps]... [--dry-run] [--json]
+fullops install [--hosts <claude,codex,grok,agy>|all] [--only runtime|plugin|deps]... [--dry-run] [--allow-downgrade] [--json]
 fullops install --check [--hosts …] [--json]
 fullops install --prune | --rollback | --remove-hooks
+fullops install --restore-skills [--apply]
+fullops install --retire-python [--repos <경로,…>] [--remove-meter] [--apply]
+fullops install --retire-python --restore <시각> [--apply]
 ```
 
 기본은 세 단계를 모두, PATH에 실행 파일이 있는 호스트 전부에 한다. `--hosts`로 일부만 고른다. 고른 호스트의 실행 파일이 PATH에 없으면 그 호스트를 건너뛰고 "`<호스트>` CLI가 PATH에 없어 건너뛴다"를 알린다(실패가 아니다). 호스트 CLI 자체의 설치와 로그인은 하지 않는다. 활성 레포가 아니어도 된다. 레포는 건드리지 않는다.
@@ -2640,7 +2645,7 @@ fullops install --prune | --rollback | --remove-hooks
 - 설치 기록 `~/.fullops/deps-state.json`: `{"v":1,"manifest_sha256":"<deps.toml의 sha256>","hosts":{"claude":{"at":1794500000,"self_version":"2.0.0","complete":true,"failed":[]}}}`. 호스트의 호스트별 명령과 그 호스트가 대상인 스킬 명령이 모두 성공하면 `complete`가 참이다. `failed`에는 실패한 명령의 `what`을 넣는다(스킬 명령의 실패는 대상 호스트마다 넣는다).
 - `--check`: 아무것도 설치하지 않는다. 호스트마다 (1) fullops 플러그인이 설치 목록에 있는가 (2) 의존 플러그인이 있는가 (3) 사용자 스킬의 `SKILL.md`가 그 호스트의 스킬 폴더에 있는가 (4) 설치 기록의 `manifest_sha256`이 지금 `deps.toml`과 같고 `complete`인가 (5) grok이면 hook 등록 파일이 있고 그 `command`가 가리키는 실행본이 있는가를 본다. (5)가 빠지면 `grok: hook 등록` 줄을 낸다. 빠진 것을 `<호스트>: plugin <id>`·`<호스트>: skill <이름>`·`<호스트>: 설치 기록이 낡았다` 줄로 내고, 하나라도 있으면 종료 코드 2다. 이름이 `*`인 스킬 묶음은 개별 이름을 알 수 없으므로 설치 기록으로만 확인한다. 선택형 항목(`[[optional]]`)은 "선택(설치하지 않음)" 줄로만 낸다.
 
-**실행본 단계**(`install --only runtime`, S-04의 자동 설치가 같은 일을 한다). 자기 자신(또는 플러그인 루트의 맞는 바이너리)을 `~/.fullops/bin/fullops.new-<pid>`로 복사 → 있던 파일을 `fullops.old-<시각>`으로 이름 변경 → 새 파일을 제자리로 이름 변경 → 플러그인 루트의 `deps.toml`을 `~/.fullops/deps.toml`로 복사 → `install.json` 쓰기. 중간에 실패하면 이름을 되돌린다. 실행 중인 hook은 이름이 바뀐 옛 파일로 끝까지 돈다(Windows도 실행 중인 exe의 이름은 바꿀 수 있다). `--prune`은 옛 실행본, 스킬 백업, `~/.fullops/package/` 아래에서 `install.json`의 `version`이 아닌 버전 폴더와 `.old-<시각>` 폴더를 지우고 잠긴 것은 건너뛴다. `--rollback`은 가장 최근 옛 파일로 되돌린다. `--remove-hooks`는 fullops가 직접 쓴 hook 등록 파일(`<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`)을 지우고 지운 경로를 낸다. 호스트 CLI의 `plugin uninstall`은 부르지 않는다(플러그인 제거는 사람이 한다).
+**실행본 단계**(`install --only runtime`, S-04의 자동 설치가 같은 일을 한다). 자기 자신(또는 플러그인 루트의 맞는 바이너리)을 `~/.fullops/bin/fullops.new-<pid>`로 복사 → 있던 파일을 `fullops.old-<시각>`으로 이름 변경 → 새 파일을 제자리로 이름 변경 → 플러그인 루트의 `deps.toml`을 `~/.fullops/deps.toml`로 복사 → `install.json` 쓰기. 중간에 실패하면 이름을 되돌린다. 실행 중인 hook은 이름이 바뀐 옛 파일로 끝까지 돈다(Windows도 실행 중인 exe의 이름은 바꿀 수 있다). `--prune`은 옛 실행본과 `~/.fullops/package/` 아래에서 `install.json`의 `version`이 아닌 버전 폴더와 `.old-<시각>` 폴더를 지우고 잠긴 것은 건너뛴다. `--rollback`은 가장 최근 옛 파일로 되돌린다. `--remove-hooks`는 fullops가 직접 쓴 hook 등록 파일(`<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`)을 지우고 지운 경로를 낸다. 호스트 CLI의 `plugin uninstall`은 부르지 않는다(플러그인 제거는 사람이 한다).
 
 **조립하는 패키지**(grok과 agy). 두 호스트는 Claude Code용 폴더를 그대로 쓸 수 없다. grok은 같은 `hooks/hooks.json`을 읽어 `hook claude`를 부르게 되고, agy는 `hooks/hooks.json`을 읽지 않고 루트의 `hooks.json`과 자기 스키마의 `plugin.json`을 요구한다(10.4절). 저장소에 바이너리를 한 벌만 두기 위해 두 호스트의 패키지는 배포하지 않고, 설치할 때 통합 패키지의 재료로 조립한다. `plugin` 단계가 grok이나 agy를 다룰 때 다음을 차례로 한다.
 
@@ -2681,6 +2686,18 @@ fullops install --prune | --rollback | --remove-hooks
 - 스킬 백업: 이름이 `*`인 묶음은 대상 호스트의 스킬 폴더에 있는 `*/SKILL.md` 폴더를 모두 백업한다(1.24.0과 같다). 백업에 실패한 묶음은 설치하지 않고 그 단계의 `what`을 대상 호스트의 `failed`에 넣는다. 백업은 `<앞 12자>.new-<pid>`에 복사한 뒤 이름을 바꾼다.
 - 옛 실행본 이름 `fullops.old-<시각>`의 시각은 같은 이름이 있으면 1초씩 올린 값이다.
 - `claude`·`codex`의 플러그인 명령(9.5절 표)은 계약 문서에 없고 1.24.0의 `deps.py`가 부르던 명령과 같다는 것만 확인했다(미정-M12).
+
+**설치·정리 보강**(2026-11-15. 근거는 `docs/install-and-retire.md` 4절 P1·P2·P4·P9와 5절 D7).
+
+- 배포본 보관(P1): 실행본 단계는 플러그인 루트가 통합 패키지(`hosts/`가 있다)이면 그 폴더를 `~/.fullops/package/<VERSION>/source/`로 복사하고 `install.json`의 `source`를 그 자리로 적는다. npx 캐시처럼 지워질 수 있는 폴더를 적지 않기 위해서다(8.1절 CLI 규칙의 (2)가 이 자리를 플러그인 루트로 찾는다). 이미 있고 폴더 내용의 sha256이 같으면 건너뛰고, 다르면 `source.new-<pid>`에 복사한 뒤 바꿔 넣는다(옛 것은 `source.old-<시각>`, `--prune`이 지운다). 실행본을 바꾸기 전에 하며, 실패하면 아무것도 바꾸지 않는다. 디렉터리판(`hosts/` 없음)은 복사하지 않고 그 폴더의 절대 경로를 적는다. 플러그인 루트가 없으면 기록의 `source`를 잇는다. S-04도 같은 함수라 같은 일을 한다. `--prune`은 기록의 `source`가 든 버전 폴더를 지우지 않는다(`--rollback` 뒤에는 기록의 버전과 다를 수 있다). `--dry-run`은 "배포본 보관 → <경로>"를 낸다.
+- 하향 거절(P2): `runtime` 단계가 들어 있는 install(`--dry-run` 포함)은 들어오는 버전(플러그인 루트의 `VERSION`, 없으면 이 실행본의 버전)이 `install.json`의 `version`보다 낮으면(semver) `FullOps[install]`로 거절한다(종료 코드 2, 아무것도 바꾸지 않는다). 고정 위치 실행본이 없거나, 플러그인 루트 없이 고정 위치 실행본으로 실행했거나, 버전을 읽지 못하면 거절하지 않는다. 일부러 낮추려면 `--allow-downgrade`. `--rollback`은 실행본 단계를 거치지 않으므로 이 검사와 겹치지 않고, 고정(`pinned`)은 같은 버전이나 높은 버전의 실행본 단계가 그대로 푼다.
+- 스킬 되살리기(P9): 스킬 백업 폴더 `<앞 12자>/` 안에 `.fullops-origin.json`(`{"origins":[원래 경로…],"at":<처음 백업한 시각>}`)을 함께 적는다. 같은 내용이 다른 자리에서 다시 백업되면 `origins`에 더한다. `--restore-skills`는 기본으로 계획만 낸다: 원래 경로마다 가장 먼저 남긴 백업을 골라 "되돌림: <백업> → <원래 경로>", 지금 내용이 같으면 "이미 같다", 원래 경로 기록이 없는 백업(이전 판의 백업)은 "원래 자리 모름"으로만 낸다. `--apply`면 지금 있는 폴더를 먼저 같은 규칙으로 백업한 뒤(되돌림도 되돌릴 수 있다) 백업을 원래 자리에 넣는다. 원래 자리가 링크면 링크만 지우고 실제 폴더를 둔다. 기록 파일은 복사하지 않는다. `--restore-skills`는 늘 가장 먼저 남긴 백업을 고르므로, 되돌림을 다시 되돌리려면 `skill-backups/`에 남은 그 사본을 사람이 복사한다. 그래서 `--prune`은 `skill-backups/`를 지우지 않는다.
+- 옛 판 정리(P4) `--retire-python`. 기본은 계획만 내고 `--apply`에서만 실행한다. 다루는 것은 1.24.0 코드가 쓰는 자리의 표뿐이다: 호스트 홈(`CLAUDE_CONFIG_DIR`·`CODEX_HOME`·`GROK_HOME`, `~/.claude`·`~/.codex`·`~/.grok`·`~/.agy`, Windows의 `%APPDATA%/orca/codex-runtime-home/home`과 `claude-profiles/*/home`) 아래의 `fullops-deps.json`(`deps.py:103-107`)과 `fullops-skill-backups`(`deps.py:201`), `~/.cache/fullops-squad/jev`(`jev_observe.py:266`), 그리고 마지막에 `~/.fullops-squad/runtime/fullops-squad`(`hook_runtime.py:15`). 이름이 `fullops-squad`인 플러그인·마켓플레이스 밖은 건드리지 않고, `deps.toml`이 쓰는 이름과 겹치면 호스트 쪽은 건너뛴다.
+  - 실행 조건: `--repos <경로,…>`의 레포마다 `git worktree list`의 모든 워크트리에 `.fullops-squad/fullops.json`이 없어야 한다. 목록을 주지 않았거나, 표식이 남았거나, 워크트리 목록을 읽지 못하면 `FullOps[install]`로 거절한다(종료 코드 2, 계획은 stderr에 낸다).
+  - 호스트: 목록 조회 말고 부르는 것은 계약 문서(`docs/contracts/grok.md` 1.1절)에서 확인한 grok의 `grok plugin uninstall fullops-squad --confirm`과 `grok plugin marketplace remove <url>`뿐이다(`--confirm`은 확인 질문에 막히지 않게 준다. `--apply`가 사람의 확인이다). Claude Code·Codex는 제거 명령이 계약 문서에 없어 안내만 한다. `fullops-meter@fullops-squad`와 Claude Code 마켓플레이스 `fullops-squad`는 기본으로 남기라고 안내하고, `--remove-meter`를 주면 지우는 안내를 낸다. npm 전역 패키지(`@upstash/context7-mcp`, `@alibaba-group/open-code-review`)는 안내만 한다. 어떤 하위 명령에도 `--help`를 붙이지 않는다. `FULLOPS_OFFLINE=1`이면 호스트 CLI를 부르지 않는다.
+  - 지우지 않고 `~/.fullops/py-retired/<시각>/<번호>-<이름>`으로 옮기고, 옮길 때마다 `moved.json`(`[{from,to}]`)을 새로 쓴다. runtime은 옛 판 플러그인이 어디에도 없을 때만 마지막에 옮긴다. 확인하는 범위는 둘이다. (1) grok 명령 뒤 다시 본 Claude Code·Codex·grok의 목록. 이 목록은 지금 환경(`CLAUDE_CONFIG_DIR`·`CODEX_HOME`)의 홈만 본다. CLI가 PATH에 없으면 그 호스트의 기본 홈(`~/.claude`·`~/.codex`·`~/.grok`)이 없을 때만 빈 목록이고, 있으면 모른다. (2) 위 호스트 홈 표의 모든 홈의 설정 파일: `settings.json`의 `enabledPlugins` 키와 `config.toml`의 `[plugins]` 키(값이 거짓이어도 센다. 읽지 못하면 모른다). 옛 판 플러그인은 `@` 앞 이름이 `fullops-squad`인 id(grok은 이름)이고, `fullops-meter@fullops-squad`는 runtime을 쓰지 않으므로 `--remove-meter`일 때만 센다. (2)에서 옛 판이 남았거나 모르는 홈의 `fullops-deps.json`은 옮기지 않는다(그 홈의 플러그인을 지운 뒤에 옮긴다). 하나라도 남았거나 모르면 runtime을 옮기지 않고 종료 코드 3으로 알린다(사람이 지운 뒤 다시 실행한다). grok 명령이 실패하면 종료 코드 4다.
+  - `--restore <시각>`은 `moved.json`을 거꾸로 읽어 원래 자리로 옮긴다(기본은 계획, `--apply`로 실행). 원래 자리에 이미 있으면 건너뛴다. 호스트 플러그인은 되돌리지 않는다(옛 설치기로 다시 설치한다).
+- `--restore-skills`·`--retire-python`도 `--dry-run`·`--check`와 함께 주면 사용법 오류(종료 코드 1)다. `--apply`는 이 둘과만, `--repos`·`--restore`·`--remove-meter`는 `--retire-python`과만 받는다.
 
 ### 10.4 패키지 배치와 hook 등록
 

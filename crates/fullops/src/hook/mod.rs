@@ -277,7 +277,7 @@ fn watch(pass: &'static str, started: Instant) {
 }
 
 /// `a.b.c` 꼴의 버전. 읽지 못하면 `None`이다.
-fn version(text: &str) -> Option<(u64, u64, u64)> {
+pub(crate) fn version(text: &str) -> Option<(u64, u64, u64)> {
     let core = text.trim().split(['-', '+']).next()?;
     let mut parts = core.split('.').map(|p| p.parse::<u64>().ok());
     Some((parts.next()??, parts.next()??, parts.next()??))

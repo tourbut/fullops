@@ -20,6 +20,7 @@ mod migrate;
 mod mode;
 pub mod packet;
 mod plan;
+mod retire;
 mod review;
 mod route;
 mod rules;
