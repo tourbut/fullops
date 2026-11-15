@@ -19,12 +19,14 @@ function tree({ binary, sum } = {}) {
   fs.mkdirSync(path.join(root, 'npx'));
   fs.copyFileSync(path.join(__dirname, 'fullops.cjs'), path.join(root, 'npx', 'fullops.cjs'));
   const log = path.join(root, 'calls.jsonl');
-  // 가짜 바이너리는 이 node의 사본이다. 미리 읽히는 스크립트가 받은 인자를 적고 FAKE_EXIT로 끝낸다(실행기 자신의 node에서는 아무것도 안 한다)
+  // 가짜 바이너리: Windows는 이 node의 사본, 그 밖은 표식을 붙여 이 node를 띄우는 셸 스크립트다
+  // (macOS의 node는 옆의 libnode를 @rpath로 불러 다른 폴더에 복사하면 뜨지 않는다).
+  // 미리 읽히는 스크립트가 받은 인자를 적고 FAKE_EXIT로 끝낸다(실행기 자신의 node에서는 아무것도 안 한다)
   const preload = path.join(root, 'fake.cjs');
   fs.writeFileSync(
     preload,
     `const p = require('node:path');
-if (p.basename(process.execPath).startsWith('fullops')) {
+if (process.env.FAKE_FULLOPS === '1' || p.basename(process.execPath).startsWith('fullops')) {
   require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify([p.basename(process.argv[1]), ...process.argv.slice(2)]) + '\\n');
   process.exit(Number(process.env.FAKE_EXIT || 0));
 }
@@ -36,7 +38,11 @@ if (p.basename(process.execPath).startsWith('fullops')) {
     const name = launcher.binaryName();
     bin = path.join(pkg, 'bin', name);
     fs.mkdirSync(path.dirname(bin), { recursive: true });
-    if (binary === 'node') fs.copyFileSync(process.execPath, bin);
+    if (binary === 'node' && process.platform === 'win32') fs.copyFileSync(process.execPath, bin);
+    else if (binary === 'node')
+      fs.writeFileSync(bin, `#!/bin/sh
+FAKE_FULLOPS=1 exec ${JSON.stringify(process.execPath)} "$@"
+`, { mode: 0o755 });
     else fs.writeFileSync(bin, binary);
     const hash = sum ?? crypto.createHash('sha256').update(fs.readFileSync(bin)).digest('hex');
     fs.writeFileSync(path.join(pkg, 'SHA256SUMS'), `${'0'.repeat(64)}  VERSION\n${hash}  bin/${name}\n`);
