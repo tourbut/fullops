@@ -769,10 +769,14 @@ fn q9_dist_builds_native_and_directory_packages() {
         "\"bin/fullops\" hook agy --event Stop --in-place"
     );
     assert_eq!(agy_hooks["fullops"]["Stop"][0]["timeout"], 20);
-    assert_eq!(
-        agy_hooks["fullops"]["PreToolUse"][0]["matcher"],
-        "run_command|write_to_file|replace_file_content|multi_replace_file_content|invoke_subagent"
-    );
+    // agy 매처는 `|`를 못 써서 도구 이름마다 한 항목이다
+    let matchers: Vec<&str> = agy_hooks["fullops"]["PreToolUse"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["matcher"].as_str().unwrap())
+        .collect();
+    assert_eq!(matchers, fullops_core::deps::AGY_PRE_TOOLS);
     assert_eq!(
         agy_hooks["fullops"]["PreToolUse"][0]["hooks"][0]["command"],
         "\"bin/fullops\" hook agy --event PreToolUse --in-place"

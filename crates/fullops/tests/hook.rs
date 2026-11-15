@@ -530,6 +530,24 @@ fn sample_inputs_follow_the_output_table() {
     });
     same_shape(&out, "agy/output/deny.pre_tool_use.json");
     assert!(reason(&out).starts_with("FullOps[T-05]: "));
+    // agy CLI의 실제 도구(write_file·edit_file)도 같은 경로 규칙에 걸린다(2026-11-15 실환경 점검에서 통과하던 것).
+    // 수정은 바뀐 뒤 글을 알아야 판정하므로 과제명 파일을 먼저 둔다(내용 `hello`가 fixture의 Target이다)
+    h.sb.write(
+        &h.sb.path("dev").join(".fullops-squad/handovers/A-1.md"),
+        "hello
+",
+    );
+    for (name, field) in [
+        ("pre_tool_use.write_file.json", "Path"),
+        ("pre_tool_use.edit_file.json", "Path"),
+    ] {
+        let out = h.sample("agy", name, "dev", |input| {
+            input["toolCall"]["args"][field] =
+                json!(h.sb.path("dev").join(".fullops-squad/handovers/A-1.md"));
+        });
+        assert_eq!(out["decision"], "deny", "{name}");
+        assert!(reason(&out).starts_with("FullOps[T-05]: "), "{name}");
+    }
     let out = h.sample("agy", "pre_tool_use.run_command.json", "dev", |input| {
         input["toolCall"]["args"]["CommandLine"] =
             json!("orca orchestration worker-start --spec x");

@@ -142,11 +142,21 @@ pub fn pre_tool_matcher(host: HostId) -> &'static str {
         HostId::Claude => "Bash|PowerShell|Write|Edit|MultiEdit|Agent|Task|Workflow",
         HostId::Codex => "Bash|apply_patch|spawn_agent",
         HostId::Grok => "run_terminal_command|search_replace|hashline_edit|write|spawn_subagent",
-        HostId::Agy => {
-            "run_command|write_to_file|replace_file_content|multi_replace_file_content|invoke_subagent"
-        }
+        // agy의 매처는 정규식이 아니라 `|`를 못 쓴다: 등록은 `AGY_PRE_TOOLS`로 이름마다 한 항목이다
+        HostId::Agy => "*",
     }
 }
+
+/// agy PreToolUse에 등록하는 도구 이름. 앞의 셋이 agy CLI의 실제 이름이고 뒤는 IDE 쪽 이름이다.
+pub const AGY_PRE_TOOLS: [&str; 7] = [
+    "run_command",
+    "write_file",
+    "edit_file",
+    "invoke_subagent",
+    "write_to_file",
+    "replace_file_content",
+    "multi_replace_file_content",
+];
 
 /// 조립한 패키지에 들어가는 것(설계 10.3절의 표). `(통합 패키지 기준 재료, 조립한 폴더 안의 자리)`.
 /// `install`의 조립과 `xtask dist`의 검증이 같은 표를 쓴다.

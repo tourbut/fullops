@@ -90,8 +90,8 @@ fn tool_shape(host: &str, tool: &Tool) -> Option<(String, Value)> {
             named("write", json!({ "file_path": path, "content": content }))
         }
         ("agy", Tool::Write { path, content }) => named(
-            "write_to_file",
-            json!({ "TargetFile": path, "CodeContent": content }),
+            "write_file",
+            json!({ "Path": path, "Content": content, "Overwrite": true }),
         ),
         ("claude", Tool::Edit { path, old, new }) => named(
             "Edit",
@@ -102,8 +102,8 @@ fn tool_shape(host: &str, tool: &Tool) -> Option<(String, Value)> {
             json!({ "file_path": path, "old_string": old, "new_string": new, "replace_all": false }),
         ),
         ("agy", Tool::Edit { path, old, new }) => named(
-            "replace_file_content",
-            json!({ "TargetFile": path, "TargetContent": old, "ReplacementContent": new }),
+            "edit_file",
+            json!({ "Path": path, "Target": old, "Replacement": new }),
         ),
         ("claude", Tool::SubAgent { prompt }) => named("Agent", json!({ "prompt": prompt })),
         ("codex", Tool::SubAgent { prompt }) => named("spawn_agent", json!({ "message": prompt })),

@@ -2,7 +2,7 @@
 //! 통합 패키지(`dist/native/fullops`)와 디렉터리판(`dist/directory/fullops`), 파일별 `SHA256SUMS`, 루트의 마켓플레이스 카탈로그 둘을 만든다.
 //! 매니페스트·hook 등록 파일·MCP 파일은 `plugin/`의 공통 값, `deps.toml`, 설계 7.1·7.2절의 표(`fullops_core::deps`)에서 만든다.
 
-use fullops_core::deps::{HOOK_TIMEOUTS, package_items, pre_tool_matcher};
+use fullops_core::deps::{AGY_PRE_TOOLS, HOOK_TIMEOUTS, package_items, pre_tool_matcher};
 use fullops_core::model::{Deps, HostId, sha256_hex};
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
@@ -222,7 +222,11 @@ fn agy_hooks() -> Value {
     };
     json!({ "fullops": {
         "SessionStart": [handler("SessionStart")],
-        "PreToolUse": [{ "matcher": pre_tool_matcher(HostId::Agy), "hooks": [handler("PreToolUse")] }],
+        // agy 매처는 `|`를 못 쓴다: 도구 이름마다 한 항목
+        "PreToolUse": AGY_PRE_TOOLS
+            .iter()
+            .map(|name| json!({ "matcher": name, "hooks": [handler("PreToolUse")] }))
+            .collect::<Vec<_>>(),
         "Stop": [handler("Stop")],
     }})
 }
