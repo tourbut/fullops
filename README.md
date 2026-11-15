@@ -111,9 +111,21 @@ Orca 안에서 개발이 사람 없이 이어지게 하는 하네스의 **Rust �
 
 근거: [v1.24.0 릴리스 노트](https://github.com/tourbut/Fullops-Squad-plugin/blob/v1.24.0/docs/releases/1.24.0.md), [HARNESS-AUTONOMY 검증 보고](https://github.com/tourbut/Fullops-Squad-plugin/blob/v1.24.0/.fullops-squad/docs/evaluations/qa-reports/HARNESS-AUTONOMY-test/report.md).
 
-## 배포
+## 설치와 배포
 
-Claude Code 플러그인 배포본에는 Windows·macOS 바이너리를 넣어야 합니다. 기존 구조(`scripts/build.py`, `adapters/`, `dist/native`, `dist/directory`)를 참고하되, hook 명령은 `python3` 대신 OS·CPU에 맞는 바이너리를 고릅니다. 폐쇄망(`FULLOPS_OFFLINE`)과 Codex hook 이벤트 차이는 기존 동작을 유지합니다. 자세한 검토 항목은 원본 이슈 [#132](https://github.com/tourbut/Fullops-Squad-plugin/issues/132)를 참고합니다.
+설치는 1.24.0과 같은 꼴의 npx 명령입니다(Node 20.18.1 이상).
+
+```
+npx --yes github:tourbut/fullops install [--hosts claude,codex,grok,agy|all] [--dry-run] [--repo <경로>]
+npx --yes github:tourbut/fullops update     # 다시 설치와 같습니다
+npx --yes github:tourbut/fullops check      # 빠진 것만 봅니다
+```
+
+npx가 받는 것은 작은 실행기([npx/fullops.cjs](npx/fullops.cjs))와 main에 커밋된 통합 패키지(`dist/native/fullops`)입니다. 실행기는 이 PC의 바이너리를 골라 `SHA256SUMS`로 검증한 뒤 `fullops install`에 넘기기만 하고, 설치 로직은 Rust에 있습니다. Node 없이 설치하는 길(마켓플레이스, 패키지 폴더의 `bin/fullops install`)은 [plugin/INSTALL.md](plugin/INSTALL.md)에 있습니다.
+
+Orca 패널은 따로 설치합니다: `orca plugin catalog add tourbut/fullops` 뒤 `orca plugin install tourbut.fullops-panel`(Orca가 보여 주는 `--approve` 명령으로 사람이 승인합니다). 패널은 이 저장소의 `panel/`이고 루트의 `orca-catalog.json`이 가리킵니다. 카탈로그는 첫 패널 릴리스 때 생기므로 이 명령은 그 뒤부터 통합니다.
+
+배포본(`dist/native/fullops`, 바이너리 넷 포함)과 카탈로그는 **릴리스 커밋에서만** main에 올립니다. 릴리스 커밋은 릴리스 워크플로(`.github/workflows/release.yml`)가 PR로 올리고 사람이 검토해 머지합니다. 개발 커밋은 `dist/`를 건드리지 않습니다. 지금 main에는 아직 릴리스 커밋이 없어 npx 설치가 "배포본이 없다"고 알리고 멈춥니다. 빌드와 릴리스 절차는 [docs/build.md](docs/build.md), 옛 판(fullops-squad 1.24.0)에서 넘어오는 순서와 정리는 [docs/install-and-retire.md](docs/install-and-retire.md)에 있습니다.
 
 ## 관련 저장소
 

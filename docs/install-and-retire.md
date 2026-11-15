@@ -1,6 +1,6 @@
 # fullops 2.0.0 설치와 옛 판(fullops-squad 1.24.0) 정리 안내
 
-작성: 2026-11-15. 상태: 초안. 레포 주인의 결정(5절)을 기다린다. 대상: 레포 주인(사람). 이 PC의 실제 호스트에서는 읽기 전용 확인(목록·조회 명령, 파일 읽기)만 했다. 이 문서의 설치·제거·전환 절차는 하나도 실행하지 않았고, 이 문서 말고 바꾼 파일은 없다.
+작성: 2026-11-15. 상태: **결정됨**(2026-11-15, 레포 주인: "orca 패널 배포도 이 레포에서 진행하고, 나머지도 다 추천대로 진행해". 5절). 4절의 P0~P6, P8, P9를 구현했고 P7만 남았다. 대상: 레포 주인(사람). 조사할 때 이 PC의 실제 호스트에서는 읽기 전용 확인(목록·조회 명령, 파일 읽기)만 했다. 이 문서의 설치·제거·전환 절차는 실제 호스트에서 하나도 실행하지 않았다.
 
 표기
 - **[확인]**: 코드·문서·이 PC에서 실행한 출력으로 확인한 것. 근거를 괄호에 적는다.
@@ -13,13 +13,13 @@
 ## 0. 요약
 
 1. 새 판은 레포 주인의 결정대로 `npx --yes github:tourbut/fullops install`로 설치한다. npx로 받는 것은 작은 실행기(.cjs)다. 실행기는 바이너리를 고르고 검증한 뒤 `fullops install`에 넘기기만 하고, 설치 로직은 Rust에 그대로 둔다.
-2. npx와 Claude Code·Codex 마켓플레이스는 둘 다 `tourbut/fullops`의 **기본 브랜치(main)** 를 읽는다. 그래서 main에 `package.json`, 실행기, 마켓플레이스 카탈로그 둘, 그리고 바이너리가 든 `dist/native/fullops`가 있어야 한다. **추천: 릴리스 때만 main에 `dist/native/fullops`를 커밋한다.** 지금 main에는 이것들이 없다(`.gitignore`의 `/dist/`). 그래서 지금은 npx도 마켓플레이스 설치도 동작하지 않는다.
-3. **Orca 패널(fullops-panel)도 따로 배포해야 한다.** 패널은 `panel/` 하위 폴더에 있다. 그런데 Orca의 git 직접 설치(`orca plugin install tourbut/fullops`)는 저장소 루트만 설치한다. 그래서 카탈로그(`orca-catalog.json`의 `source.path: "panel"`)를 거치거나, 패널을 루트에 둔 별도 저장소를 만들어야 한다. 패널은 코드를 실행하는 플러그인이라 설치할 때 사람이 Orca에서 승인(`--approve <지문>`)해야 한다. npx 실행기는 패널 설치 명령을 안내만 한다.
+2. npx와 Claude Code·Codex 마켓플레이스는 둘 다 `tourbut/fullops`의 **기본 브랜치(main)** 를 읽는다. 그래서 main에 `package.json`, 실행기, 마켓플레이스 카탈로그 둘, 그리고 바이너리가 든 `dist/native/fullops`가 있어야 한다. **결정(D1·D2): 릴리스 커밋에서만 main에 `dist/native/fullops`와 카탈로그 둘을 싣는다. 릴리스 커밋은 릴리스 워크플로가 연 PR을 사람이 머지해서 들어간다(1.8절).** `package.json`과 실행기 `npx/fullops.cjs`는 이제 있다. 배포본과 카탈로그는 첫 릴리스 커밋 전이라 아직 없다. 그때까지 npx는 "배포본이 없다"고 알리고 멈추고, 마켓플레이스 설치는 동작하지 않는다.
+3. **Orca 패널(fullops-panel)도 따로 배포한다.** 패널은 `panel/` 하위 폴더에 있고 Orca의 git 직접 설치(`orca plugin install tourbut/fullops`)는 저장소 루트만 설치한다. **결정(D4·D5): 이 저장소 루트의 카탈로그 `orca-catalog.json`(`source.path: "panel"`)으로 배포하고, 패널 버전은 커밋 ref로 가리킨다. 설치 키는 `tourbut.fullops-panel`.** 패널은 코드를 실행하는 플러그인이라 설치할 때 사람이 Orca에서 승인(`--approve <지문>`)해야 한다. npx 실행기는 패널 설치 명령을 안내만 한다.
 4. 옛 판은 여러 레포에서 계속 돈다. 두 판은 플러그인 이름과 레포 표식이 달라 함께 있어도 된다. 레포를 하나씩 `fullops migrate --from-python`으로 옮긴다. 옛 표식 `.fullops-squad/fullops.json`이 있는 곳은 다음과 같다 [확인: 파일 목록]:
    - `D:/workspace`의 레포 6개: `erden-godot`, `erden-unity`, `erden-s06-click-gui-sandbox-20261006`, `KnowsLink`, `jevpet`, `Fullops-Squad-plugin`(옛 판 원본 저장소).
    - `C:/Users/shin/orca/workspaces`의 워크트리 15개: `erden-godot/{arch,art,coor,dev,dev_harness,ops,tester}`, `KnowsLink/{coor,designer,dev,ops,tester}`, `KnowsLink/.fullops-review-…`, `jevpet/notify-nori-relay`, `Fullops-Squad-plugin/dev`. 이것들은 `D:/workspace` 레포의 git 워크트리다. 표식은 브랜치마다 있으므로 주 체크아웃을 옮겨도 각 워크트리의 브랜치가 전환 커밋을 받기 전까지는 옛 표식이 남는다.
    
-   모든 레포와 워크트리를 옮기고 2주가 지난 뒤에 PC의 옛 판을 지운다. 옛 판 원본 저장소(`Fullops-Squad-plugin`)를 어떻게 할지는 5절 D8에서 정한다.
+   모든 레포와 워크트리를 옮기고 2주가 지난 뒤에 PC의 옛 판을 지운다. 옛 판 원본 저장소(`Fullops-Squad-plugin`)와 `fullops-meter`는 당분간 남긴다(5절 D8).
 5. 릴리스, 태그, main에 바이너리 커밋, 카탈로그 공개는 모두 **사람 승인이 필요**하다. 이 문서는 그 순서만 제안한다.
 
 ---
@@ -30,15 +30,15 @@
 
 `npx --yes github:tourbut/fullops`는 기본 브랜치 HEAD의 tarball을 받는다. 그 안의 `package.json`이 `bin`으로 가리키는 파일을 실행한다 [추정: npm의 git 의존 처리. 이 PC에서 npx는 실행하지 않았다]. Claude Code·Codex의 `marketplace add tourbut/fullops`도 같은 저장소를 읽는다(`dev/plugin/deps.toml` `[self].source = "tourbut/fullops"`, `dev/docs/design.md:2807`). 두 호스트가 브랜치나 ref를 받는지는 확인하지 않았다.
 
-main 루트에 둘 것(제안):
+main 루트에 둘 것(결정됨):
 
 | 경로 | 내용 | 지금 |
 |---|---|---|
-| `package.json` | `name: "fullops"`, `private: true`, `bin: { "fullops": "npx/fullops.cjs" }`, `files: ["npx/", "dist/native/fullops/"]`, `engines: { "node": ">=20.18.1" }`. 실행 의존 없음. **`prepare` 스크립트를 두지 않는다**(있으면 npx가 받을 때 devDependencies를 설치하고 실행한다 [추정]) | 없음 [확인: 루트 `ls`] |
-| `npx/fullops.cjs` | 실행기(1.3절) | 없음 |
-| `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json` | `cargo xtask dist`가 만드는 카탈로그 둘. 플러그인 출처 `./dist/native/fullops` | 없음 [확인: `dev/docs/build.md:35`, design.md:2753] |
-| `dist/native/fullops/` | 통합 패키지. 바이너리 넷(`fullops.exe`, `fullops-darwin-arm64`, `fullops-darwin-x64`, `fullops-linux-x64`), `bin/fullops` 런처, `SHA256SUMS`, `VERSION`, skills, hosts 등 | 없음. `.gitignore`의 `/dist/` [확인] |
-| `orca-catalog.json`(패널을 카탈로그로 배포할 때) | 1.5절 | 없음 |
+| `package.json` | `name: "fullops"`, `private: true`, `version`(워크스페이스 버전과 같다), `bin: { "fullops": "npx/fullops.cjs" }`, `files: ["npx/", "dist/native/fullops/"]`, `engines: { "node": ">=20.18.1" }`. 실행 의존 없음, `scripts`는 시험만. **`prepare` 스크립트를 두지 않는다**(있으면 npx가 받을 때 devDependencies를 설치하고 실행한다 [추정]) | 있음 |
+| `npx/fullops.cjs`, `npx/fullops.test.cjs` | 실행기(1.3절)와 그 시험(`node --test`) | 있음 |
+| `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json` | `cargo xtask dist --root .`가 만드는 카탈로그 둘. 플러그인 출처 `./dist/native/fullops` | 릴리스 커밋이 싣는다 |
+| `dist/native/fullops/` | 통합 패키지. 바이너리 넷(`fullops.exe`, `fullops-darwin-arm64`, `fullops-darwin-x64`, `fullops-linux-x64`), `bin/fullops` 런처, `SHA256SUMS`, `VERSION`, skills, hosts 등 | 릴리스 커밋이 싣는다. `.gitignore`는 이제 `/dist/directory/`만 막는다 |
+| `orca-catalog.json` | 패널 카탈로그(1.5절, `docs/build.md` '릴리스 워크플로') | 첫 패널 릴리스 때 생긴다(releases 항목이 없는 카탈로그는 Orca가 버린다) |
 
 옛 판의 루트 `package.json`도 같은 꼴이었다: `bin`은 `bin/fullops-squad.cjs`, `files`는 `[bin/, dependencies.json]`, `engines`는 `node>=20.18.1`, `private: true` [확인: `old/package.json`].
 
@@ -50,7 +50,7 @@ main 루트에 둘 것(제안):
 | (나) 같은 저장소의 GitHub Releases에서 받기 | 같음 | tarball이 작고 이력이 커지지 않는다 | 실행기가 네트워크로 바이너리를 받는다(실행기가 커지고 오프라인 설치가 깨진다). Claude Code·Codex 마켓플레이스는 어차피 git 트리에 바이너리가 든 패키지가 있어야 하므로 **바이너리가 두 곳**에 생긴다. 카탈로그가 다른 ref나 URL을 가리킬 수 있는지는 확인하지 않았다 |
 | (다) 배포 브랜치를 `#ref`로 가리키기 | `npx --yes github:tourbut/fullops#dist install` | main이 깨끗하다. H3·H16 기본안과 맞는다 | 정한 명령 꼴(`github:tourbut/fullops`)과 다르다. 마켓플레이스 출처도 그 브랜치를 가리켜야 하는데, `marketplace add`가 ref를 받는지와 `deps.toml`에 ref를 적는 꼴은 확인하지 않았다(코드의 출처 정규화는 `#`을 다루지 않는다 [확인: 조사 결과 install 갈래]). GitHub 기본 브랜치를 배포 브랜치로 바꾸면 ref 없이 되지만, 그러면 개발 브랜치가 기본이 아니게 된다 |
 
-**추천: (가).** 지금 코드와 가장 적게 부딪치고, npx와 마켓플레이스가 한 트리를 읽는다. 커밋 규칙을 정해 둔다. `dist/`는 릴리스 커밋에서만 바꾸고, 개발 커밋은 `dist/`를 건드리지 않는다. 이력이 커지는 것이 문제가 되면 (다)(기본 브랜치를 배포 브랜치로 바꾸기)로 옮긴다. 다만 사용자가 등록한 마켓플레이스 출처는 나중에 바꾸기 어렵다(design.md H3 '위험' 칸). 이것은 H3·H16을 바꾸는 결정이라 사람이 정한다(5절 D1·D2).
+**결정: (가)**(2026-11-15, D1·D2). 지금 코드와 가장 적게 부딪치고, npx와 마켓플레이스가 한 트리를 읽는다. 커밋 규칙: `dist/`는 릴리스 커밋에서만 바꾸고, 개발 커밋은 `dist/`를 건드리지 않는다. 실수를 막으려고 `cargo xtask dist`의 기본 `--root`를 `target/dist`로 바꿨고 릴리스 때만 `--root .`을 준다(`docs/build.md` '릴리스 워크플로'). 이력이 커지는 것이 문제가 되면 (다)(기본 브랜치를 배포 브랜치로 바꾸기)로 옮긴다. 다만 사용자가 등록한 마켓플레이스 출처는 나중에 바꾸기 어렵다(design.md H3 '위험' 칸). design.md 17절 H3·H16을 이 결정으로 고쳤다.
 
 ### 1.3 실행기(`npx/fullops.cjs`)가 하는 일
 
@@ -62,7 +62,7 @@ main 루트에 둘 것(제안):
 4. POSIX에서는 실행 비트를 준다(npm 꾸러미는 `bin` 밖 파일의 실행 비트를 보장하지 않을 수 있다 [추정]).
 5. 바이너리를 **셸 없이** 인자 배열로 `spawn`한다. 플러그인 루트는 넘기지 않는다. 바이너리가 `<X>/bin/`에 있고 `<X>/VERSION`이 있으면 `<X>`가 플러그인 루트가 된다 [확인: `dev/crates/fullops/src/cli.rs:127-132`].
 6. 바이너리의 종료 코드를 그대로 돌려준다(0 성공, 2 빠짐·거절, 4 외부 명령 실패 [확인: `cli.rs:25`, INSTALL.md]).
-7. 끝에 Orca 패널 설치 안내를 한 줄 낸다(1.5절). `orca`는 부르지 않는다.
+7. 패키지에 `orca-catalog.json`이 있으면(첫 패널 릴리스 뒤) 끝에 Orca 패널 설치 안내를 한 줄 낸다(1.5절). 그 전에는 Orca가 카탈로그를 거절하므로 내지 않는다. `orca`는 부르지 않는다.
 
 옛 실행기에 있던 안전장치(`old/tests/npm-installer.cjs`가 단언하는 것)와 새 실행기의 대응:
 
@@ -74,10 +74,10 @@ main 루트에 둘 것(제안):
 | `--trust`를 넘기지 않음 | Rust가 넘기지 않는다(INSTALL.md '하지 않는 것') |
 | `--dry-run`은 바꾸는 것 0건 | 실행기는 `--dry-run`을 그대로 넘긴다. Rust의 `--dry-run`은 조회 명령도 부르지 않는다 [확인: 임시 HOME 실행, `install.rs:532-548`] |
 | 한 CLI의 실패가 다른 CLI를 막지 않음 | Rust가 호스트별로 결과를 낸다. 실패가 있으면 종료 코드 4 |
-| 하향(낮은 버전) 설치 거부, 설치 뒤 목록 버전 확인 | **새 판에는 없다** [확인: `install.rs`에 하향 검사 없음, grep]. 제안 P2(4절) |
+| 하향(낮은 버전) 설치 거부, 설치 뒤 목록 버전 확인 | 조사 때 새 판에는 없었다 [확인: `install.rs`에 하향 검사 없음, grep]. P2(4절)로 Rust 실행본 단계에 더했다 |
 | Windows에서 셸 메타문자를 데이터로 보존 | 실행기는 `.exe`를 셸 없이 직접 띄우므로 PowerShell로 감쌀 필요가 없다. Rust는 인자 배열로 호스트 CLI를 부른다(design.md 9.5) |
-| Codex 홈 4곳(`CODEX_HOME`, `~/.codex`, `--codex-home`, Orca의 `codex-runtime-home/home`)을 모두 처리 | **새 판은 현재 환경의 `CODEX_HOME` 하나만 본다** [확인: `fullops-ext/src/hosts.rs:186-187`, design.md:3022]. 1.7절에서 손으로 하는 법을 적고, 5절 D6에서 정한다 |
-| 실제 실행기를 가짜 CLI로 돌려 모든 호출이 임시 홈 안에 머무는지 시험 | 새 실행기에도 같은 시험을 하나 둔다(가짜 바이너리로 인자 전달과 종료 코드 확인) |
+| Codex 홈 4곳(`CODEX_HOME`, `~/.codex`, `--codex-home`, Orca의 `codex-runtime-home/home`)을 모두 처리 | **새 판은 현재 환경의 `CODEX_HOME` 하나만 본다** [확인: `fullops-ext/src/hosts.rs:186-187`, design.md:3022]. 1.7절에서 손으로 하는 법을 적었다. D6 결정대로 `doctor`의 '다른 홈' 행이 알린다(P6의 작은 쪽) |
+| 실제 실행기를 가짜 CLI로 돌려 모든 호출이 임시 홈 안에 머무는지 시험 | `npx/fullops.test.cjs`: tarball 꼴 폴더에 가짜 바이너리를 두고 인자 전달, 종료 코드, SHA 불일치 거절, 모르는 호스트 거절, 배포본이 없을 때의 안내, 셸 메타문자가 든 `--repo` 경로 보존, 켜지 않은 레포·Python판 레포에서 `upgrade`를 부르지 않고 0으로 끝남, 카탈로그가 없을 때 패널 안내를 내지 않음, `--codex-home` 거절 안내를 본다 |
 
 ### 1.4 사용자가 치는 명령(옛 판과 같은 꼴)
 
@@ -86,12 +86,13 @@ main 루트에 둘 것(제안):
 | `npx --yes github:tourbut/fullops install [--hosts claude,codex,grok,agy\|all] [--dry-run]` | `fullops install [--hosts …] [--dry-run]` |
 | `npx --yes github:tourbut/fullops update [--hosts …] [--dry-run]` | `fullops install [--hosts …] [--dry-run]`. 새 판의 갱신은 다시 설치하는 것이다(INSTALL.md '갱신') |
 | `npx --yes github:tourbut/fullops check [--hosts …]` | `fullops install --check [--hosts …]` |
-| `… install\|update --repo <경로>` | 설치 뒤 `<경로>`를 작업 폴더로 `fullops upgrade`를 부른다. `--verify` 없이 부르면 레포를 고치지 않는다 [확인: `upgrade.rs:1-2`]. 그 레포가 아직 Python판(`fullops.json`)이면 `fullops migrate --from-python --dry-run`을 안내만 한다 |
+| `… install\|update --repo <경로>` | 설치 뒤 `<경로>`를 작업 폴더로 `fullops upgrade`를 부른다. `--verify` 없이 부르면 레포를 고치지 않는다 [확인: `upgrade.rs:1-2`]. `.fullops-squad/fullops.toml`이 있는 활성 레포일 때만 부른다. 아직 Python판(`fullops.json`)이면 `fullops migrate --from-python --dry-run`을, 켜지 않은 레포면 `fullops init`(setup-fullops 스킬)을 고정 위치 실행본의 전체 경로로 안내만 하고 설치의 종료 코드 0을 지킨다(upgrade는 활성 레포가 아니면 2를 낸다) |
+| `… install --codex-home <홈>`(옛 인자) | 부르지 않는다. `CODEX_HOME=<홈>`으로 다시 실행하라고 알리고 종료 코드 1 |
 | `… help` | 사용법 |
 
 Windows에서 npx를 거치지 않을 때는 `<폴더>\bin\fullops.exe install`처럼 확장자까지 쓴다. PowerShell은 확장자 없는 경로를 실행하지 못한다(INSTALL.md).
 
-주의 [확인: `install.rs:136-139`, `cli.rs:136-143`]: npx 캐시 폴더에서 install을 돌리면 `~/.fullops/install.json`의 `source`가 npx 캐시 경로가 된다. 캐시가 지워진 뒤 고정 위치 실행본으로 `fullops install`·`doctor`를 부르면 플러그인 루트를 찾지 못한다. 그러면 grok·agy 조립을 건너뛴다. hook과 Claude Code·Codex 동작에는 영향이 없다. 대책은 실행기가 아니라 Rust에 둔다(4절 P1).
+주의 [확인: `install.rs:136-139`, `cli.rs:136-143`]: npx 캐시 폴더에서 install을 돌리면 `~/.fullops/install.json`의 `source`가 npx 캐시 경로가 된다. 캐시가 지워진 뒤 고정 위치 실행본으로 `fullops install`·`doctor`를 부르면 플러그인 루트를 찾지 못한다. 그러면 grok·agy 조립을 건너뛴다. hook과 Claude Code·Codex 동작에는 영향이 없다. 대책은 실행기가 아니라 Rust에 뒀다(4절 P1, D7: install이 배포본을 `~/.fullops/package/<버전>/source`로 복사하고 `source`를 거기로 적는다).
 
 ### 1.5 Orca 패널 플러그인(fullops-panel) 배포·설치·갱신·제거
 
@@ -103,14 +104,14 @@ Windows에서 npx를 거치지 않을 때는 `<폴더>\bin\fullops.exe install`�
 
 | 안 | 배포 절차 | 사용자 설치 | 갱신 |
 |---|---|---|---|
-| **(A) 카탈로그. tourbut/fullops 루트에 `orca-catalog.json`(v2)** | 릴리스 워크플로가 `cargo xtask orca-catalog --root .`로 `orca plugin release-entry panel`과 같은 releases 항목(`version`, `commit`, `contentHash` 등)을 만들어 `orca-catalog.json`(`source {kind: "git", url, ref: "main", path: "panel"}`)에 넣고 릴리스 PR에 싣는다. `ref`는 Orca가 받아 오는 브랜치이고 패널 버전은 항목의 `commit`이 가리킨다(`docs/build.md` '릴리스 워크플로') | `orca plugin catalog add tourbut/fullops`(카탈로그 승인 `cat1-…` 지문) → `orca plugin install tourbut.fullops-panel`(코드 실행 승인) | 카탈로그가 새 releases를 내면 자동이다(`pluginUpdatePolicy` 기본 auto [확인: `plugin-update-policy.js`]) |
+| **(A) 카탈로그. tourbut/fullops 루트에 `orca-catalog.json`(v2)** | 릴리스 워크플로가 `cargo xtask orca-catalog --root .`로 `orca plugin release-entry panel`과 같은 releases 항목(`version`, `commit`, `contentHash` 등)을 만들어 `orca-catalog.json`(`{id: "tourbut.fullops-panel", source {kind: "git", url, ref: "main", path: "panel"}}`)에 넣고 릴리스 PR에 싣는다. `ref`는 Orca가 받아 오는 브랜치이고 패널 버전은 항목의 `commit`이 가리킨다(`docs/build.md` '릴리스 워크플로'). 사람은 PR을 머지하기 전에 `orca plugin validate orca-catalog.json --json`으로 확인한다 | `orca plugin catalog add tourbut/fullops`(카탈로그 승인 `cat1-…` 지문) → `orca plugin install tourbut.fullops-panel`(코드 실행 승인) | 카탈로그가 새 releases를 내면 자동이다(`pluginUpdatePolicy` 기본 auto [확인: `plugin-update-policy.js`]) |
 | (A') 레포 주인이 이미 운영하는 카탈로그가 있으면 거기에 항목 추가 | 같음(source의 url은 tourbut/fullops, path는 `panel`) | 이미 그 카탈로그를 등록한 사람은 `orca plugin install tourbut.fullops-panel`만 하면 된다 | 같음 |
 | (B) 패널만 루트에 둔 별도 저장소(예: `tourbut/fullops-panel`) | `panel/`을 그 저장소로 옮기거나 동기화한다 → 태그 `v2.0.0` → 저장소에 `orca-plugin` 토픽 | `orca plugin install tourbut/fullops-panel`(승인) | `orca plugin update tourbut.fullops-panel`(최신 `vX.Y.Z` 태그로) |
 | (C) 로컬 폴더(개발용) | - | `orca plugin install <경로>\panel`. 키가 `local.fullops-panel`이 되어 나중의 `tourbut.fullops-panel`과 별개로 남는다 | 폴더를 다시 복사한다 |
 
 이 PC에는 `tourbut.claude-pin`(카탈로그 설치)과 `tourbut.grokbot-notify`(git 설치)가 이미 있다 [확인: `%APPDATA%/orca/plugins/plugins.lock.json`의 키. 값은 열지 않았다]. 레포 주인은 두 방식을 다 써 봤다. (A')에 쓸 카탈로그가 이미 있는지는 확인하지 않았다.
 
-**추천: (A) 또는 (A').** 패널 원본을 `panel/` 한 곳에 두고, H14 기본안('이 저장소의 `panel/` 하위 폴더')과도 맞는다. 설치 키는 어느 안이든 `tourbut.fullops-panel`이다. 주의할 점: 태그 `v2.0.0`은 fullops 본체 릴리스와 겹친다. 그래서 (A)는 태그가 아니라 카탈로그의 커밋 ref로 패널 버전을 가리킨다. Orca 공개 목록(onorca.dev, `orca-plugin` 토픽)이 하위 폴더 플러그인을 올려 주는지는 확인하지 못했다.
+**결정: (A)**(2026-11-15, D4·D5. design.md 17절 H14를 고쳤다). 패널 원본을 `panel/` 한 곳에 둔다. 설치 키는 `tourbut.fullops-panel`이다. 태그 `v2.0.0`은 fullops 본체 릴리스와 겹치므로 태그가 아니라 카탈로그 releases 항목의 커밋 SHA로 패널 버전을 가리킨다(`source.ref`는 `main`. Orca는 releases의 `commit`을 그대로 받는다). Orca 공개 목록(onorca.dev, `orca-plugin` 토픽)이 하위 폴더 플러그인을 올려 주는지는 확인하지 못했다.
 
 **배포 전에 할 일(실환경 미확인)**: 패널을 Orca 안에서 실제로 돌려 본 적이 없다(`panel/README.md` '확인하지 못한 것': worker의 `node:fs` 읽기(M4), `workspace.readContext`와 `workspace.list`의 이름 일치). 먼저 사람이 다음을 확인한다:
 ```
@@ -134,7 +135,7 @@ orca plugin dev unload panel
 | 승인(`--approve <지문>`으로 다시 실행) | 사용자. 에이전트가 대신 승인하지 않는다(Orca 안내서가 '사람이 정확히 요청하지 않았다면 묻는다'고 한다) |
 | 갱신·제거 | 사용자가 Orca 명령으로 한다 |
 
-패널 실환경 점검이 끝나고 출처가 정해지면, 실행기에 `orca plugin install`을 `--approve` **없이** 부르는 계획 단계를 더할 수 있다(4절 P7). 승인하기 전에는 아무것도 쓰지 않으므로 안전하다.
+패널 실환경 점검이 끝나면 실행기에 `orca plugin install`을 `--approve` **없이** 부르는 계획 단계를 더할 수 있다(4절 P7, 남음). 승인하기 전에는 아무것도 쓰지 않으므로 안전하다.
 
 ### 1.6 지금 당장 할 수 있는 길(개발자용, 로컬 배포본)
 
@@ -157,7 +158,7 @@ $fx = "$out\dist\native\fullops\bin\fullops.exe"
 & $fx install --hosts grok,agy
 ```
 
-- `--root`를 주는 이유 [확인: `dev/docs/build.md:25-35`, `xtask/src/dist.rs:400,410`]: `--root`의 기본은 저장소 루트다. 기본값으로 돌리면 `dist/` 말고도 저장소 루트에 `.claude-plugin/marketplace.json`과 `.agents/plugins/marketplace.json`이 생긴다. `.gitignore`는 `/dist/`만 무시하므로 이 둘은 추적되지 않은 파일로 남는다. 이것을 커밋하면 `dist/` 없이 카탈로그만 공개된다. `--root` 없이 돌렸다면 이 둘을 커밋하지 말고 지운다.
+- `--root`: 기본은 이제 `target/dist`라 주지 않아도 저장소 루트를 더럽히지 않는다(`xtask/src/dist.rs`). 저장소 루트(`--root .`)에 만드는 것은 릴리스 때뿐이다. 그때 `dist/native/fullops`와 루트의 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`)이 함께 생기고, 이것들은 릴리스 커밋에서만 커밋한다. 개발 중에 `--root .`으로 돌렸다면 커밋하지 말고 지운다.
 - `--dry-run --hosts all`은 임시 HOME에서 종료 코드 0으로 계획을 냈다 [확인: realcheck의 `fullops.exe`, 조사 결과 install 갈래].
 - 2)를 하면 `install.json`의 `source`가 이 임시 폴더가 된다. 임시 폴더를 지우면 1.4절 '주의'와 같은 일이 생긴다.
 - **Claude Code·Codex는 이 길로 안 된다.** 이 둘은 로컬 폴더가 아니라 마켓플레이스 `tourbut/fullops`에서 받는다(`deps.rs:309-314`). main에 카탈로그와 dist가 없으니 `marketplace add`가 실패할 것이다 [추정]. 개발 중에 Claude Code는 실환경 점검처럼 `claude --plugin-dir <dist\native\fullops>`로 띄워 확인한다 [확인: 실환경 점검 기록 `realcheck/logs`]. Codex를 로컬 폴더로 설치하는 꼴은 계약 문서에 없다.
@@ -194,13 +195,15 @@ $fx = "$out\dist\native\fullops\bin\fullops.exe"
 claude plugin list --json; codex plugin list --json; grok plugin list --json; agy plugin list --json
 ```
 
-### 1.8 릴리스 절차(제안. 각 단계에 사람 승인이 필요)
+### 1.8 릴리스 절차(결정됨, D10. 각 단계에 사람 승인이 필요)
 
-1. 버전을 올리고 `crates/fullops/assets/releases/<버전>.md`를 쓴다.
-2. CI가 네 타깃을 빌드한다 → `cargo xtask dist --root . --prebuilt <폴더> --no-validate` → 릴리스 PR을 연다. `claude plugin validate dist/native/fullops` 등은 머지 전에 사람이 그 브랜치에서 돌린다(`docs/build.md` '릴리스 워크플로').
-3. **(사람 승인)** `dist/native/fullops`와 카탈로그 둘을 main에 커밋한다(D1·D2가 정해진 뒤).
-4. **(사람 승인)** 태그 `v<버전>`을 만들고, 필요하면 GitHub Release를 만든다.
-5. **(사람 승인)** 패널: 릴리스 워크플로가 `cargo xtask orca-catalog --root .`로 `orca-catalog.json`을 갱신해 2번의 PR에 싣는다(1.5절 (A)). 머지 전에 `orca plugin validate orca-catalog.json`으로 확인한다.
+릴리스 커밋은 `.github/workflows/release.yml`이 만들어 PR로 올린다. 손으로 main에 커밋하지 않는다. 워크플로는 main에 바로 push하지 않고 태그도 만들지 않는다. 명령까지 적은 정본은 `docs/build.md` '릴리스 워크플로'다.
+
+1. **(사람, 한 번만)** 저장소 설정에서 'Allow GitHub Actions to create and approve pull requests'를 켠다.
+2. 버전(`Cargo.toml`과 `package.json`. 패널을 바꿨으면 `panel/orca-plugin.json`도)을 올리고 `crates/fullops/assets/releases/<버전>.md`를 써서 main에 머지한다.
+3. **(사람)** GitHub Actions에서 `release`를 main에서 수동 실행하고 버전을 넣는다. 워크플로가 버전 확인 → 시험(`ci.yml`) → 네 타깃 빌드 → `cargo xtask dist --root . --prebuilt prebuilt --no-validate` → `cargo xtask orca-catalog --root . --commit <그 main 커밋>`(패널, 1.5절 (A)) → 새 브랜치 `release/v<버전>-<실행 번호>`에 `dist/native/fullops`와 카탈로그 셋을 커밋하고 main으로 PR을 연다.
+4. **(사람 승인)** PR 브랜치를 받아 호스트 검증(`claude plugin validate dist/native/fullops` 등), `orca plugin validate orca-catalog.json --json`, 바이너리 모드 100755를 확인하고 머지한다. 머지가 공개 승인이다.
+5. **(사람 승인)** 필요하면 머지된 커밋에 태그 `v<버전>`과 GitHub Release를 만든다. 워크플로는 태그를 만들지 않는다.
 6. 깨끗한 PC나 임시 HOME에서 `npx --yes github:tourbut/fullops install --dry-run`을 돌리고, 실제 설치 → `install --check` → `doctor` 순서로 확인한다.
 
 ---
@@ -241,12 +244,12 @@ claude plugin list --json; codex plugin list --json; grok plugin list --json; ag
 | 템플릿 12종(1.24.0 기본 글) | `.fullops-squad/…` | `setup.py` | 기본 글이면 새 템플릿으로 바꾸고 front matter를 남긴다. 사람이 고친 글이면 두고 `python3` 줄을 보고서에 낸다 | 지우지 않는다. 고친 글은 손으로 고친다 |
 | `PLANS.md`, `handovers/logs/`, `lint/lint.json`, `review/rule.json`, 규칙·산출물 문서 | `.fullops-squad/` | 사람·setup | 그대로 쓴다(design.md 13.2) | 지우지 않는다 |
 | 빈 인박스 `handovers/to_<역할>.md`(0바이트) | `.fullops-squad/handovers/` | `setup.py` | 지운다(`--rollback`이 다시 만든다) | 자동 |
-| 옛 상태 폴더 5개(`fullops-flow`, `-integration`, `-decisions`, `-autonomy`, `-issues`) | `<git-common-dir>/` | 옛 판 | `<common>/fullops/py-backup/`에 **복사**한다. 열린 결정과 hold는 `state.json`으로, 선행 키는 `archive.jsonl`로 가져온다. 원본은 지우지 않는다 | 2주 뒤 사람이 지운다(4절 P5) |
+| 옛 상태 폴더 5개(`fullops-flow`, `-integration`, `-decisions`, `-autonomy`, `-issues`) | `<git-common-dir>/` | 옛 판 | `<common>/fullops/py-backup/`에 **복사**한다. 열린 결정과 hold는 `state.json`으로, 선행 키는 `archive.jsonl`로 가져온다. 원본은 지우지 않는다 | 2주 뒤 `fullops migrate --finalize --apply`가 원본과 `py-backup/`을 `<common>/fullops/py-retired/<시각>/`로 옮긴다(4절 P5). 지우지는 않는다 |
 | 사람 턴 기록 `fullops-flow/human-turns.jsonl` | 위 폴더 안 | 옛 판 | 가져오지 않는다. 지표는 0부터 다시 센다 | 위와 같다 |
-| `fullops-snapshots/`, 작업 트리별 `fullops-gate/`, `fullops-search/` | `<git-common-dir>`, `<git-dir>` | 옛 판 | 건드리지 않는다 | 모든 역할 워크트리가 새 판으로 넘어간 뒤 |
+| `fullops-snapshots/`, 작업 트리별 `fullops-gate/`, `fullops-search/` | `<git-common-dir>`, `<git-dir>` | 옛 판 | 건드리지 않는다 | 모든 역할 워크트리가 새 판으로 넘어간 뒤(`migrate --finalize`가 함께 옮긴다) |
 | `fullops-mode-transition.json`, 작업 트리별 `fullops-setup.json`, `fullops-lint.lock` | `<git-common-dir>`, `<git-dir>` | `policy.py`, `setup.py`, `lint.py` | 건드리지 않는다 | 위와 같다(`migrate --finalize`가 함께 옮긴다) |
 | `board/`, 옛 `handovers/<KEY>-*.md`, `contexts/`, `docs/agents/frontend.json`, `test/unity-play.json`, 옛 리뷰 폴더, `docs/evaluations/jev/`의 옛 탐색 기록 | 레포 | 옛 판 | 건드리지 않는다. 읽기 전용 이력이다 | 사람이 판단한다(이력으로 남겨도 해가 없다) |
-| 되돌리기 기록 `migrate.json` | `<common>/fullops/py-backup/` | `fullops migrate` | `--rollback`이 쓴다. git 공통 폴더에만 있어 전환을 실행한 PC·클론에만 있다 | `--rollback`이 필요 없어진 뒤 |
+| 되돌리기 기록 `migrate.json` | `<common>/fullops/py-backup/` | `fullops migrate` | `--rollback`이 쓴다. git 공통 폴더에만 있어 전환을 실행한 PC·클론에만 있다 | `--rollback`이 필요 없어진 뒤(`migrate --finalize`가 `py-backup/`째 맨 마지막에 옮긴다) |
 
 ---
 
@@ -276,7 +279,7 @@ claude plugin list --json; codex plugin list --json; grok plugin list --json; ag
 4. 확인: 프로필마다(`~/.claude`와 Orca 프로필 4개) `CLAUDE_CONFIG_DIR`를 바꿔 `claude plugin list --json`을 보고 `fullops@fullops`가 하나도 없는지 본다. Codex 두 홈, `grok plugin list --json`, `agy plugin list --json`도 본다. 새 판 세션을 모두 닫는다.
 5. 4에서 어디에도 없다고 확인한 뒤에만 `~/.fullops`를 지운다. 플러그인이 없으면 `~/.fullops`는 아무것도 하지 않으므로 지우지 않고 두어도 된다.
 
-되돌릴 수 없는 것: `fullops install`이 함께 설치·갱신한 의존 플러그인(ponytail, mattpocock-skills, pstack. Claude Code는 `plugin update --scope user`로 올린다)과 그 마켓플레이스는 설치 전 버전으로 되돌리지 못한다. 공용 스킬도 1에서 보존한 백업을 손으로 복사하지 않으면 다시 설치된 최신판이 그대로 남는다. 4절 P9(`install --restore-skills`)가 이 손작업을 줄이는 안이다.
+되돌릴 수 없는 것: `fullops install`이 함께 설치·갱신한 의존 플러그인(ponytail, mattpocock-skills, pstack. Claude Code는 `plugin update --scope user`로 올린다)과 그 마켓플레이스는 설치 전 버전으로 되돌리지 못한다. 공용 스킬도 1에서 보존한 백업을 손으로 복사하지 않으면 다시 설치된 최신판이 그대로 남는다. 4절 P9로 `fullops install --restore-skills`를 더했다. 기본은 계획만 내고 `--apply`를 줄 때 백업을 원래 경로로 되돌린다(`~/.fullops`를 지우기 전, 1과 2 사이에 한다).
 
 ### 1단계: 레포 전환(레포마다, 사람 승인 뒤)
 
@@ -298,19 +301,21 @@ design.md 13.4의 순서를 따른다.
    - 역할 인박스(`handovers/to_<역할>.md`)가 비어 있지 않거나 새 상태에 통합 대기가 있으면 `--rollback`은 거절한다(`migrate.rs:1003-1025`). 먼저 인박스를 비우고 대기는 `fullops merge`나 `fullops hold`로 정리한다.
    - 되돌리기 기록 `migrate.json`은 git 공통 폴더(`<common>/fullops/py-backup/`)에만 있다(`migrate.rs:547-549`). 전환을 실행하지 않은 다른 클론·PC에서 `--rollback`을 돌리면 표식만 되돌린다. 그때 엔트리 문서(`AGENTS.md` 등)와 템플릿은 전환 커밋을 `git revert`로 되돌린다(`migrate.rs:1034-1038`).
 
-레포에 남는 옛 흔적과 지울 시점: `fullops.json.py-1.24.0`, `py-backup/`, `migrate.json`, 옛 상태 폴더 5개는 전환 뒤 2주가 지나고 되돌리기가 필요 없다고 정한 다음 지운다. 옛 이력 파일(2.2절의 '건드리지 않는다' 줄)은 남겨도 된다.
+레포에 남는 옛 흔적과 정리 시점: `fullops.json.py-1.24.0`, `py-backup/`(`migrate.json` 포함), 옛 상태 폴더 5개는 전환 뒤 2주가 지나고 되돌리기가 필요 없다고 정한 다음 정리한다. `fullops migrate --finalize`(P5)가 계획을 내고, `--apply`를 주면 Git 공용 디렉터리의 Python판 흔적(옛 상태 폴더 5개, `fullops-snapshots/`, `fullops-mode-transition.json`, 작업 트리별 `fullops-gate/`·`fullops-search/`·`fullops-setup.json`·`fullops-lint.lock`, 맨 마지막에 `py-backup/`)을 지우지 않고 `<common>/fullops/py-retired/<시각>/`로 옮긴다. `state.json`·`archive.jsonl`은 건드리지 않는다. 14일 전에는 거절하고 `--early`가 날짜 검사만 넘긴다. `fullops.json.py-1.24.0`의 `git rm`은 안내만 한다(커밋은 사람이 한다). 옛 이력 파일(2.2절의 '건드리지 않는다' 줄)은 남겨도 된다.
 
 주의 [확인: 조사 결과 repo 갈래]:
-- design.md 13.2 표의 '되돌리기' 칸은 `--rollback`이 백업과 `state.json`·`archive.jsonl`을 지운다고 적는다. 하지만 코드와 13.3절은 남긴다. 코드가 맞다고 보고 문서를 고친다(D9).
-- `migrate`의 '작업 트리가 깨끗하다' 검사는 주 체크아웃만 본다. 옛 판은 모든 워크트리를 봤다. 전환 전에 역할 워크트리에 커밋하지 않은 변경이 없는지 사람이 확인한다.
+- design.md 13.2 표의 '되돌리기' 칸은 `--rollback`이 백업과 `state.json`·`archive.jsonl`을 지운다고 적었다. 하지만 코드와 13.3절은 남긴다. 코드에 맞춰 13.2를 고쳤다(D9).
+- `migrate`의 '작업 트리가 깨끗하다' 검사는 `migrate`를 실행한 작업 트리만 본다. 옛 판은 모든 워크트리를 봤다. 전환 전에 역할 워크트리에 커밋하지 않은 변경이 없는지 사람이 확인한다(design.md 13.2 전제에 적었다. D9).
 
 ### 2단계: PC 정리(모든 레포를 옮기고 2주 뒤, 따로 승인받아)
+
+4절 P4로 `fullops install --retire-python`을 더했다. 아래 2-1~2-4를 정해진 목록 안에서 대신한다. 기본은 계획만 내고, `--apply`를 줄 때만 실행하며, 지우지 않고 `~/.fullops/py-retired/<시각>/`로 옮긴다. `--restore <시각>`이 되돌린다. 손으로 할 때와 같은 전제(2-0)를 지키고, 명령이 계획에 낸 것을 사람이 보고 승인한 뒤 `--apply`를 준다.
 
 **2-0. 전제 확인**
 - 이 PC의 모든 레포와 워크트리에 `.fullops-squad/fullops.json`이 없다(남은 것은 `fullops.json.py-1.24.0`뿐이다). 다음 두 가지를 모두 한다.
   1. 레포마다 `git worktree list`로 모든 워크트리를 얻고, 각 워크트리에 `.fullops-squad/fullops.json`이 없는지 본다. 표식은 브랜치마다 있으므로 주 체크아웃만 보면 놓친다. 대상 레포: `D:/workspace`의 `erden-godot`, `erden-unity`, `erden-s06-click-gui-sandbox-20261006`, `KnowsLink`, `jevpet`, `Fullops-Squad-plugin`.
   2. `git worktree list`에 잡히지 않는 것까지 보려고 `C:/Users/shin/orca/workspaces` 아래를 따로 훑는다(`marketplace-cache`는 뺀다). 2026-11-15 현재 15곳에 옛 표식이 있다(0절 4번 목록). `KnowsLink/.fullops-review-…` 같은 임시 리뷰 워크트리는 전환 대신 지워도 되는지 사람이 정한다.
-- `Fullops-Squad-plugin`(옛 판 원본)은 D8에서 정한 대로 한다. 옛 판 개발을 계속하기로 했다면 2단계 전체를 미룬다.
+- `Fullops-Squad-plugin`(옛 판 원본)은 D8대로 당분간 남긴다. 이 레포와 그 워크트리가 아직 옛 판으로 돌고 있으면(옛 표식이 있으면) 2단계 전체를 미룬다.
 - 옛 판 세션(Claude Code, Codex, grok)을 모두 닫는다.
 
 **2-1. 설정 파일 사본.** 이 단계에서는 **복사만** 하고 아무것도 옮기거나 지우지 않는다. `~/.fullops-squad`는 옛 hook이 부르는 runtime이라, 옛 플러그인이 남아 있는 동안 옮기면 옛 플러그인이 켜진 모든 세션의 hook이 실패한다(2.1절 hook 런타임 줄).
@@ -349,48 +354,52 @@ codex plugin list --json; grok plugin list --json; agy plugin list --json
 
 ---
 
-## 4. 새 판에 더하면 좋은 것(구상. 구현하지 않음)
+## 4. 새 판에 더한 것
 
-| 안 | 왜 필요한가 | 대략의 크기 |
-|---|---|---|
-| **P0 npx 실행기**(`package.json` + `npx/fullops.cjs` + 시험 하나) | 레포 주인의 결정(2026-11-15). 1.3·1.4절 | .cjs 약 150줄, 시험 1개. 설계 10.3절 끝 문장('Node 설치기는 두지 않는다')과 14절 표에 한 줄 |
-| **P1 `install`이 배포본을 `~/.fullops/package/<버전>/source`로 복사하고 `install.json`의 `source`를 거기로 적기** | npx 캐시가 지워지면 플러그인 루트를 잃는다(1.4절 주의). 실행기에 설치 로직을 두지 않으려면 Rust에서 고친다 | `install.rs` runtime 단계에 복사 하나, 시험 1개 |
-| **P2 하향 거부** | 옛 판은 낮은 버전 설치를 거부했다. 새 판은 runtime 단계에서 그대로 바꾼다 | `install.json`의 version과 비교. `--rollback`과 겹치지 않게 한다. 작다 |
-| **P3 `doctor`의 'Python판 잔재' 행(알림만)** | 지금 새 판 코드에는 `fullops-squad`를 가리키는 곳이 없어 잔재를 알리지 않는다 [확인: grep] | 이미 부르는 `plugin list` 결과에서 `fullops-squad`를 찾고, `~/.fullops-squad/runtime`, `fullops-deps.json` 경로가 있는지만 본다. 지우지 않는다. 작다 |
-| **P4 `fullops install --retire-python`(가칭)** | 2단계를 손으로 하면 홈 8곳과 프로필 4개를 돌아야 해서 빠뜨리기 쉽다 | 중간. 안전장치는 아래와 같다 |
-| P5 `fullops migrate --finalize`(가칭) | 2주 뒤 `py-backup/`, `migrate.json`, 옛 상태 폴더 5개를 정리하고 `fullops.json.py-1.24.0`의 `git rm`을 안내한다. 지금은 손으로 한다 | 작다. 커밋은 사람이 한다 |
-| P6 여러 홈 처리 | 옛 설치기는 Codex 홈 4곳을 돌았고, 이 PC에는 Orca Codex 홈과 Claude 프로필 4개가 따로 있다. 새 판은 하나만 본다. `deps-state.json`도 호스트 이름으로만 기록해 마지막 홈만 남는다(1.7절) | `doctor`가 다른 홈을 알리기만 할지(작다), `install`이 알려진 Orca 홈을 돌지(중간) 정해야 한다(D6) |
-| P7 실행기의 Orca 패널 단계 | 패널 출처(H14)와 패널 실환경 점검이 끝나면 `orca plugin install <출처>`를 **`--approve` 없이** 부르고, 승인 명령을 사람에게 보여 준다. 승인하기 전에는 Orca가 아무것도 쓰지 않는다 | 작다. 기본은 끔(`--with-panel`) |
-| P8 릴리스 자동화 | 네 타깃 빌드와 `xtask dist --prebuilt`, 패널 `release-entry`를 CI가 하고, 결과를 PR로 올려 사람이 승인한다 | CI 워크플로 1개 |
-| P9 `fullops install --restore-skills`(가칭) | 새 판은 공용 스킬을 덮어쓰기 전에 `~/.fullops/skill-backups/`에 백업만 하고 되살리는 명령이 없다(3절 0단계 되돌리기). 백업에 원래 폴더가 남지 않아 손으로 되살리기 어렵다 | 백업할 때 원래 경로를 함께 적고, `--restore-skills`가 그 경로로 되돌린다. 기본은 계획만 내고 `--apply`로 실행. 중간 |
+2026-11-15 결정에 따라 P0~P6, P8, P9를 구현했다. P7만 남았다(패널 실환경 점검 뒤).
+
+| 안 | 상태 | 왜 필요한가 | 내용 |
+|---|---|---|---|
+| **P0 npx 실행기** | 구현함 | 레포 주인의 결정(2026-11-15). 1.3·1.4절 | 루트 `package.json`, `npx/fullops.cjs`(Node 내장 모듈만), 시험 `npx/fullops.test.cjs`(`node --test`). design.md 10.3절 '처음 설치하는 길' (3)과 14절 표에 적었다 |
+| **P1 `install`이 배포본을 `~/.fullops/package/<버전>/source`로 복사하고 `install.json`의 `source`를 거기로 적기** | 구현함(D7) | npx 캐시가 지워지면 플러그인 루트를 잃는다(1.4절 주의). 실행기에 설치 로직을 두지 않으려고 Rust에서 고친다 | `install.rs` runtime 단계 |
+| **P2 하향 거부** | 구현함 | 옛 판은 낮은 버전 설치를 거부했다. 새 판은 runtime 단계에서 그대로 바꿨다 | `install.json`의 version과 비교. `--rollback`과 겹치지 않는다 |
+| **P3 `doctor`의 'Python판 잔재' 행(알림만)** | 구현함 | 새 판 코드에 `fullops-squad`를 가리키는 곳이 없어 잔재를 알리지 않았다 [확인: grep] | `plugin list` 결과의 `fullops-squad`, `~/.fullops-squad/runtime`, `fullops-deps.json` 경로가 있는지만 본다. 지우지 않는다 |
+| **P4 `fullops install --retire-python --repos <경로,…> [--remove-meter] [--apply]`, `--retire-python --restore <시각> [--apply]`** | 구현함 | 2단계를 손으로 하면 홈 8곳과 프로필 4개를 돌아야 해서 빠뜨리기 쉽다 | 안전장치는 아래와 같다 |
+| P5 `fullops migrate --finalize [--apply] [--early]` | 구현함 | 2주 뒤 레포의 Python판 흔적(`py-backup/`과 그 안의 `migrate.json`, 옛 상태 폴더 5개 등. 3절 1단계)을 `<common>/fullops/py-retired/<시각>/`로 옮기고 `fullops.json.py-1.24.0`의 `git rm`을 안내한다. `state.json`·`archive.jsonl`은 건드리지 않는다 | 기본은 계획만. 지우지 않고 옮긴다. 커밋은 사람이 한다(design.md 13.5) |
+| P6 여러 홈 처리 | 구현함(작은 쪽, D6) | 옛 설치기는 Codex 홈 4곳을 돌았고, 이 PC에는 Orca Codex 홈과 Claude 프로필 4개가 따로 있다. 새 판은 하나만 본다. `deps-state.json`도 호스트 이름으로만 기록해 마지막 홈만 남는다(1.7절) | `doctor`의 '다른 홈' 행이 알리기만 한다. 설치는 1.7절처럼 `CODEX_HOME`·`CLAUDE_CONFIG_DIR`를 바꿔 다시 실행한다 |
+| P7 실행기의 Orca 패널 단계 | **남음** | 패널 실환경 점검(M4)이 끝나면 `orca plugin install tourbut.fullops-panel`을 **`--approve` 없이** 부르고, 승인 명령을 사람에게 보여 준다. 승인하기 전에는 Orca가 아무것도 쓰지 않는다 | 작다. 기본은 끔(`--with-panel`). 지금 실행기는 명령을 안내만 한다 |
+| P8 릴리스 자동화 | 구현함 | 네 타깃 빌드와 `xtask dist --root . --prebuilt`를 CI가 하고, 패널 카탈로그 항목은 `cargo xtask orca-catalog --root .`가 `orca plugin release-entry`와 같은 규칙으로 만든다. 결과를 PR로 올려 사람이 검토·머지한다(main에 바로 push하지 않고 태그를 만들지 않는다) | `.github/workflows/release.yml`, `ci.yml`(`docs/build.md` '릴리스 워크플로') |
+| P9 `fullops install --restore-skills [--apply]` | 구현함 | 새 판은 공용 스킬을 덮어쓰기 전에 `~/.fullops/skill-backups/`에 백업만 하고 되살리는 명령이 없었다(3절 0단계 되돌리기) | 백업할 때 원래 경로를 함께 적고, `--restore-skills`가 그 경로로 되돌린다. 기본은 계획만 내고 `--apply`로 실행 |
 
 P4 `--retire-python`의 안전장치:
 - 기본은 계획만 낸다(dry-run). 실제 실행은 `--apply`를 줄 때만 한다.
 - **1.24.0 코드가 쓰는 자리로 정한 목록**에 있는 것만 다룬다: `deps.py:103-107`의 기록, `:201` 백업, `hook_runtime.py:15` runtime, `jev_observe.py:266` 캐시, 그리고 이름이 `fullops-squad`인 플러그인과 마켓플레이스. 목록 밖은 건드리지 않는다. `fullops-meter`를 남기는 설정이면 마켓플레이스 `fullops-squad`도 남긴다.
 - `plugin/deps.toml`에 있는 플러그인·마켓플레이스·스킬은 계획에서 뺀다(공용 의존은 남긴다).
-- 이 PC에서 아는 레포와 그 모든 워크트리 가운데 `fullops.json`이 남은 곳이 하나라도 있으면 거절한다. 아는 레포의 목록을 어디서 얻을지(Orca 워크스페이스 목록, 또는 `--repos`로 받기)는 정해야 한다. 워크트리는 레포마다 `git worktree list`로 얻는다.
-- 지우지 않고 `~/.fullops/py-retired/<시각>/`로 옮긴다. `--restore`로 되돌린다.
+- `--repos <경로,…>`로 받은 레포와 그 모든 워크트리(레포마다 `git worktree list`) 가운데 `fullops.json`이 남은 곳이 하나라도 있으면 거절한다. `--repos`를 주지 않았거나 워크트리 목록을 읽지 못해도 거절한다(종료 코드 2).
+- 지우지 않고 `~/.fullops/py-retired/<시각>/`로 옮긴다. `--restore <시각>`으로 되돌린다.
 - runtime은 플러그인 제거가 확인된 뒤 마지막에 다룬다.
 - 호스트 명령은 `docs/contracts/`에서 확인된 하위 명령만 부른다. 어떤 하위 명령에도 `--help`를 붙이지 않는다(agy의 전례). Claude Code·Codex의 제거 명령은 계약 문서에 확인해 넣기 전까지 안내만 한다.
 - npm 전역 패키지는 지우지 않고 안내만 한다(다른 용도일 수 있다).
 
 ---
 
-## 5. 열린 결정(사람이 정할 것)
+## 5. 결정(2026-11-15)
 
-| # | 결정 | 선택지와 이 문서의 추천 |
-|---|---|---|
-| D1 (H3) | 바이너리 유통·서명·마켓플레이스 출처 | 추천: main에 릴리스 때만 `dist/native/fullops` 커밋, 서명 없이 시작, 출처 `tourbut/fullops`. 대안: Releases 내려받기, 배포 브랜치 `#ref` |
-| D2 (H16) | `dist/`와 카탈로그 둘을 어느 브랜치에 두나 | D1을 따른다. (가)를 고르면 `.gitignore`의 `/dist/`를 고친다. 예: `/dist/directory/`만 무시하고, `dist/native/`는 릴리스 커밋만 바꾼다는 규칙을 둔다 |
-| D3 (새) | 설계 10.3절 'Node 설치기는 두지 않는다'와 14절 표, INSTALL.md·README의 설치 길을 npx 결정에 맞게 고치기 | 고친다. 실행기는 G4 검사 밖(저장소 루트)이라 그 검사와는 부딪치지 않는다(`dev/docs/build.md:49`) |
-| D4 (H14) | Orca 패널의 배포 자리 | 추천: 카탈로그 (A) `tourbut/fullops`의 `orca-catalog.json`, `source.path: "panel"`, 또는 (A') 이미 운영하는 카탈로그. 대안: (B) 별도 저장소. 그 전에 패널 실환경 점검(M4)을 한다 |
-| D5 (새) | 패널 버전과 태그 | 본체 태그 `v<버전>`과 겹치지 않게, 카탈로그의 커밋 ref로 패널 버전을 가리킨다. (B)를 고르면 별도 저장소의 태그를 쓴다 |
-| D6 (새) | Orca Codex 홈·Claude 프로필 4개 처리 | 손으로 `CODEX_HOME`·`CLAUDE_CONFIG_DIR`를 바꿔 다시 실행할지, 새 판에 P6을 넣을지 |
-| D7 (새) | npx 캐시를 `source`로 적는 문제 | P1로 고칠지 |
-| D8 (새) | 옛 판 정리 시점, `fullops-meter` 처분, 옛 판 원본 저장소 | design.md 13.4: 모든 레포·워크트리 전환과 2주 뒤 따로 승인. `fullops-meter`는 FullOps 밖 사용 여부를 보고 정한다. 남기면 Claude Code 마켓플레이스 `fullops-squad`도 남는다. `Fullops-Squad-plugin`(옛 판 원본, `D:/workspace`와 워크트리 `Fullops-Squad-plugin/dev`)은 자기 자신을 옛 판으로 쓰고 있다. (1) 이 레포도 새 판으로 전환하거나, (2) 옛 판 개발이 끝날 때까지 2단계(PC 정리)를 미룬다. 둘 중 하나를 정한다 |
-| D9 (새) | 설계와 코드의 어긋남 | (1) 출처 충돌의 종료 코드: 설계 10.3은 2라고 적고, 코드는 4로 끝난다(`deps.rs:241`, `install.rs:633-635,722`). (2) 13.2 표의 되돌리기 칸과 13.3·코드의 차이. (3) `migrate`의 깨끗한 작업 트리 검사가 주 체크아웃만 보는 것 |
-| D10 (새) | 릴리스·태그·main 커밋·카탈로그 공개의 승인자와 순서 | 1.8절 순서. 각 단계를 사람이 승인한다 |
-| D11 (H3 관련) | SmartScreen·macOS 공증이 npx 캐시의 바이너리 실행을 막는지 | 확인하지 않았다. 첫 공개 전에 깨끗한 Windows·macOS에서 확인한다 |
+레포 주인: "orca 패널 배포도 이 레포에서 진행하고, 나머지도 다 추천대로 진행해". 모두 **결정됨(2026-11-15)** 이다.
+
+| # | 결정 | 정한 것 | 반영한 곳 |
+|---|---|---|---|
+| D1 (H3) | 바이너리 유통·서명·마켓플레이스 출처 | main에 릴리스 때만 `dist/native/fullops`(바이너리 넷 포함) 커밋, 서명 없이 시작, 출처 `tourbut/fullops` | design.md 17절 H3, 10.5절, `docs/build.md` '유통' |
+| D2 (H16) | `dist/`와 카탈로그 둘을 어느 브랜치에 두나 | main. 릴리스 커밋만 `dist/native/fullops`와 카탈로그 둘을 바꾼다. `.gitignore`는 `/dist/directory/`만 막고, `xtask dist`의 기본 `--root`를 `target/dist`로 바꿔 개발 중에는 저장소 루트에 생기지 않게 했다 | `.gitignore`, `xtask/src/dist.rs`, design.md 17절 H16, `docs/build.md` |
+| D3 (새) | 설계 10.3절 'Node 설치기는 두지 않는다'와 14절 표, INSTALL.md·README의 설치 길 | npx 결정에 맞게 고쳤다. 실행기는 G4 검사 밖(저장소 루트)이다 | design.md 10.3·14절과 1.24.0 대응표, `plugin/INSTALL.md`, `README.md` |
+| D4 (H14) | Orca 패널의 배포 자리 | 카탈로그 (A): 이 저장소 루트의 `orca-catalog.json`(카탈로그 v2, `source.path: "panel"`). 설치 키 `tourbut.fullops-panel`. 패널 실환경 점검(M4)은 첫 패널 릴리스 전에 한다 | design.md 17절 H14, 1.5절, `docs/build.md` '릴리스 워크플로' |
+| D5 (새) | 패널 버전과 태그 | 본체 태그와 겹치지 않게 카탈로그 releases 항목의 커밋 SHA로 가리킨다 | 같음 |
+| D6 (새) | Orca Codex 홈·Claude 프로필 4개 처리 | P6의 작은 쪽: `doctor`의 '다른 홈' 행이 알린다. 설치는 손으로 홈을 바꿔 다시 실행한다(1.7절) | 4절 P6 |
+| D7 (새) | npx 캐시를 `source`로 적는 문제 | P1로 고친다 | 4절 P1 |
+| D8 (새) | 옛 판 정리 시점, `fullops-meter` 처분, 옛 판 원본 저장소 | 모든 레포·워크트리 전환 + 2주 뒤 따로 승인(design.md 13.4). `fullops-meter`와 옛 판 원본 레포(`Fullops-Squad-plugin`)는 당분간 남긴다. `fullops-meter`를 남기므로 Claude Code 마켓플레이스 `fullops-squad`도 남는다 | 3절 2단계, 4절 P4 |
+| D9 (새) | 설계와 코드의 어긋남 | 설계를 코드에 맞췄다. (1) 출처 충돌의 종료 코드: 코드대로 그 호스트만 멈추고 install은 4로 끝난다(`deps.rs`의 `exit: 4`, 실패로 적혀 `CliError::External`). (2) 13.2 표의 되돌리기 칸: `--rollback`은 `py-backup/`·`state.json`·`archive.jsonl`을 남긴다. (3) `migrate`의 깨끗한 작업 트리 검사는 실행한 작업 트리만 본다 | design.md 10.3절 '구현 묶음이 정한 것', 13.2절 |
+| D10 (새) | 릴리스·태그·main 커밋·카탈로그 공개의 승인자와 순서 | 1.8절 순서. 각 단계를 사람이 승인한다 | 1.8절, `docs/build.md` '릴리스 워크플로' |
+| D11 (H3 관련) | SmartScreen·macOS 공증이 npx 캐시의 바이너리 실행을 막는지 | 첫 공개 전에 깨끗한 Windows·macOS에서 확인한다(이번에는 하지 않았다) | 남음 |
 
 ---
 

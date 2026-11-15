@@ -1,0 +1,24 @@
+{
+  "name": "fullops",
+  "private": true,
+  "version": "2.0.0",
+  "description": "npx --yes github:tourbut/fullops install: 배포본의 fullops 바이너리를 골라 검증하고 fullops install에 넘기는 실행기",
+  "bin": {
+    "fullops": "npx/fullops.cjs"
+  },
+  "files": [
+    "npx/",
+    "dist/native/fullops/",
+    "orca-catalog.json"
+  ],
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tourbut/fullops.git"
+  },
+  "scripts": {
+    "test": "node --test npx/fullops.test.cjs"
+  }
+}

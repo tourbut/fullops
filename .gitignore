@@ -1,7 +1,8 @@
 # Rust
 /target/
-# `cargo xtask dist`의 생성물. 개발 브랜치에는 커밋하지 않는다(docs/build.md)
-/dist/
+# `cargo xtask dist`의 기본 산출 자리는 target/dist다. 저장소 루트의 dist/native/fullops와 카탈로그 둘은 릴리스 커밋만 바꾼다(docs/build.md '릴리스')
+# 디렉터리판은 Anthropic 플러그인 디렉터리에 따로 내므로 저장소에 두지 않는다
+/dist/directory/
 **/*.rs.bk
 *.pdb
 

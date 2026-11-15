@@ -888,8 +888,8 @@ fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// 스킬 문서에 나오지만 `fullops`의 것이 아닌 옵션: Orca의 `worker_done --outcome`과 `reply --id --body`, 호스트 CLI의 `--trust`.
-const FOREIGN_OPTIONS: &[&str] = &["outcome", "id", "body", "trust"];
+/// 스킬 문서에 나오지만 `fullops`의 것이 아닌 옵션: Orca의 `worker_done --outcome`과 `reply --id --body`, 호스트 CLI의 `--trust`, `npx --yes`, Orca의 `--approve`.
+const FOREIGN_OPTIONS: &[&str] = &["outcome", "id", "body", "trust", "yes", "approve"];
 
 /// 인자 해석기가 받는 긴 옵션 이름. 소스에서 읽는다: `Long("이름")`, 공통 옵션의 `"--이름"`, `review`의 `Parsed::new` 목록.
 /// 어느 명령의 옵션인지는 가리지 않는다(문서의 오타와 없어진 옵션을 잡는 것이 목적이다).
@@ -948,6 +948,8 @@ fn skill_docs_name_real_commands_and_skills() {
         assert!(deps.contains(&format!("names = [\"{name}\"]")), "{name}");
         known.insert(name.to_string());
     }
+    // 스킬이 아니라 Orca 패널 플러그인의 id다(INSTALL.md의 Orca 패널 절)
+    known.insert("fullops-panel".to_string());
     for banned in ["open-code-review", "\"ocr\"", "npm "] {
         assert!(
             !deps.to_lowercase().contains(banned),

@@ -176,9 +176,10 @@ fn old_plugins(host: HostId, home: &Path, remove_meter: bool) -> Known<Vec<Strin
             Known::Yes(Vec::new())
         };
     }
+    // 꺼진 플러그인도 남은 것으로 센다(설정 파일 확인과 같다)
     hosts::host_plugins(host).map(|list| {
         list.into_iter()
-            .filter(|id| is_old(id, remove_meter))
+            .filter_map(|(id, _)| is_old(&id, remove_meter).then_some(id))
             .collect()
     })
 }

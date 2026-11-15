@@ -13,6 +13,7 @@
 ```
 cargo build
 cargo test -p fullops --test bundle_f     # 설치·이행·배포 시나리오(묶음 F)
+node --test npx/fullops.test.cjs          # npx 실행기(package.json의 test와 같다)
 cargo check --target aarch64-apple-darwin
 cargo check --target x86_64-unknown-linux-gnu
 ```
@@ -25,7 +26,7 @@ cargo check --target x86_64-unknown-linux-gnu
 cargo xtask dist [--root <폴더>] [--target <타깃>]... [--prebuilt <폴더>] [--no-validate]
 ```
 
-만드는 것은 다음과 같다. `--root`의 기본은 `target/dist`다(`.gitignore`의 `/target/` 안이라 개발 중에 만든 배포본이 커밋되지 않는다). 저장소 루트에 만드는 것은 릴리스 때(`--root .`, 아래 '릴리스')뿐이다.
+만드는 것은 다음과 같다. `--root`의 기본은 `target/dist`다(`.gitignore`의 `/target/` 안이라 개발 중에 만든 배포본이 커밋되지 않는다). 저장소 루트에 만드는 것은 릴리스 때(`--root .`, 아래 '릴리스 워크플로')뿐이다.
 
 | 자리(`<루트>` 기준) | 내용 |
 |---|---|
@@ -59,7 +60,7 @@ cargo xtask dist [--root <폴더>] [--target <타깃>]... [--prebuilt <폴더>] 
 
 ### 실행 비트
 
-`bin/fullops`(런처)와 macOS·Linux 바이너리는 실행 비트가 있어야 한다. `xtask dist`는 POSIX에서 실행했을 때만 실행 비트를 준다(Windows의 파일 시스템에는 실행 비트가 없다). 그래서 배포 커밋은 POSIX 러너에서 만든 배포본으로 한다. Windows에서 만든 배포본을 커밋해야 하면 `git update-index --chmod=+x`로 `bin/fullops`, `bin/fullops-darwin-arm64`, `bin/fullops-darwin-x64`, `bin/fullops-linux-x64`의 모드를 직접 잡는다. 저장소의 `plugin/bin/fullops`도 같은 모드(100755)로 커밋한다.
+`bin/fullops`(런처)와 macOS·Linux 바이너리는 실행 비트가 있어야 한다. `xtask dist`는 POSIX에서 실행했을 때만 실행 비트를 준다(Windows의 파일 시스템에는 실행 비트가 없다). 그래서 릴리스 워크플로는 배포본을 Linux 러너에서 만든다(아래 '릴리스 워크플로'). 저장소의 `plugin/bin/fullops`도 같은 모드(100755)로 커밋한다.
 
 ### 검증
 
@@ -136,4 +137,22 @@ cargo xtask orca-catalog [--root <폴더>] [--commit <SHA>]
 
 ## 유통
 
-바이너리의 유통 방식과 서명, 마켓플레이스 출처는 사람이 정한다(`docs/design.md` 17절 H3). 출처가 정해지면 `plugin/deps.toml`의 `[self].source`만 바꾼다. `dist/`는 `xtask dist`의 생성물이고 개발 브랜치에는 커밋하지 않는다(저장소 `.gitignore`의 `/dist/`). 마켓플레이스 카탈로그 둘은 `./dist/native/fullops`를 가리키므로, 배포본을 저장소로 유통하기로 정하면 배포 브랜치에서는 그 줄을 빼거나 `git add -f dist`로 싣는다.
+레포 주인이 정했다(2026-11-15, `docs/design.md` 17절 H3·H14·H16, `docs/install-and-retire.md` 5절).
+
+- 출처는 `tourbut/fullops`의 기본 브랜치(main) 하나다. `npx --yes github:tourbut/fullops install|update|check`와 Claude Code·Codex의 `marketplace add tourbut/fullops`가 같은 트리를 읽는다. 서명은 하지 않는다.
+- main 루트에 두는 것: `package.json`과 `npx/fullops.cjs`(실행기. 개발 커밋에서도 바뀐다), 그리고 **릴리스 커밋에서만 바뀌는** `dist/native/fullops/`(바이너리 넷 포함)와 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`), Orca 카탈로그 `orca-catalog.json`.
+- 개발 커밋은 `dist/`와 세 카탈로그를 건드리지 않는다. `xtask dist`의 기본 루트가 `target/dist`라 평소에는 저장소 루트에 생기지 않는다. `dist/directory/`는 `.gitignore`가 막는다(디렉터리판은 저장소에 두지 않는다).
+- 실행기(`npx/fullops.cjs`)는 저장소 루트에 있고 배포 폴더 밖이라 G4 검사와 부딪치지 않는다. Node 내장 모듈만 쓰고 npm 의존과 `prepare` 스크립트가 없다(있으면 npx가 받을 때 그것을 설치·실행한다).
+- 실행기는 바이너리를 고르고 `SHA256SUMS`로 검증한 뒤 셸 없이 `fullops install`에 넘기기만 한다. `SHA256SUMS`는 전송 손상만 잡는다.
+
+### 릴리스에서 사람이 하는 일
+
+릴리스 절차는 위 '릴리스 워크플로' 하나다. 릴리스 커밋, 카탈로그, 패널 항목을 손으로 만들어 main에 커밋하지 않는다. 사람이 하는 일은 다음뿐이다(`docs/install-and-retire.md` 1.8절, D10).
+
+1. 한 번만: 저장소 설정에서 'Allow GitHub Actions to create and approve pull requests'를 켠다.
+2. 버전(`Cargo.toml`, `package.json`, 패널을 바꿨으면 `panel/orca-plugin.json`)을 올리고 릴리스 노트를 써서 main에 머지한 뒤, `release`를 main에서 수동 실행한다.
+3. **(승인)** 워크플로가 연 PR을 검토한다. 호스트 CLI(`claude`·`grok`·`agy`)가 있는 PC에서 그 브랜치를 받아 `cargo xtask dist --root <임시 폴더> --prebuilt dist/native/fullops/bin`을 돌려 출력에 '검증을 건너뛴다'가 없는지 본다(PR의 바이너리로 다시 조립해 위 '검증'을 모두 돌린다). `orca plugin validate orca-catalog.json --json`과 바이너리 모드(`git ls-files -s dist/native/fullops/bin`이 100755)도 본다. 통과하면 머지한다. 머지가 공개 승인이다.
+4. **(승인)** 태그 `v<버전>`과 GitHub Release가 필요하면 머지된 커밋에 사람이 만든다.
+5. 깨끗한 PC나 임시 HOME에서 `npx --yes github:tourbut/fullops install --dry-run` → 실제 설치 → `install --check` → `doctor` 순서로 확인한다.
+
+이력이 커지는 것이 문제가 되면 기본 브랜치를 배포 전용 브랜치로 바꾸는 쪽으로 옮긴다. 사용자가 등록한 마켓플레이스 출처(`tourbut/fullops`)는 그대로 둘 수 있다.
