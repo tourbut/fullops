@@ -1271,8 +1271,19 @@ fn self_install_follows_the_plugin_root() {
     let h = Hooks::new(&Setup::default());
     let root = h.sb.root.join("plugin");
     let exe = format!("fullops{}", std::env::consts::EXE_SUFFIX);
+    // 배포본 안의 이름은 OS마다 다르다(install.rs의 platform_binary)
+    let shipped = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", _) => "fullops.exe",
+        ("macos", "aarch64") => "fullops-darwin-arm64",
+        ("macos", _) => "fullops-darwin-x64",
+        _ => "fullops-linux-x64",
+    };
     std::fs::create_dir_all(root.join("bin")).unwrap();
-    std::fs::copy(fullops_testkit::bin("fullops"), root.join("bin").join(&exe)).unwrap();
+    std::fs::copy(
+        fullops_testkit::bin("fullops"),
+        root.join("bin").join(shipped),
+    )
+    .unwrap();
     h.sb.write(
         &root.join("VERSION"),
         "2.0.0

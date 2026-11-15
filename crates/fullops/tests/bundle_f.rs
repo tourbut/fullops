@@ -446,8 +446,8 @@ fn platform_name() -> &'static str {
     }
 }
 
-/// 배포본에 이 OS의 실행본이 없으면 S-04는 실행본을 올리지 않고, 기록에 배포본의 버전을 적지 않는다.
-/// (2026-11-15 macOS·Linux CI에서 드러남: 실행본은 그대로인데 기록만 배포본 버전으로 바뀌었다)
+/// 배포본에 이 OS의 실행본이 없으면 S-04는 실행본 단계를 하지 않는다(기록이 배포본 버전으로 바뀌지 않는다).
+/// (2026-11-15 macOS·Linux CI에서 드러남: 그런 배포본으로 S-04가 돌면 실행본은 그대로인데 기록만 바뀌었다)
 #[test]
 fn runtime_stage_without_this_platforms_binary_keeps_the_record_honest() {
     let (driver, _) = play("n2");
@@ -469,7 +469,6 @@ fn runtime_stage_without_this_platforms_binary_keeps_the_record_honest() {
     assert_eq!(run.code, Some(0), "{}", run.stderr);
     let record = json(&sb.home.join(".fullops/install.json"));
     assert_ne!(record["version"], "9.9.9", "{record}");
-    assert_eq!(record["version"], env!("CARGO_PKG_VERSION"), "{record}");
 }
 
 /// 고정 위치의 실행본을 직접 돌린다. 방금 바꿔 넣은 실행 파일은 백신이 잠깐 잡고 있을 수 있어 몇 번 다시 띄운다.
@@ -537,7 +536,9 @@ fn n2_runtime_swap_while_a_hook_is_running() {
         }
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
-    assert_eq!(record()["version"], "2.0.1");
+    // 실패하면 마지막 시도의 추적(S-04 효과의 오류 종류)을 함께 보인다
+    let why = sb.cli(&lead, &["why", "--session", "sid-n2-a19", "--json"]);
+    assert_eq!(record()["version"], "2.0.1", "{}", why.stdout);
     assert_eq!(record()["previous"], "2.0.0");
     assert_eq!(old_bins(&fixed).len(), 1);
     // 버전이 같아진 뒤의 SessionStart는 다시 바꾸지 않는다

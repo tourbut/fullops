@@ -217,6 +217,15 @@ fn emit(text: &str) {
 /// 내부 기한(밀리초). 이벤트를 알기 전에는 가장 긴 값이다. `--event`가 있으면 stdin을 읽기 전에 그 이벤트의 값으로 낮춘다.
 static DEADLINE_MS: AtomicU64 = AtomicU64::new(12_000);
 
+/// S-04를 싣는 SessionStart의 내부 기한. 등록 타임아웃(`deps::HOOK_TIMEOUTS`의 SessionStart 10초)보다 짧아야 한다.
+const SELF_INSTALL_DEADLINE_MS: u64 = 9_000;
+const _: () = {
+    let (event, seconds) = fullops_core::deps::HOOK_TIMEOUTS[0];
+    assert!(
+        event.len() == "SessionStart".len() && SELF_INSTALL_DEADLINE_MS < seconds as u64 * 1000
+    );
+};
+
 fn deadline_ms(event: EventKind) -> u64 {
     match event {
         EventKind::SessionStart | EventKind::PreToolUse => 4_000,
@@ -420,6 +429,10 @@ fn handle(args: &HookArgs, started: Instant) -> Result<(), &'static str> {
 
     let root = plugin_root(args);
     let scene = scene(args, &repo, input.event, root.as_deref());
+    // S-04는 배포본·실행본을 복사하고 해시를 잰다. 등록 타임아웃(SessionStart 10초) 안에서 기한을 늘린다
+    if scene.self_install {
+        DEADLINE_MS.store(SELF_INSTALL_DEADLINE_MS, Ordering::Relaxed);
+    }
     let mut facts = facts_real::RealFacts::new(repo, host, &input, root);
     let Outcome {
         verdict,
