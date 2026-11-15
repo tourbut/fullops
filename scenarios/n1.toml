@@ -1,0 +1,36 @@
+# hook 중 강제 종료와 병렬 PreToolUse 8개의 잠금 경합은 crates/fullops/tests/hook.rs가 본다.
+name = "state.json이 파손돼도 hook은 통과하고 판정은 이어진다"
+origin = "설계 12.2절 N1"
+
+[[step]]
+act = "file"
+path = ".git/fullops/state.json"
+content = "{ \"v\": 1, \"runs\": [ 깨진 글"
+
+[[step]]
+act = "file"
+path = ".fullops-squad/PLANS.md"
+content = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n| A-1 | 결제 재시도 | dev | 대기 | 사용자 지시 |\n\n## 위임 범위\n\n"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "state.json" }
+
+[[step]]
+act = "runs_shell"
+command = "ls"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }

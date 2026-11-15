@@ -1,0 +1,60 @@
+name = "fullops done의 lint 증거와 완료 보고"
+origin = "12.2 H4"
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+
+# lint 통과 기록이 없다
+[[step]]
+act = "worker_finishes"
+role = "dev"
+expect = { verdict = "deny", rule = "R-03", escape = "fullops lint --from" }
+
+# 완료 보고 절이 비어 있다
+[[step]]
+act = "worker_finishes"
+role = "dev"
+no_checks = "적용할 검사가 없다"
+expect = { verdict = "deny", rule = "R-04" }
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+expect = { verdict = "pass", escape = "[완료] A-1 | 브랜치 fullops/dev | SHA " }
+
+# lint 명령이 없는 레포는 사유를 남기고 끝낸다. 이미 끝낸 뒤 다시 실행하면 본문만 다시 낸다
+[[step]]
+act = "worker_finishes"
+role = "dev"
+no_checks = "적용할 검사가 없다"
+expect = { verdict = "pass", escape = "[완료] A-1 | 브랜치 fullops/dev | SHA " }
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+expect = { verdict = "pass", escape = "[완료] A-1 | 브랜치 fullops/dev | SHA " }

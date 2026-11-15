@@ -1,0 +1,45 @@
+name = "Orca가 응답하지 않으면 dispatch 받은 세션의 종료를 막지 않는다"
+origin = "설계 12.2절 H3"
+
+[[step]]
+act = "preamble_arrives"
+who = "dev"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-show"]
+stdout = { ok = true, result = { dispatchId = "ctx_9", taskId = "task_9", runId = "run_9", terminal = "term_9", state = "ready", stage = "input_accepted", liveness = "live" } }
+sleep_ms = 5000
+times = 1
+
+[[step]]
+act = "stops"
+df = "DF-32"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-show"]
+exit = 1
+times = 1
+stdout = { ok = false, error = { code = "runtime_unavailable", message = "Orca가 떠 있지 않다" } }
+
+[[step]]
+act = "stops"
+df = "DF-32"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-show"]
+stdout = { ok = true, result = { dispatchId = "ctx_9", taskId = "task_9", runId = "run_9", terminal = "term_9", state = "ready", stage = "input_accepted", liveness = "live" } }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-03", flow = "stopped" }

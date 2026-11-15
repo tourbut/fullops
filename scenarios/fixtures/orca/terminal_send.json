@@ -1,0 +1,14 @@
+{
+  "id": "<요청 ID>",
+  "ok": true,
+  "result": {
+    "send": {
+      "handle": "term_00000000-0000-4000-8000-000000000002",
+      "accepted": true,
+      "bytesWritten": 42
+    }
+  },
+  "_meta": {
+    "runtimeId": "<런타임 ID>"
+  }
+}

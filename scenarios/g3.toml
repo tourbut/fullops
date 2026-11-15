@@ -1,0 +1,81 @@
+name = "작업 브랜치가 lint.json의 exclude를 넓혀도 기준 시점 설정으로 검사한다"
+origin = "12.2절 G3"
+
+[setup]
+remote = false
+
+# 기준 시점(main)의 설정: gen/ 아래만 제외하고 명령 하나를 등록한다
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}], "exclude": ["gen/**"]}'
+
+[[step]]
+act = "commits"
+message = "lint 설정"
+
+[[step]]
+act = "git"
+who = "dev"
+args = ["merge", "-q", "--ff-only", "main"]
+
+# worker가 금지 표현을 넣고, 같은 브랜치에서 exclude를 넓히고 명령을 지운다
+[[step]]
+act = "file"
+who = "dev"
+path = "src/app.py"
+content = "\"\"\"앱 진입점.\"\"\"\nresult = eval(\"1 + 1\")\n"
+
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [], "exclude": ["gen/**", "src/**"]}'
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "구현과 lint 설정 완화"
+
+# 넓힌 exclude는 적용되지 않는다: src/app.py가 검사된다
+[[step]]
+act = "runs_fullops"
+who = "dev"
+args = ["lint", "--from", "main"]
+expect = { verdict = "deny", exit = 2, flow = "stopped", escape = "ERROR ANTI-002 src/app.py:2" }
+
+# 설정을 바꿨다는 경고가 나오고, 지운 명령도 기준 시점대로 돈다
+[[step]]
+act = "runs_fullops"
+who = "dev"
+args = ["lint", "--from", "main"]
+expect = { verdict = "deny", escape = "WARNING LINT-001" }
+
+[[step]]
+act = "runs_fullops"
+who = "dev"
+args = ["lint", "--from", "main"]
+expect = { verdict = "deny", escape = "[passed] version" }
+
+# 기준 시점에 이미 제외된 경로는 그대로 제외된다
+[[step]]
+act = "git"
+who = "dev"
+args = ["reset", "-q", "--hard", "main"]
+
+[[step]]
+act = "file"
+who = "dev"
+path = "gen/out.py"
+content = "result = eval(\"1 + 1\")\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "생성물"
+
+[[step]]
+act = "runs_fullops"
+who = "dev"
+args = ["lint", "--from", "main"]
+expect = { verdict = "pass", exit = 0, flow = "continues", escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

@@ -1,0 +1,14 @@
+{
+  "session_id": "019a0000-0000-7000-8000-000000000001",
+  "transcript_path": null,
+  "cwd": "/home/dev/repo",
+  "model": "gpt-example-codex",
+  "permission_mode": "default",
+  "turn_id": "turn_0001",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "spawn_agent",
+  "tool_use_id": "call_EXAMPLE0000000000000000",
+  "tool_input": {
+    "message": "Purpose: research. Read only. 결제 모듈의 재시도 경로를 찾아 보고한다."
+  }
+}

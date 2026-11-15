@@ -1,0 +1,15 @@
+{
+  "session_id": "11111111-2222-4333-8444-555555555555",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-repo/11111111-2222-4333-8444-555555555555.jsonl",
+  "cwd": "/home/dev/repo",
+  "permission_mode": "default",
+  "prompt_id": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Agent",
+  "tool_input": {
+    "prompt": "Purpose: research. Read only. 결제 모듈의 재시도 경로를 찾아 보고한다.",
+    "description": "결제 재시도 경로 조사",
+    "subagent_type": "Explore"
+  },
+  "tool_use_id": "toolu_01EXAMPLE0000000000000000"
+}

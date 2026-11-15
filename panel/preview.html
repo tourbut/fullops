@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>fullops 패널 미리보기</title>
+    <!-- Orca 없이 패널을 보는 쪽이다. src/index.html은 Orca 밖에서 열리면 src/preview.js의 표본 데이터로 그린다. -->
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        font: 13px system-ui, sans-serif;
+        color: #222;
+        background: #c9c9c9;
+      }
+      .frames {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: flex-start;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        margin-bottom: 4px;
+      }
+      iframe {
+        display: block;
+        width: 360px;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frames">
+      <figure>
+        <figcaption>표본 상태, 밝은 테마</figcaption>
+        <iframe src="src/index.html?theme=light" height="1580" title="표본 상태, 밝은 테마"></iframe>
+      </figure>
+      <figure>
+        <figcaption>표본 상태, 어두운 테마</figcaption>
+        <iframe src="src/index.html?theme=dark" height="1580" title="표본 상태, 어두운 테마"></iframe>
+      </figure>
+      <figure>
+        <figcaption>열린 과제가 없고 지표를 아직 계산하지 않았다</figcaption>
+        <iframe src="src/index.html?theme=dark&case=quiet" height="300" title="열린 과제 없음"></iframe>
+        <figcaption>status.json이 아직 없다</figcaption>
+        <iframe src="src/index.html?theme=light&case=none" height="130" title="파일 없음"></iframe>
+        <figcaption>status.json이 깨졌다</figcaption>
+        <iframe src="src/index.html?theme=dark&case=broken" height="150" title="깨진 파일"></iframe>
+        <figcaption>status.json이 새 형식이다</figcaption>
+        <iframe src="src/index.html?theme=light&case=newer" height="150" title="새 형식"></iframe>
+        <figcaption>fullops를 쓰는 레포가 없다</figcaption>
+        <iframe src="src/index.html?theme=dark&case=empty" height="150" title="레포 없음"></iframe>
+      </figure>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,209 @@
+name = "패킷 있는 과제의 완료 검사: 처리 기록이 없거나 다른 패킷의 것이면 걸린다"
+origin = "설계 12.2절 P4 (전달 항목 누락·status·전부 기록 뒤의 done 통과는 tests/explore.rs가 패킷의 input_sha256을 읽어 잇는다)"
+
+# 준비: 필수 문서 여섯, 코드, 문서를 커밋한다
+[[step]]
+act = "file"
+path = ".fullops-squad/FULLOPS.md"
+content = '''
+# FULLOPS.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/project.md"
+content = '''
+# project.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/README.md"
+content = '''
+# README.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/coding-style.md"
+content = '''
+# coding-style.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/security.md"
+content = '''
+# security.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/testing.md"
+content = '''
+# testing.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = "src/pay/retry.rs"
+content = '''
+pub fn retry(order: u32) -> u32 {
+    order
+}
+'''
+
+[[step]]
+act = "file"
+path = "src/pay/card.rs"
+content = '''
+pub fn charge_card() -> u32 {
+    retry(1)
+}
+'''
+
+[[step]]
+act = "file"
+path = "docs/pay.md"
+content = '''
+# 결제 설계
+
+[재시도](../src/pay/retry.rs) 정책을 적는다.
+'''
+
+[[step]]
+act = "commits"
+message = "시나리오 파일"
+
+# 준비: 분류하고 인박스를 만든 뒤 지시 본문을 쓴다
+[[step]]
+act = "lead_routes"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "PAY-12"
+role = "dev"
+goal = "결제 재시도 버튼"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "edits_file"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "- [ ] 구체적 작업과 수정할 파일"
+new = """
+- [ ] `retry`의 중복 클릭을 막는다
+  * [ ] 테스트를 더한다"""
+
+# J-03: 패킷에 없는 경로, 필수 항목의 exclude
+[[step]]
+act = "file"
+path = "decisions-path.json"
+content = "[{\"path\": \"src/nope.rs\", \"action\": \"exclude\", \"reason\": \"패킷에 없는 경로\"}]\n"
+
+[[step]]
+act = "file"
+path = "decisions-required.json"
+content = "[{\"path\": \".fullops-squad/FULLOPS.md\", \"action\": \"exclude\", \"reason\": \"필수 항목\"}]\n"
+
+[[step]]
+act = "file"
+path = "decisions-good.json"
+content = "[{\"path\": \"src/pay/card.rs\", \"action\": \"exclude\", \"reason\": \"이 과제와 무관한 호출\"}]\n"
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox", "--decisions", "decisions-path.json"]
+expect = { verdict = "deny", rule = "J-03", flow = "stopped", escape = "--seed" }
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox", "--decisions", "decisions-required.json"]
+expect = { verdict = "deny", rule = "J-03", flow = "stopped" }
+
+# J-03에 안 걸린다. 의견은 항목을 바꾸지 않는다
+[[step]]
+act = "runs_fullops"
+args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox", "--decisions", "decisions-good.json"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+# 처리 기록 없음
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "PAY-12", "--role", "dev", "--completion"]
+expect = { verdict = "deny", rule = "J-14", flow = "stopped", escape = "packet-outcomes" }
+
+# 배정 검사는 처리 기록을 보지 않는다
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "PAY-12", "--role", "dev"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "lead_dispatches"
+df = "DF-16"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "PAY-12"
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
+
+# 완료(R-10): 처리 기록이 없다. 거절 문구에 걸린 J 규칙이 있다
+[[step]]
+act = "worker_finishes"
+role = "dev"
+no_checks = "시나리오"
+expect = { verdict = "deny", rule = "R-10", flow = "stopped", escape = "J-14" }
+
+# 다른 패킷의 처리 기록
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/docs/evaluations/jev/PAY-12-packet-outcomes.json"
+content = "{\"v\": 1, \"key\": \"PAY-12\", \"round\": 0, \"packet_input_sha256\": \"다른 패킷\", \"items\": [], \"uncertainty_review\": \"\"}\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "처리 기록"
+
+[[step]]
+act = "runs_fullops"
+who = "dev"
+args = ["packet", "check", "PAY-12", "--role", "dev", "--completion"]
+expect = { verdict = "deny", rule = "J-14", flow = "stopped" }
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+no_checks = "시나리오"
+expect = { verdict = "deny", rule = "R-10", flow = "stopped", escape = "packet-outcomes.json" }

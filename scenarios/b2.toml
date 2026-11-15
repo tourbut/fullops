@@ -1,0 +1,25 @@
+name = "coor 모드의 역할 브랜치는 worker 안내, coordinator 역할 브랜치는 lead 안내를 받는다"
+origin = "설계 12.2절 B2"
+
+[setup]
+roles = { dev = "worker", coord = "coordinator", qa = "tester", architecture = "design" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues", escape = "worker `dev`" }
+
+[[step]]
+act = "session_starts"
+who = "coord"
+expect = { verdict = "context", flow = "continues", escape = "coordinator(lead)" }
+
+[[step]]
+act = "session_starts"
+who = "qa"
+expect = { verdict = "context", flow = "continues", escape = "tester `qa`" }
+
+[[step]]
+act = "session_starts"
+who = "architecture"
+expect = { verdict = "context", flow = "continues", escape = "설계 역할 `architecture`" }

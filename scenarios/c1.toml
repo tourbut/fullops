@@ -1,0 +1,39 @@
+name = "날것 worker-start는 거부한다"
+origin = "설계 12.2절 C1"
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --help"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+command = "echo 'orca orchestration worker-start'"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-list --run run_1"
+expect = { verdict = "pass", flow = "continues" }
+
+# 명령이 글로만 들어 있으면 통과한다
+[[step]]
+act = "runs_shell"
+command = "grep -rn 'orca orchestration worker-start' docs | head -5"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+command = "git log --grep=\"(orca orchestration worker-start)\" --oneline"
+expect = { verdict = "pass", flow = "continues" }

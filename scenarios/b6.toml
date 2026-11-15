@@ -1,0 +1,33 @@
+name = "compact 뒤의 SessionStart는 역할 한 줄과 현재 인박스를 다시 준다"
+origin = "설계 12.2절 B6"
+
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "session_starts"
+df = "DF-27"
+who = "dev"
+source = "compact"
+expect = { verdict = "context", flow = "continues", escape = "to_dev.md" }
+
+[[step]]
+act = "session_starts"
+df = "DF-27"
+who = "dev"
+source = "compact"
+expect = { verdict = "context", flow = "continues", escape = "과제 `A-1`" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+source = "resume"
+expect = { verdict = "pass", flow = "continues" }

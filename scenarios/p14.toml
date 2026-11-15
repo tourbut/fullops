@@ -1,0 +1,73 @@
+name = "필수 문서가 없는 레포에서도 패킷이 배정을 막지 않고, 만들 때 읽은 파일이 없어지면 배정 검사에 걸린다"
+origin = "검증 R2-5, 설계 8.14절 J-12"
+
+# 준비: 필수 문서 여섯이 하나도 없다. 코드만 커밋한다
+[[step]]
+act = "file"
+path = "src/pay/retry.rs"
+content = '''
+pub fn retry(order: u32) -> u32 {
+    order
+}
+'''
+
+[[step]]
+act = "commits"
+message = "시나리오 파일"
+
+[[step]]
+act = "lead_routes"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "PAY-12"
+role = "dev"
+goal = "결제 재시도 버튼"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "edits_file"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "- [ ] 구체적 작업과 수정할 파일"
+new = "- [ ] `retry`의 중복 클릭을 막는다"
+
+# 없는 필수 문서는 패킷을 partial로 만들 뿐이다
+[[step]]
+act = "runs_fullops"
+args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox"]
+expect = { verdict = "pass", exit = 0, flow = "continues", escape = "partial=true · 미확인 6" }
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "PAY-12", "--role", "dev"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+# 만들 때 읽은 파일이 없어지면 J-12다
+[[step]]
+act = "git"
+args = ["rm", "-q", "src/pay/retry.rs"]
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "PAY-12", "--role", "dev"]
+expect = { verdict = "deny", rule = "J-12", flow = "stopped", escape = "`src/pay/retry.rs`(없음)" }
+
+[[step]]
+act = "git"
+args = ["checkout", "-q", "HEAD", "--", "src/pay/retry.rs"]
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "PAY-12", "--role", "dev"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+# 배정이 대상 워크트리에서 같은 검사를 하고 통과한다
+[[step]]
+act = "lead_dispatches"
+df = "DF-16"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }

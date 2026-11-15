@@ -1,0 +1,80 @@
+name = "ANTI-003: 추가된 줄의 범위 없는 억제"
+origin = "8.11절 9번 ANTI-003"
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 범위 없는 type: ignore, noqa(대소문자 무시), pyright: ignore
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "\"\"\"결제.\"\"\"\ntotal = compute()  # type: ignore\nimport os  # NOQA\nrate = load()  # pyright: ignore\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR ANTI-003 src/pay.py:2" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", escape = "ERROR 3 / WARNING 0" }
+
+# 검출: @ts-ignore, 규칙 이름 없는 eslint-disable 둘
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "\"\"\"결제.\"\"\"\ntotal = compute()\n"
+
+[[step]]
+act = "file"
+path = "src/pay.ts"
+content = "// 결제.\n// @ts-ignore\nconst a = b;\n/* eslint-disable */\n// eslint-disable-next-line\nconst c = d;\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR 3 / WARNING 0" }
+
+# 비검출: 코드나 규칙 이름으로 좁힌 억제
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "\"\"\"결제.\"\"\"\ntotal = compute()  # type: ignore[arg-type]\nimport os  # noqa: F401\nrate = load()  # pyright: ignore[reportGeneralTypeIssues]\n"
+
+[[step]]
+act = "file"
+path = "src/pay.ts"
+content = "// 결제.\n// @ts-expect-error 서버 타입이 아직 없다\nconst a = b;\n// eslint-disable-next-line no-unused-vars\nconst c = d;\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

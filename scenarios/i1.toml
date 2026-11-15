@@ -1,0 +1,37 @@
+name = "lead가 분류만 하고 끝내면 한 번 막는다"
+origin = "설계 12.2절 I1"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-04", flow = "stopped", escape = "fullops task new" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "warn", flow = "continues" }
+
+[[step]]
+act = "lead_plans"
+key = "A-1"
+role = "dev"
+status = "보류(다음 분기)"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+text = "다음"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+df = "DF-3"
+expect = { verdict = "pass", flow = "continues" }

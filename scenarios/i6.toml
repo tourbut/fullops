@@ -1,0 +1,59 @@
+name = "wait는 미리 보기를 기록한 뒤에 소비한다"
+origin = "12.2 I6. 소비형이 함께 돌려준 메시지와 강제 종료 뒤 다시 실행은 crates/fullops/tests/flow.rs에 있다"
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+
+[[step]]
+act = "orca_sends"
+type = "heartbeat"
+id = "hb_1"
+
+[[step]]
+act = "orca_sends"
+type = "heartbeat"
+id = "hb_2"
+
+[[step]]
+act = "orca_sends"
+type = "heartbeat"
+id = "hb_3"
+
+[[step]]
+act = "orca_sends"
+id = "msg_done"
+body = "A-1을 끝냈다"
+
+[[step]]
+act = "lead_waits"
+expect = { verdict = "pass", escape = "fullops merge A-1" }
+
+# 다시 받아도 같은 메시지가 한 번만 남아 있다
+[[step]]
+act = "lead_waits"
+no_wait = true
+expect = { verdict = "pass", escape = "msg_done" }
+
+[[step]]
+act = "orca_sends"
+type = "question"
+id = "msg_q"
+body = "어느 쪽으로 할까"
+
+[[step]]
+act = "lead_waits"
+expect = { verdict = "pass", escape = "--ack msg_q" }
+
+[[step]]
+act = "lead_waits"
+ack = ["msg_q"]
+no_wait = true
+expect = { verdict = "pass", escape = "fullops merge A-1" }

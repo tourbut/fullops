@@ -1,0 +1,48 @@
+name = "lead의 날것 task-create는 분류된 키가 있어야 한다"
+origin = "설계 12.2절 C5"
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration task-create --spec \"Task key: A-1; Purpose: implementation\""
+expect = { verdict = "deny", rule = "T-04", flow = "stopped", escape = "fullops route" }
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration task-create --spec \"결제 버튼을 고친다\""
+expect = { verdict = "deny", rule = "T-04", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+df = "DF-28"
+command = "orca orchestration task-create --spec-file spec.txt"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+df = "DF-28"
+command = "orca orchestration task-create --spec \"$SPEC\""
+expect = { verdict = "pass", flow = "continues" }
+
+# 읽지 못한 spec으로 만든 Task도 날것 배정으로는 worker를 얻지 못한다
+[[step]]
+act = "runs_shell"
+df = "DF-1"
+command = "orca orchestration dispatch --task task_1 --to term_1"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "orca orchestration task-create --spec \"Task key: A-1\""
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration task-create --spec \"Task key: A-1; Purpose: implementation\""
+expect = { verdict = "pass", flow = "continues" }

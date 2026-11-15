@@ -1,0 +1,20 @@
+[package]
+name = "fullops"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+fullops-core.workspace = true
+fullops-store.workspace = true
+fullops-ext.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+fancy-regex.workspace = true
+globset.workspace = true
+sha2.workspace = true
+lexopt.workspace = true
+
+[dev-dependencies]
+fullops-testkit.workspace = true

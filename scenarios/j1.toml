@@ -1,0 +1,40 @@
+name = "미통합 완료 보고: 어디에도 없으면 막고, 로컬 기본에만 있으면 막고, 원격에 있으면 통과한다"
+origin = "설계 12.2절 J1"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+expect = { verdict = "pass", flow = "continues" }
+
+# 완료 보고의 메시지를 처리 표시해 X-05 (a)를 치우고 X-06만 본다
+[[step]]
+act = "lead_waits"
+ack = ["msg_2"]
+no_wait = true
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-06", flow = "stopped", escape = "fullops merge" }
+
+[[step]]
+act = "git"
+args = ["merge", "-q", "--no-edit", "fullops/dev"]
+
+# 날것 git merge로 들어온 커밋은 lead 세션이 만든 변경이 아니다: X-01이 아니라 X-06이 알린다
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-06", flow = "stopped", escape = "push 남음" }
+
+[[step]]
+act = "git"
+args = ["push", "-q", "origin", "main"]
+
+[[step]]
+act = "stops"
+expect = { verdict = "pass", flow = "continues" }

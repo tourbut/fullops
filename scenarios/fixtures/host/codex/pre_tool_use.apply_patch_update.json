@@ -1,0 +1,14 @@
+{
+  "session_id": "019a0000-0000-7000-8000-000000000001",
+  "transcript_path": null,
+  "cwd": "/home/dev/repo",
+  "model": "gpt-example-codex",
+  "permission_mode": "default",
+  "turn_id": "turn_0001",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "apply_patch",
+  "tool_use_id": "call_EXAMPLE0000000000000000",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Update File: src/pay/retry.ts\n*** Move to: src/pay/retry_policy.ts\n@@ export function retry()\n const A = 1\n-const MAX = 3\n+const MAX = 5\n const B = 2\n*** End of File\n*** Delete File: src/pay/old_retry.ts\n*** End Patch\n"
+  }
+}

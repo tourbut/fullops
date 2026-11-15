@@ -1,0 +1,151 @@
+name = "find는 Jev를 못 불러도 로컬 후보로 끝나고 종료 코드 0이다"
+origin = "설계 12.2절 P7"
+
+# 준비: 필수 문서 여섯, 코드, 문서를 커밋한다
+[[step]]
+act = "file"
+path = ".fullops-squad/FULLOPS.md"
+content = '''
+# FULLOPS.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/project.md"
+content = '''
+# project.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/README.md"
+content = '''
+# README.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/coding-style.md"
+content = '''
+# coding-style.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/security.md"
+content = '''
+# security.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/testing.md"
+content = '''
+# testing.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = "src/pay/retry.rs"
+content = '''
+pub fn retry(order: u32) -> u32 {
+    order
+}
+'''
+
+[[step]]
+act = "file"
+path = "src/pay/card.rs"
+content = '''
+pub fn charge_card() -> u32 {
+    retry(1)
+}
+'''
+
+[[step]]
+act = "file"
+path = "docs/pay.md"
+content = '''
+# 결제 설계
+
+[재시도](../src/pay/retry.rs) 정책을 적는다.
+'''
+
+# 경로에는 과제의 낱말이 없고 파일 머리 설명에만 있다(로컬 후보는 경로와 요약으로 맞춘다)
+[[step]]
+act = "file"
+path = "src/pay/gate.rs"
+content = """
+//! retry 버튼의 연타를 세는 문지기.
+pub fn gate() {}
+"""
+
+[[step]]
+act = "commits"
+message = "시나리오 파일"
+
+# 준비: 분류하고 인박스를 만든 뒤 지시 본문을 쓴다
+[[step]]
+act = "lead_routes"
+key = "PAY-12"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "PAY-12"
+role = "dev"
+goal = "결제 재시도 버튼"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "edits_file"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "- [ ] 구체적 작업과 수정할 파일"
+new = """
+- [ ] `retry`의 중복 클릭을 막는다
+  * [ ] 테스트를 더한다"""
+
+# 가짜 curl과 그 답을 먼저 둔다. 오프라인과 키 없음에서는 이 답이 쓰이지 않는다(tests/explore.rs가 호출 수를 센다)
+[[step]]
+act = "fakes"
+names = ["curl"]
+
+# 확률의 합이 1이 아닌 답
+[[step]]
+act = "curl_replies"
+when = ["--config", "-"]
+times = 1
+stdout = '{"model": "jev-1.14.0", "usage": {"input_tokens": 120, "output_tokens": 9}, "answers": {"where": {"type": "choice", "choice": "F000", "probabilities": {"F000": 0.9, "F001": 0.9, "F002": 0.0, "F003": 0.0, "F004": 0.0}, "confidence": 0.5}, "exists": {"type": "noul", "noul": 0.5}}}'
+
+# FULLOPS_OFFLINE=1(시험 환경의 기본값)
+[[step]]
+act = "runs_fullops"
+args = ["find", "PAY-12", "--role", "dev"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+# 오프라인이 아니고 키가 없다
+[[step]]
+act = "runs_fullops"
+env = { FULLOPS_OFFLINE = "0" }
+args = ["find", "PAY-12", "--role", "dev", "--force"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+# Jev가 잘못된 확률 분포를 답한다. 로컬 후보로 끝나고 종료 코드 0이다
+[[step]]
+act = "runs_fullops"
+env = { FULLOPS_OFFLINE = "0", TYPESAFE_API_KEY = "scenario-key" }
+args = ["find", "PAY-12", "--role", "dev", "--force"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }

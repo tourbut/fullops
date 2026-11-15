@@ -1,0 +1,81 @@
+name = "agy 표본과 같은 입력에서 같은 판정을 내고 통과에도 decision을 낸다"
+origin = "설계 12.2절 O4"
+
+[setup]
+host = "agy"
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues", escape = "worker `dev`" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git status --short"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "writes_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
+expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops task new" }
+
+[[step]]
+act = "preamble_arrives"
+who = "dev"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-show"]
+stdout = { ok = true, result = { dispatchId = "ctx_9", taskId = "task_9", runId = "run_9", terminal = "term_9", state = "ready", stage = "input_accepted", liveness = "live" } }
+
+[[step]]
+act = "stops"
+who = "dev"
+reason = "USER_CANCELED"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "block", rule = "X-03", flow = "stopped", escape = "fullops done" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "send"]
+stdout = { ok = true, result = {  } }
+
+[[step]]
+act = "turn_fails"
+who = "dev"
+error = "RESOURCE_EXHAUSTED: quota exceeded"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "agy", "--event", "PreToolUse"]
+expect = { verdict = "pass", flow = "continues", escape = "{\"decision\":\"ask\"}" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "agy", "--event", "Stop"]
+expect = { verdict = "pass", flow = "continues", escape = "{\"decision\":\"\"}" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "agy"]
+expect = { verdict = "pass", flow = "continues", escape = "{}" }

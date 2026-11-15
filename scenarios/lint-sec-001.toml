@@ -1,0 +1,84 @@
+name = "SEC-001: 추가된 줄의 하드코딩 비밀값"
+origin = "8.11절 9번 SEC-001"
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 코드 파일은 ERROR
+[[step]]
+act = "file"
+path = "src/conf.py"
+content = "\"\"\"설정.\"\"\"\nAPI_KEY = \"sk-live-1234567890\"\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "deny", exit = 2, escape = "ERROR SEC-001 src/conf.py:2" }
+
+# 검출: 테스트 파일과 .md는 WARNING이라 통과를 막지 않는다
+[[step]]
+act = "file"
+path = "src/conf.py"
+content = "\"\"\"설정.\"\"\"\n"
+
+[[step]]
+act = "file"
+path = "tests/test_conf.py"
+content = "\"\"\"설정 시험.\"\"\"\nauth_token = \"abc123real\"\n"
+
+[[step]]
+act = "file"
+path = "notes/setup.md"
+content = "# 설정\n\npassword: 'hunter2-real'\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING SEC-001 tests/test_conf.py:2" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 2" }
+
+# 비검출: 더미 값, 환경 변수 참조, 따옴표 리터럴이 아닌 대입
+[[step]]
+act = "git"
+args = ["rm", "-q", "tests/test_conf.py", "notes/setup.md"]
+
+[[step]]
+act = "file"
+path = "src/conf.py"
+content = "\"\"\"설정.\"\"\"\nimport os\n\nAPI_KEY = os.environ[\"API_KEY\"]\npassword = \"changeme\"\nsecret = \"<채울 것>\"\ntoken = load_token()\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

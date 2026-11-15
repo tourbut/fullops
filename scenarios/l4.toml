@@ -1,0 +1,122 @@
+name = "수정 커밋 뒤 이전 SHA의 리뷰로 merge"
+origin = "설계 12.2절 L4. 1.24.0: 알림. 새 판: M-04에서 멈춘다"
+
+# 이전 SHA의 리뷰를 수락까지 채우는 단계는 동사가 없어(l2.toml의 주석과 같다)
+# crates/fullops/tests/review_merge.rs의 review_of_old_sha_does_not_cover_fix_commit이 본다.
+# 여기서는 이전 SHA에 고정된 결정과 리뷰 폴더가 새 SHA를 덮지 않는 것을 본다.
+
+# 400줄 변경의 완료 보고: 배정 → 작업 → 완료 보고 작성 → lint → done → worker_done → wait
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+path = "src/big.py"
+lines = 400
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+expect = { verdict = "pass", escape = "[완료] A-1" }
+
+[[step]]
+act = "orca_sends"
+subject = "A-1 완료"
+
+[[step]]
+act = "lead_waits"
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "human", exit = 3, rule = "M-04" }
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D001", "--answer", "진행", "--sha", "fullops/dev"]
+expect = { verdict = "pass" }
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "snapshot", "A-1"]
+expect = { verdict = "pass" }
+
+# 병합 전의 수정 배정: `task reopen`이 다음 차수의 인박스를 만들고(이전 차수의 완료 기록은 역할 브랜치의 것을 그대로 가져온다)
+# 수정 배정이 그 인박스를 worker 워크트리에 전달한다. 끝난 차수의 인박스로 그대로 배정하면 D-02로 거절된다
+[[step]]
+act = "runs_fullops"
+args = ["task", "reopen", "--role", "dev", "--key", "A-1", "--goal", "A-1 수정"]
+expect = { verdict = "pass" }
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+purpose = "fix"
+bare = true
+expect = { verdict = "pass" }
+
+# worker가 수정 커밋을 더하고 새 차수 인박스의 완료 보고를 채워 다시 보고한다
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+path = "src/big.py"
+lines = 401
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n수정과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "수정 완료 보고"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+expect = { verdict = "pass", escape = "[완료] A-1" }
+
+[[step]]
+act = "orca_sends"
+subject = "A-1 수정 완료"
+
+[[step]]
+act = "lead_waits"
+expect = { verdict = "pass", escape = "msg_4" }
+
+# 이전 SHA의 결정(진행)과 리뷰 폴더로는 새 SHA를 병합하지 못한다. 새 SHA에 묶인 결정을 새로 연다
+[[step]]
+act = "runs_fullops"
+args = ["merge", "A-1", "--completion", "msg_4"]
+expect = { verdict = "human", exit = 3, rule = "M-04", flow = "stopped", escape = "D002" }

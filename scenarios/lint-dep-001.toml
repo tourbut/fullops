@@ -1,0 +1,96 @@
+name = "DEP-001: 의존성 선언 파일의 변경·삭제·이름 변경"
+origin = "8.11절 9번 DEP-001"
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+[[step]]
+act = "file"
+path = "go.mod"
+content = "module example.invalid/app\n\ngo 1.22\n"
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 새 requirements*.txt
+[[step]]
+act = "file"
+path = "backend/requirements-dev.txt"
+content = "pytest\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING DEP-001 backend/requirements-dev.txt" }
+
+# 검출: 이름 변경(옛 이름이 의존성 선언 파일이다)
+[[step]]
+act = "git"
+args = ["rm", "-q", "backend/requirements-dev.txt"]
+
+[[step]]
+act = "git"
+args = ["mv", "go.mod", "go.mod.bak"]
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING DEP-001 go.mod.bak" }
+
+# 검출: 삭제
+[[step]]
+act = "git"
+args = ["rm", "-q", "go.mod.bak"]
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING DEP-001 go.mod 의존성" }
+
+# 비검출: 이름이 비슷할 뿐인 파일
+[[step]]
+act = "file"
+path = "go.mod"
+content = "module example.invalid/app\n\ngo 1.22\n"
+
+[[step]]
+act = "file"
+path = "docs/requirements.md"
+content = "# 요구사항\n"
+
+[[step]]
+act = "file"
+path = "docs/package.json.txt"
+content = "설명\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

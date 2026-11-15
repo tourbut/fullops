@@ -1,0 +1,24 @@
+name = "로컬 기본 브랜치가 뒤처져도 원격에 들어가 있으면 막지 않는다"
+origin = "설계 12.2절 J2"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "git"
+args = ["push", "-q", "origin", "fullops/dev:main"]
+
+[[step]]
+act = "git"
+args = ["fetch", "-q", "origin"]
+
+[[step]]
+act = "stops"
+expect = { verdict = "pass", flow = "continues" }

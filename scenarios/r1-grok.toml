@@ -1,0 +1,16 @@
+name = "grok은 SessionStart에 안내가 없고 status가 같은 문장을 낸다"
+origin = "설계 12.2절 R1 (DF-24)"
+
+[setup]
+host = "grok"
+parallel = "on"
+
+[[step]]
+act = "session_starts"
+df = "DF-24"
+expect = { verdict = "warn", flow = "continues", escape = "fullops status" }
+
+[[step]]
+act = "runs_fullops"
+args = ["status"]
+expect = { verdict = "pass", flow = "continues", escape = "병렬 진행을 요청한다" }

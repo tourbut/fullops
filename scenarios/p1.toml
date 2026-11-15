@@ -1,0 +1,68 @@
+name = "패킷이 없는 과제는 패킷 검사를 타지 않는다"
+origin = "설계 12.2절 P1 (리뷰어가 result.json을 채운 뒤의 review check 통과는 tests/explore.rs가 잇는다)"
+
+# 배정(D-12): 패킷이 없으므로 패킷 검사를 건너뛴다
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+# 완료(R-10)도 건너뛴다
+[[step]]
+act = "worker_finishes"
+role = "dev"
+expect = { verdict = "pass", flow = "continues", escape = "[완료] A-1" }
+
+[[step]]
+act = "orca_sends"
+subject = "A-1 완료"
+
+[[step]]
+act = "lead_waits"
+expect = { verdict = "pass" }
+
+# 패킷 조건이 거짓이면 검사하지 않는다(배정 때)
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "A-1", "--role", "dev"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+# 완료·리뷰 때도 같다
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "A-1", "--role", "dev", "--completion"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "snapshot", "A-1"]
+expect = { verdict = "pass" }
+
+# 리뷰어가 아직 result.json을 채우지 않았다. 리뷰 check 10번은 건너뛴다(J 규칙이 나오지 않는다)
+[[step]]
+act = "runs_fullops"
+args = ["review", "check", "A-1"]
+expect = { verdict = "deny", rule = "RV-04" }

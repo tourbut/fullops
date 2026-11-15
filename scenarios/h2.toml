@@ -1,0 +1,24 @@
+name = "날것 worker_done을 보낸 뒤에는 Orca의 정산 확인으로 통과한다"
+origin = "설계 12.2절 H2"
+
+[[step]]
+act = "preamble_arrives"
+who = "dev"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-show"]
+stdout = { ok = true, result = { dispatchId = "ctx_9", taskId = "task_9", runId = "run_9", terminal = "term_9", state = "succeeded", stage = "settled", liveness = "live" } }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }

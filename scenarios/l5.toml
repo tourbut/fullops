@@ -1,0 +1,28 @@
+name = "merge: fast-forward는 worker lint를 재사용한다"
+origin = "설계 12.2절 L5(fast-forward). B의 I4 가운데 merge 뒤 Stop"
+
+# 같은 단계를 E의 명령만으로 보는 시험: crates/fullops/tests/review_merge.rs의 merge_fast_forwards_records_and_acks.
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-05", escape = "fullops merge" }
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "pass", exit = 0, flow = "continues", escape = "ff, lint reused" }
+
+# M-10이 그 보고를 처리했다고 표시했으므로 Stop이 통과한다
+[[step]]
+act = "stops"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "deny", rule = "M-02" }

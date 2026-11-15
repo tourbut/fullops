@@ -1,0 +1,83 @@
+name = "worker 실행 중인 lead의 종료: Orca가 깨우면 통과, 깨울 수단이 없으면 막는다 (Claude Code)"
+origin = "설계 12.2절 I2 (DF-15)"
+
+[[step]]
+act = "session_starts"
+env = { ORCA_AGENT_SESSION_ID = "term_lead" }
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "lead_writes_task"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "run-create"]
+times = 1
+stdout = { ok = true, result = { runId = "run_1", objective = "fullops" } }
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-start"]
+times = 1
+stdout = { ok = true, result = { dispatchId = "ctx_1", taskId = "task_1", runId = "run_1", state = "ready", agent = "claude", terminal = "term_1" } }
+
+[[step]]
+act = "runs_fullops"
+env = { ORCA_AGENT_SESSION_ID = "term_lead" }
+args = ["dispatch", "A-1", "--role", "dev"]
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+env = { ORCA_AGENT_SESSION_ID = "term_lead" }
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "session_starts"
+session = "2"
+
+[[step]]
+act = "stops"
+df = "DF-15"
+session = "2"
+expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "fullops wait --run" }
+
+[[step]]
+act = "stops"
+df = "DF-15"
+session = "2"
+expect = { verdict = "warn", flow = "continues" }
+
+# 세션 핸들이 없는 세션의 `wait`는 기다린다. 제한 시간이 지나면 worker의 생존을 확인하고 돌아온다
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-list"]
+stdout = { ok = true, result = { workers = [{ dispatchId = "ctx_1", taskId = "task_1", state = "ready", liveness = "live" }] } }
+
+[[step]]
+act = "runs_fullops"
+session = "2"
+args = ["wait", "--run", "run_1", "--max-minutes", "0"]
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+session = "2"
+text = "다음"
+expect = { verdict = "pass", flow = "continues" }
+
+# 대기가 끝나 대기 표식이 지워졌으므로 다음 턴에 다시 막는다.
+# 백그라운드 대기가 살아 있는 동안의 통과는 crates/fullops/tests/hook.rs의 lead_stop_rules_follow_state가 본다(구동기에 백그라운드 실행 동사가 없다).
+[[step]]
+act = "stops"
+df = "DF-15"
+session = "2"
+expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "fullops wait --run" }

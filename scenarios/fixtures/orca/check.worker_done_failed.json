@@ -1,0 +1,1 @@
+{"ok":true,"result":{"messages":[{"id":"msg_3a4b5c6d7e8f","type":"worker_done","from":"ctx_2a3b4c5d6e7f","subject":"PAY-12 실패","body":"[완료] PAY-12 테스트가 통과하지 않아 중단했다.","payload":{"taskId":"task_1a2b3c4d5e6f","dispatchId":"ctx_2a3b4c5d6e7f","outcome":"failed"}}]}}

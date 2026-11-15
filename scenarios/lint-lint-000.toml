@@ -1,0 +1,53 @@
+name = "LINT-000: commands가 비었다"
+origin = "8.11절 9번 LINT-000"
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "git"
+args = ["tag", "empty"]
+
+# 검출: 기준 시점에 lint.json이 없으면 내장 템플릿을 쓰고, 템플릿의 commands는 비어 있다
+[[step]]
+act = "file"
+path = "notes/a.txt"
+content = "메모\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "empty"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING LINT-000 .fullops-squad/lint/lint.json" }
+
+# 비검출: 기준 시점의 lint.json에 명령이 있다
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+[[step]]
+act = "file"
+path = "notes/a.txt"
+content = "메모\n둘째 줄\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

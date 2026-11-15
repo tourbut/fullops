@@ -1,0 +1,85 @@
+name = "SIZE-001: 상한을 넘고 기준 시점보다 늘어난 코드·문서 줄 수"
+origin = "8.11절 9번 SIZE-001"
+
+[setup]
+remote = false
+roles = {}
+
+# 기준 시점: 코드 5줄, 문서 6줄이 상한이다(나머지 size 값은 내장 템플릿과 같다. 1.24.0의 lint.py는 size 키를 모두 요구한다)
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}], "size": {"severity": "WARNING", "max_code_lines": 5, "max_doc_lines": 6, "max_diff_added": 400}}'
+
+# 기준 시점에 이미 상한을 넘은 파일
+[[step]]
+act = "file"
+path = "src/old.py"
+content = "\"\"\"옛 모듈.\"\"\"\na = 1\nb = 2\nc = 3\nd = 4\ne = 5\nf = 6\ng = 7\n"
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 코드 6줄(상한 5)
+[[step]]
+act = "file"
+path = "src/big.py"
+content = "\"\"\"큰 모듈.\"\"\"\na = 1\nb = 2\nc = 3\nd = 4\ne = 5\nf = 6\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING SIZE-001 src/big.py 6줄(이전 0, 상한 5)" }
+
+# 검출: 문서 7줄(상한 6)
+[[step]]
+act = "git"
+args = ["rm", "-q", "src/big.py"]
+
+[[step]]
+act = "file"
+path = "notes/long.md"
+content = "# 긴 글\n1\n2\n3\n4\n5\n6\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING SIZE-001 notes/long.md 7줄(이전 0, 상한 6)" }
+
+# 비검출: 주석과 빈 줄을 뺀 줄이 상한 이하, 상한을 넘었지만 늘지 않은 옛 파일, 상한 이하의 문서
+[[step]]
+act = "file"
+path = "notes/long.md"
+content = "# 긴 글\n1\n2\n3\n4\n5\n"
+
+[[step]]
+act = "file"
+path = "src/big.py"
+content = "\"\"\"큰 모듈.\n\n여러 줄 설명은 세지 않는다.\n\"\"\"\n\n# 주석\na = 1\nb = 2\n\nc = 3\nd = 4\ne = 5\n"
+
+[[step]]
+act = "file"
+path = "src/old.py"
+content = "\"\"\"옛 모듈.\"\"\"\na = 1\nb = 2\nc = 3\nd = 4\ne = 5\nf = 6\ng = 70\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

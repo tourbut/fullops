@@ -1,0 +1,37 @@
+name = "LINT-002: 범위 없는 명령이 120초를 넘었다(비검출)"
+origin = "8.11절 9번 LINT-002"
+
+# 검출 사례는 실제로 120초를 넘겨야 해서 lint-lint-002-slow.toml에 따로 두고 `cargo test -- --ignored`로만 돌린다.
+# 판정 함수(`slow_finding`)의 경계는 fullops-core의 단위 시험이 본다.
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}, {"name": "must", "kind": "test", "required": true, "run": ["git", "--version"]}]}'
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 비검출: 범위 없는 명령과 required 시험 명령이 금방 끝났다
+[[step]]
+act = "file"
+path = "notes/a.txt"
+content = "메모\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

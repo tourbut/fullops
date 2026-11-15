@@ -1,0 +1,45 @@
+name = "병렬 방침 read에서는 Purpose와 읽기 전용 선언이 있어야 통과한다"
+origin = "설계 12.2절 D7 (DF-6)"
+
+[setup]
+parallel = "read"
+
+[[step]]
+act = "spawns_subagent"
+df = "DF-6"
+prompt = "Purpose: research. Read only. 결제 모듈의 재시도 경로를 찾아 보고한다."
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "spawns_subagent"
+prompt = "결제 모듈의 재시도 경로를 찾아 보고한다."
+expect = { verdict = "deny", rule = "T-08", flow = "stopped", escape = "Purpose: research" }
+
+[[step]]
+act = "spawns_subagent"
+df = "DF-6"
+prompt = "Purpose: research. Read only. Find the retry path and implement the fix."
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "spawns_subagent"
+df = "DF-6"
+prompt = "Purpose: review\n읽기 전용으로 변경을 리뷰한다."
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "spawns_subagent"
+prompt = "Purpose: research. 재시도 경로를 찾는다."
+expect = { verdict = "deny", rule = "T-08", flow = "stopped", escape = "읽기 전용 조사·리뷰로 좁히거나" }
+
+[[step]]
+act = "spawns_subagent"
+prompt = "Purpose: implementation. read only."
+expect = { verdict = "deny", rule = "T-08", flow = "stopped", escape = "읽기 전용 조사·리뷰로 좁히거나" }
+
+# 콜론 앞의 공백은 봐준다
+[[step]]
+act = "spawns_subagent"
+df = "DF-6"
+prompt = "Purpose : review. read only. 변경을 리뷰한다."
+expect = { verdict = "pass", flow = "continues" }

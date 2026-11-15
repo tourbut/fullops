@@ -1,0 +1,13 @@
+{
+  "session_id": "11111111-2222-4333-8444-555555555555",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-repo/11111111-2222-4333-8444-555555555555.jsonl",
+  "cwd": "/home/dev/repo",
+  "permission_mode": "default",
+  "hook_event_name": "SessionStart",
+  "source": "resume",
+  "model": "claude-example-model",
+  "seconds_since_last_response": 5400,
+  "context_tokens": 182340,
+  "prompt_cache_likely_expired": true,
+  "estimated_cache_write_usd": 1.1396
+}

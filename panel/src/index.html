@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>fullops</title>
+    <!-- 스타일과 스크립트를 이 파일 안에 둔다: 브라우저 클라이언트의 프레임은 인라인만 허용한다(CSP). -->
+    <style>
+      :root {
+        --ok: #17794a;
+        --warn: #8f5b00;
+        --info: #1f5fc4;
+        --bad: #b3261e;
+        --fg: var(--orca-foreground, CanvasText);
+        --dim: var(--orca-muted-foreground, GrayText);
+        --line: var(--orca-border, color-mix(in srgb, CanvasText 18%, transparent));
+        --card: var(--orca-card, transparent);
+        --round: var(--orca-radius, 6px);
+        --mono: ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
+      }
+      html.dark {
+        --ok: #62d394;
+        --warn: #e6b450;
+        --info: #82b1ff;
+        --bad: #ff8f85;
+      }
+      /* Orca가 테마 클래스를 주지 않은 프레임은 시스템 설정을 따른다. */
+      @media (prefers-color-scheme: dark) {
+        html:not(.light):not(.dark) {
+          --ok: #62d394;
+          --warn: #e6b450;
+          --info: #82b1ff;
+          --bad: #ff8f85;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 12px;
+        font: 13px/1.45 system-ui, sans-serif;
+        color: var(--fg);
+        background: var(--orca-background, Canvas);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      h1 {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      select,
+      button {
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        border: 1px solid var(--orca-input, var(--line));
+        border-radius: var(--round);
+      }
+      select {
+        flex: 1;
+        min-width: 0;
+        padding: 3px 6px;
+        font-weight: 600;
+        background: var(--orca-background, Canvas);
+      }
+      button {
+        padding: 2px 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--orca-accent, color-mix(in srgb, CanvasText 8%, transparent));
+      }
+      :focus-visible {
+        outline: 2px solid var(--orca-ring, Highlight);
+        outline-offset: 1px;
+      }
+      .meta,
+      .sub,
+      .foot,
+      .note small {
+        color: var(--dim);
+        font-size: 12px;
+      }
+      .meta {
+        margin: 4px 0 0;
+      }
+      .note {
+        margin: 12px 0 0;
+        padding: 10px;
+        border: 1px dashed var(--line);
+        border-radius: var(--round);
+        color: var(--dim);
+        overflow-wrap: anywhere;
+      }
+      .note.bad {
+        color: var(--bad);
+        border-color: var(--bad);
+      }
+      .note small {
+        display: block;
+        margin-top: 4px;
+        font-family: var(--mono);
+      }
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+        gap: 6px;
+        margin-top: 12px;
+      }
+      .tile {
+        padding: 7px 8px;
+        border: 1px solid var(--line);
+        border-radius: var(--round);
+        background: var(--card);
+      }
+      .tile b {
+        display: block;
+        font-size: 18px;
+        line-height: 1.2;
+        font-variant-numeric: tabular-nums;
+        color: var(--c, var(--fg));
+      }
+      .tile.zero b {
+        color: var(--dim);
+      }
+      .tile span {
+        font-size: 11px;
+        color: var(--dim);
+      }
+      section {
+        margin-top: 16px;
+      }
+      h2 {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        margin: 0 0 6px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      h2 span {
+        font-weight: 400;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      ul,
+      dl {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        border: 1px solid var(--line);
+        border-radius: var(--round);
+        background: var(--card);
+      }
+      li {
+        padding: 8px 10px;
+      }
+      li + li {
+        border-top: 1px solid var(--line);
+      }
+      .row {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .grow {
+        flex: 1;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .key {
+        font-family: var(--mono);
+        font-weight: 600;
+      }
+      .mono {
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .sub {
+        margin-top: 2px;
+        overflow-wrap: anywhere;
+      }
+      .q {
+        margin: 4px 0 6px;
+        overflow-wrap: anywhere;
+      }
+      .badge {
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+        white-space: nowrap;
+        color: var(--c, var(--dim));
+        background: color-mix(in srgb, var(--c, var(--dim)) 15%, transparent);
+      }
+      .ok {
+        --c: var(--ok);
+      }
+      .warn {
+        --c: var(--warn);
+      }
+      .info {
+        --c: var(--info);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .chip {
+        padding: 1px 7px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 12px;
+        padding: 8px 10px;
+      }
+      dt {
+        color: var(--dim);
+      }
+      dt.group {
+        grid-column: 1 / -1;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid var(--line);
+        color: var(--fg);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      dd {
+        margin: 0;
+        text-align: right;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .foot {
+        margin: 6px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app"><p class="note">불러오는 중…</p></main>
+    <script>
+      'use strict'
+      // fullops 패널. worker가 읽어 준 status.json을 그리기만 한다(상태를 쓰지 않는다).
+      const app = document.getElementById('app')
+      const POLL_MS = 5000
+      let host = null // Orca의 orca 객체(미리보기에서는 대역)
+      let data = null // worker의 마지막 답 { repos, focus }
+      let error = null
+      let picked = null // 사용자가 고른 레포의 id
+      let painted = ''
+
+      const STAGE = {
+        assigned: ['배정됨', 'info'],
+        reported: ['보고됨', 'warn'],
+        reviewing: ['리뷰 중', 'info'],
+        merged: ['통합됨', 'ok']
+      }
+      const LANDING = { merge_left: ['병합 남음', 'warn'], push_left: ['푸시 남음', 'info'] }
+      const PURPOSE = { build: '구현', fix: '수정', review: '리뷰', research: '조사' }
+      const pick = (table, key, fallback) => (Object.hasOwn(table, key) ? table[key] : fallback)
+      const list = (x) => (Array.isArray(x) ? x : [])
+
+      // 끼워 넣는 값은 모두 이스케이프한다. html``이 만든 조각과 그 배열만 그대로 들어간다.
+      class Safe {
+        constructor(s) {
+          this.s = s
+        }
+      }
+      const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+      const part = (v) =>
+        Array.isArray(v)
+          ? v.map(part).join('')
+          : v instanceof Safe
+            ? v.s
+            : v == null || v === false
+              ? ''
+              : String(v).replace(/[&<>"']/g, (c) => ESC[c])
+      const html = (parts, ...values) => new Safe(parts.reduce((out, p, i) => out + part(values[i - 1]) + p))
+
+      function span(seconds) {
+        if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))}분`
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간`
+        return `${Math.floor(seconds / 86400)}일`
+      }
+      function when(at, now) {
+        if (typeof at !== 'number' || at <= 0) return '시각 모름'
+        const passed = now - at
+        return html`<time title="${new Date(at * 1000).toLocaleString('ko-KR')}">${passed < 60 ? '방금' : `${span(passed)} 전`}</time>`
+      }
+      const sha = (value) => value != null && html`<span class="mono">${value}</span>`
+      const badge = (label, tone) => html`<span class="badge ${tone}">${label}</span>`
+      const section = (title, items, row) =>
+        items.length > 0 &&
+        html`<section>
+          <h2>${title} <span>${items.length}</span></h2>
+          <ul>
+            ${items.map(row)}
+          </ul>
+        </section>`
+      const tile = (count, label, tone) =>
+        html`<div class="tile ${count > 0 ? tone : 'zero'}"><b>${count}</b><span>${label}</span></div>`
+
+      function decisionRow(now) {
+        return (d) =>
+          html`<li>
+            <div class="row">
+              <span class="key">${d.id}</span><span class="grow mono">${d.key}</span>
+              ${typeof d.expires_at === 'number' &&
+              badge(d.expires_at > now ? `${span(d.expires_at - now)} 남음` : '만료됨', 'warn')}
+            </div>
+            <p class="q">${d.question}</p>
+            <div class="chips">${list(d.options).map((option) => html`<span class="chip">${option}</span>`)}</div>
+            <div class="sub">${when(d.asked_at, now)} 질문</div>
+          </li>`
+      }
+      // pending[]의 id(completion의 ID)가 건을 가리키는 키다. 과제 키와 SHA는 없을 수 있다.
+      function pendingRow(p) {
+        const held = p.hold_reason != null
+        const [label, tone] = held ? ['보류', 'warn'] : pick(LANDING, p.landing, ['미계산', ''])
+        return html`<li data-id="${p.id}">
+          <div class="row">
+            ${p.key != null ? html`<span class="key grow">${p.key}</span>` : html`<span class="sub grow">키 없음</span>`}
+            ${sha(p.sha)}${badge(label, tone)}
+          </div>
+          <div class="sub"><span class="mono">${p.id}</span>${held && html` · 보류 사유: ${p.hold_reason}`}</div>
+        </li>`
+      }
+      function dispatchRow(now) {
+        return (d) =>
+          html`<li>
+            <div class="row">
+              <span class="key grow">${d.key}</span>${d.sub === true && badge('하위 배정', '')}
+              ${badge(pick(PURPOSE, d.purpose, d.purpose ?? '?'), 'info')}
+            </div>
+            <div class="sub">${d.role} · ${d.agent}/${d.model} · ${when(d.started_at, now)} 시작</div>
+          </li>`
+      }
+      function taskRow(t) {
+        const [label, tone] = pick(STAGE, t.stage, [t.stage ?? '?', ''])
+        return html`<li>
+          <div class="row">
+            <span class="key grow">${t.key}</span>${sha(t.sha)}${t.held === true && badge('보류', 'warn')}
+            ${badge(label, tone)}
+          </div>
+          <div class="sub">${t.role ?? '역할 없음'}${t.rounds > 0 && html` · 재작업 ${t.rounds}/${t.budget}`}</div>
+        </li>`
+      }
+      function metrics(m, now) {
+        // at이 0이면 아직 계산하지 않은 것이다(설계 6.2.3절).
+        if (!m || !(m.at > 0)) {
+          return html`<section>
+            <h2>지표</h2>
+            <p class="note">아직 계산하지 않았다. <span class="mono">fullops status</span>를 실행하면 계산된다.</p>
+          </section>`
+        }
+        const perTask = typeof m.turns_per_task === 'number' ? Math.round(m.turns_per_task * 10) / 10 : '-'
+        return html`<section>
+          <h2>지표 <span>${when(m.at, now)} 계산</span></h2>
+          <dl>
+            <dt>사람 턴</dt>
+            <dd>${m.human_turns}</dd>
+            <dt>완료 과제</dt>
+            <dd>${m.done_tasks}</dd>
+            <dt>과제당 사람 턴</dt>
+            <dd>${perTask}</dd>
+            <dt>사람 없이 이어진 배정</dt>
+            <dd>${m.unattended_dispatches}</dd>
+            <dt>사람 없이 이어진 과제</dt>
+            <dd>${m.unattended_tasks}</dd>
+            <dt class="group">병렬 진행</dt>
+            <dt>서브에이전트 호출</dt>
+            <dd>${m.subagent_calls}</dd>
+            <dt>워크플로 실행</dt>
+            <dd>${m.workflow_runs}</dd>
+            <dt>하위 배정</dt>
+            <dd>${m.sub_dispatches}</dd>
+          </dl>
+          <p class="foot">
+            ${m.since > 0 && `${new Date(m.since * 1000).toLocaleDateString('ko-KR')}부터 센 값이다. `}기계 입력 일부가
+            사람 턴으로 세어질 수 있다.
+          </p>
+        </section>`
+      }
+
+      function body(repo, now) {
+        const s = repo.status
+        if (repo.state !== 'ok' || !s) {
+          const [tone, text] = pick(
+            {
+              none: ['', '아직 기록된 상태가 없다. 이 레포에서 fullops가 상태를 한 번 쓰면 여기에 나온다.'],
+              newer: ['bad', 'status.json이 이 패널이 아는 것보다 새 형식이다. 패널을 새 버전으로 올려야 한다.']
+            },
+            repo.state,
+            ['bad', 'status.json을 읽지 못했다. fullops가 상태를 다시 쓰면 새로 만들어진다.']
+          )
+          return html`<p class="note ${tone}">${text}${repo.detail != null && html`<small>${repo.detail}</small>`}</p>`
+        }
+        const running = s.dispatches.filter((d) => d.settled !== true)
+        const sync = Object.entries(s.sync_pending)
+        const quiet = s.tasks.length + s.pending.length + s.decisions.length + s.ready.length + running.length === 0
+        return html`<p class="meta">
+            ${s.mode && `${s.mode} 모드 · `}fullops ${s.version ?? '버전 모름'} · ${when(s.generated_at, now)} 기록
+          </p>
+          <div class="tiles">
+            ${tile(s.decisions.length, '결정 대기', 'warn')}${tile(s.pending.length, '통합 대기', 'info')}
+            ${tile(running.length, '진행 중', 'info')}${tile(s.ready.length, '준비됨', 'ok')}
+          </div>
+          ${quiet && html`<p class="note">열린 과제가 없다.</p>`}
+          ${section('사람의 결정을 기다리는 질문', s.decisions, decisionRow(now))}
+          ${section('통합 대기', s.pending, pendingRow)}${section('진행 중인 배정', running, dispatchRow(now))}
+          ${section('과제', s.tasks, taskRow)}
+          ${s.ready.length > 0 &&
+          html`<section>
+            <h2>준비된 과제 <span>${s.ready.length}</span></h2>
+            <div class="chips">${s.ready.map((key) => html`<span class="chip key">${key}</span>`)}</div>
+          </section>`}
+          ${section(
+            '워크트리 동기화 대기',
+            sync,
+            ([role, at]) => html`<li class="row"><span class="grow">${role}</span>${sha(at)}</li>`
+          )}
+          ${metrics(s.metrics, now)}`
+      }
+
+      function view() {
+        const repos = data ? list(data.repos) : []
+        const repo = repos.find((r) => r.id === picked) ?? repos.find((r) => r.id === data.focus) ?? repos[0]
+        return html`<header>
+            ${repos.length > 1
+              ? html`<select id="repo" aria-label="레포">
+                  ${repos.map((r) => html`<option value="${r.id}" ${r === repo && html`selected`}>${r.name}</option>`)}
+                </select>`
+              : html`<h1>${repo ? repo.name : 'fullops'}</h1>`}
+            <button id="refresh" type="button" title="다시 읽기" aria-label="다시 읽기">↻</button>
+          </header>
+          ${error &&
+          html`<p class="note bad" role="alert">
+            worker에게 묻지 못했다.<small>${error.code ?? ''} ${error.message ?? error}</small>
+          </p>`}
+          ${repo
+            ? body(repo, Math.floor(Date.now() / 1000))
+            : data
+              ? html`<p class="note">
+                  Orca에 열린 워크스페이스 가운데 fullops를 쓰는 레포가 없다.
+                  <span class="mono">.fullops-squad/fullops.toml</span>이 있는 레포를 열면 여기에 나온다.
+                </p>`
+              : !error && html`<p class="note">불러오는 중…</p>`}`
+      }
+
+      function paint() {
+        const next = view().s
+        // 같은 그림이면 건드리지 않는다: 5초마다 다시 그리면 초점과 선택이 풀린다.
+        if (next === painted) return
+        const focused = document.activeElement?.id
+        app.innerHTML = painted = next
+        if (focused) document.getElementById(focused)?.focus()
+      }
+
+      async function refresh() {
+        try {
+          data = await host.plugin.request('status.read')
+          error = null
+        } catch (failure) {
+          error = failure
+        }
+        paint()
+      }
+
+      function start(orca) {
+        host = orca
+        app.addEventListener('click', (event) => {
+          if (event.target.closest('#refresh')) refresh()
+        })
+        app.addEventListener('change', (event) => {
+          if (event.target.id !== 'repo') return
+          picked = event.target.value
+          paint()
+        })
+        // 초점이 다른 워크스페이스로 옮겨 가면 그 레포를 보여 준다.
+        orca.on('workspace.changed', refresh)
+        setInterval(() => document.hidden || refresh(), POLL_MS)
+        refresh()
+      }
+
+      if (window.orca) start(window.orca)
+      // Orca 밖에서 파일로 열면 표본 데이터로 그린다(preview.html). Orca는 orca를 항상 먼저 정의한다.
+      else document.head.append(Object.assign(document.createElement('script'), { src: 'preview.js' }))
+    </script>
+  </body>
+</html>

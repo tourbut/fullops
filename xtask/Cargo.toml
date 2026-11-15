@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# compare·bench(묶음 G)와 dist(묶음 F)가 쓴다: 구동기와 임시 레포, 상태 파일 형식, deps.toml 해석, 호스트 CLI 찾기
+fullops-core.workspace = true
+fullops-store.workspace = true
+fullops-ext.workspace = true
+fullops-testkit.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,57 @@
+name = "세션 도중 모드가 바뀌면 도구 호출을 거부하고 종료를 한 번 막는다"
+origin = "설계 12.2절 A4"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+command = "ls"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "file"
+path = ".fullops-squad/fullops.toml"
+content = "schema = 2\napplied_version = \"2.0.0\"\nmode = \"dev\"\nprimary_role = \"dev\"\nprimary_branch = \"release\"\nrouting = \"legacy\"\ntest_level = \"lite\"\nparallel = \"on\"\n\n[git]\nbase = \"main\"\nremote = \"origin\"\n\n[roles.dev]\nbranch = \"fullops/dev\"\nkind = \"worker\"\n"
+
+[[step]]
+act = "runs_shell"
+command = "ls"
+expect = { verdict = "deny", rule = "T-00", flow = "stopped", escape = "fullops doctor" }
+
+[[step]]
+act = "session_starts"
+df = "DF-25"
+source = "resume"
+expect = { verdict = "context", flow = "continues", escape = "정책 오류" }
+
+[[step]]
+act = "runs_shell"
+df = "DF-26"
+command = "fullops status"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-00", flow = "stopped", escape = "새 세션" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "warn", flow = "continues" }
+
+[[step]]
+act = "session_starts"
+session = "2"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+session = "2"
+command = "ls"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+session = "2"
+expect = { verdict = "pass", flow = "continues" }

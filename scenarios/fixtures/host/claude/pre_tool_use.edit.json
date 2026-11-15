@@ -1,0 +1,16 @@
+{
+  "session_id": "11111111-2222-4333-8444-555555555555",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-repo/11111111-2222-4333-8444-555555555555.jsonl",
+  "cwd": "/home/dev/repo",
+  "permission_mode": "default",
+  "prompt_id": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/home/dev/repo/src/pay/retry.ts",
+    "old_string": "const MAX = 3",
+    "new_string": "const MAX = 5",
+    "replace_all": false
+  },
+  "tool_use_id": "toolu_01EXAMPLE0000000000000000"
+}

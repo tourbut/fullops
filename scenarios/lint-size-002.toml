@@ -1,0 +1,59 @@
+name = "SIZE-002: 추가 줄 합이 max_diff_added를 넘는다"
+origin = "8.11절 9번 SIZE-002"
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}], "size": {"severity": "WARNING", "max_code_lines": 300, "max_doc_lines": 500, "max_diff_added": 5}}'
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 두 파일에 추가 6줄
+[[step]]
+act = "file"
+path = "notes/a.txt"
+content = "1\n2\n3\n"
+
+[[step]]
+act = "file"
+path = "notes/b.txt"
+content = "1\n2\n3\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING SIZE-002 변경 추가 6줄 > 상한 5줄" }
+
+# 비검출: 추가 5줄. 제외 경로(dist/)의 추가 줄은 세지 않는다
+[[step]]
+act = "file"
+path = "notes/b.txt"
+content = "1\n2\n"
+
+[[step]]
+act = "file"
+path = "dist/bundle.txt"
+content = "1\n2\n3\n4\n5\n6\n7\n8\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

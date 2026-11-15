@@ -1,0 +1,99 @@
+name = "보고서가 링크하지 않은 캡처는 커밋하지 못한다"
+origin = "설계 12.2절 F1"
+
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/report.md"
+content = "# A-1 테스트 보고서\n\n- 판정: 통과\n"
+
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/shot.png"
+content = "PNG"
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git commit -m qa"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git add -A && git commit -m qa"
+expect = { verdict = "deny", rule = "T-09", flow = "stopped", escape = "raw/" }
+
+# `commit -a`는 추적 중인 파일만 담는다: 추적하지 않는 캡처는 커밋되지 않으므로 막지 않는다
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git commit -am qa"
+expect = { verdict = "pass", flow = "continues" }
+
+# 같은 명령의 `git add`가 그 캡처를 담으면 막는다. 다른 경로만 담으면 막지 않는다
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git add . && git commit -m qa"
+expect = { verdict = "deny", rule = "T-09", flow = "stopped", escape = "raw/" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git add .fullops-squad/docs/evaluations/qa-reports/A-1-test/shot.png && git commit -am qa"
+expect = { verdict = "deny", rule = "T-09", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git add src && git commit -m qa"
+expect = { verdict = "pass", flow = "continues" }
+
+# 작업 위치를 옮긴 뒤의 상대 경로도 그 캡처를 담는다
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "cd .fullops-squad/docs/evaluations/qa-reports/A-1-test && git add shot.png && git commit -m qa"
+expect = { verdict = "deny", rule = "T-09", flow = "stopped" }
+
+[[step]]
+act = "git"
+who = "dev"
+args = ["add", "-A"]
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git commit -m qa"
+expect = { verdict = "deny", rule = "T-09", flow = "stopped", escape = "raw/" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/report.md"
+content = "# A-1 테스트 보고서\n\n- 판정: 통과 ![화면](shot.png)\n"
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git commit -m qa"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "file"
+who = "dev"
+path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/raw/cap.png"
+content = "PNG"
+
+[[step]]
+act = "git"
+who = "dev"
+args = ["add", "-A"]
+
+[[step]]
+act = "runs_shell"
+who = "dev"
+command = "git commit -m qa"
+expect = { verdict = "pass", flow = "continues" }

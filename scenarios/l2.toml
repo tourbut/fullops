@@ -1,0 +1,85 @@
+name = "대규모 변경 merge: 결정 없음 / 답 생략 뒤 waive"
+origin = "설계 12.2절 L2. 사람 결정 한 번"
+
+# 셋째 경우(답 진행 뒤 수락 리뷰)는 리뷰어가 reviews/<KEY>/<head 12자>/result.json을 채워야 하는데,
+# 그 경로를 시나리오가 알 수 없어 동사가 없다. crates/fullops/tests/review_merge.rs의
+# accepted_review_lets_large_change_merge가 본다. 동사가 생기면 여기에 더한다.
+
+# 400줄 변경의 완료 보고: 배정 → 작업 → 완료 보고 작성 → lint → done → worker_done → wait
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+path = "src/big.py"
+lines = 400
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+expect = { verdict = "pass", escape = "[완료] A-1" }
+
+[[step]]
+act = "orca_sends"
+subject = "A-1 완료"
+
+[[step]]
+act = "lead_waits"
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "human", exit = 3, rule = "M-04", flow = "stopped", escape = "fullops decision answer D001" }
+
+# 다시 실행해도 결정을 새로 열지 않는다
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "human", exit = 3, escape = "D001" }
+
+[[step]]
+act = "runs_fullops"
+args = ["decision", "answer", "D001", "--answer", "생략", "--sha", "fullops/dev"]
+expect = { verdict = "pass" }
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "deny", rule = "M-04", escape = "fullops review waive A-1 --decision D001" }
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "waive", "A-1", "--decision", "D001", "--reason", "사용자가 생략을 지시했다"]
+expect = { verdict = "pass" }
+
+[[step]]
+act = "lead_merges"
+df = "DF-13"
+key = "A-1"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+df = "DF-13"
+expect = { verdict = "pass" }

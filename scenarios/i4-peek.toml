@@ -1,0 +1,71 @@
+name = "lead가 Orca의 알림대로 날것 check를 쳐도 완료 보고가 빠지지 않는다"
+origin = "설계 12.2절 I4, 7.5절 T-11"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "A-1"
+
+[[step]]
+act = "edits_file"
+who = "dev"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "## 완료 보고\n"
+new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
+
+[[step]]
+act = "commits"
+who = "dev"
+message = "완료 보고 작성"
+
+[[step]]
+act = "worker_lints"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "worker_finishes"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "orca_sends"
+id = "msg_done"
+subject = "A-1 완료"
+
+# `fullops wait` 없이 날것 check: T-11이 그 직전에 미리 보고 completion과 메시지를 기록한다
+[[step]]
+act = "runs_shell"
+command = "orca orchestration check --run run_1"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-05", flow = "stopped", escape = "A-1(msg_done)" }
+
+# 기록된 completion에 `done`의 SHA가 있어 그대로 통합된다
+[[step]]
+act = "lead_merges"
+df = "DF-13"
+key = "A-1"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+text = "다음"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+df = "DF-13"
+expect = { verdict = "pass", flow = "continues" }

@@ -1,0 +1,31 @@
+name = "미통합 상태에서는 끝낼 때마다 막는다"
+origin = "설계 12.2절 J3"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+expect = { verdict = "pass", flow = "continues" }
+
+# 완료 보고의 메시지를 처리 표시해 X-05 (a)를 치우고 X-06만 본다
+[[step]]
+act = "lead_waits"
+ack = ["msg_2"]
+no_wait = true
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-06", flow = "stopped", escape = "fullops merge" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-06", flow = "stopped" }
+
+[[step]]
+act = "stops"
+expect = { verdict = "block", rule = "X-06", flow = "stopped" }

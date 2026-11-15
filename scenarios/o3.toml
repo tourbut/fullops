@@ -1,0 +1,41 @@
+name = "모르는 호스트 인자와 겹친 등록은 작업을 막지 않는다"
+origin = "설계 12.2절 O3"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "foo"]
+expect = { verdict = "pass", flow = "continues", escape = "{}" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "foo", "--event", "PreToolUse"]
+expect = { verdict = "pass", flow = "continues", escape = "{}" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = []
+expect = { verdict = "pass", flow = "continues", escape = "사용법" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "claude", "--plugin-root", "${CLAUDE_PLUGIN_ROOT}"]
+expect = { verdict = "pass", flow = "continues", escape = "{}" }
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+env = { GROK_HOOK_EVENT = "pre_tool_use" }
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --spec x --worktree current --agent codex"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }

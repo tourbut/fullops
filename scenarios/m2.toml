@@ -1,0 +1,29 @@
+# turns.jsonl의 kind와 본문 미저장은 crates/fullops/tests/hook.rs가 본다.
+name = "lead 세션의 입력을 사람 턴과 기계 알림으로 가른다"
+origin = "설계 12.2절 M2"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+text = "결제 재시도 버튼을 추가해 줘"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+text = "\nYou have 1 orchestration message. Run `orca orchestration check --run run_1`.\n"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "user_prompts"
+text = "──── From: DISPATCH:CTX_1 (dispatch:ctx_1) (worker_done) ────\nSubject: A-1 완료\n"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "preamble_arrives"
+who = "lead"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "pass", flow = "continues" }

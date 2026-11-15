@@ -1,0 +1,32 @@
+name = "인박스의 키가 다른 배정"
+origin = "12.2 D2"
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "lead_writes_task"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "lead_routes"
+key = "B-2"
+role = "dev"
+
+[[step]]
+act = "lead_dispatches"
+key = "B-2"
+role = "dev"
+bare = true
+expect = { verdict = "deny", rule = "D-02", flow = "stopped", escape = "fullops task new" }
+
+# 같은 역할의 인박스는 하나다
+[[step]]
+act = "lead_writes_task"
+key = "B-2"
+role = "dev"
+expect = { verdict = "deny", rule = "H-03", escape = "fullops plan add" }

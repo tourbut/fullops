@@ -1,0 +1,14 @@
+{
+  "session_id": "11111111-2222-4333-8444-555555555555",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-repo/11111111-2222-4333-8444-555555555555.jsonl",
+  "cwd": "/home/dev/repo",
+  "permission_mode": "default",
+  "prompt_id": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "orca orchestration worker-start --spec \"Task key: PAY-12\" --worktree current --agent codex --json",
+    "description": "Start worker"
+  },
+  "tool_use_id": "toolu_01EXAMPLE0000000000000000"
+}

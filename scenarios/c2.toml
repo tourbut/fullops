@@ -1,0 +1,43 @@
+name = "조건을 채운 날것 worker-start --run도 거부한다"
+origin = "설계 12.2절 C2 (DF-1)"
+
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --run run_1 --spec \"Task key: A-1; Purpose: implementation\" --worktree path:/w/dev --agent claude"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped", escape = "fullops dispatch" }
+
+[[step]]
+act = "runs_shell"
+command = "cd /w && FOO=1 orca orchestration worker-start --run run_1 2>&1 | tee log"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+df = "DF-1"
+command = "bash -lc \"orca orchestration worker-start --run run_1\""
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+# 감싼 꼴도 같은 명령이다: 제어 키워드, 앞붙이 명령, 서브셸, 큰따옴표 안의 명령 치환
+[[step]]
+act = "runs_shell"
+df = "DF-1"
+command = "if true; then orca orchestration worker-start --run run_1 --spec x; fi"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+df = "DF-1"
+command = "env ORCA_X=1 orca orchestration worker-start --run run_1 --spec x"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+df = "DF-1"
+command = "(orca orchestration worker-start --run run_1 --spec x)"
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }
+
+[[step]]
+act = "runs_shell"
+df = "DF-1"
+command = "echo \"started: $(orca orchestration worker-start --run run_1)\""
+expect = { verdict = "deny", rule = "T-01", flow = "stopped" }

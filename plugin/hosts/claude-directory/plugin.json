@@ -1,0 +1,24 @@
+{
+  "displayName": "FullOps",
+  "description": "Opt-in development harness that keeps role-based AI workers moving in Orca: dispatch, completion reports, lint gates, risk-based review and merge.",
+  "homepage": "https://github.com/tourbut/fullops",
+  "keywords": [
+    "orchestration",
+    "multi-agent",
+    "orca",
+    "handover",
+    "code-review",
+    "workflow"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "userConfig": {
+    "context7_api_key": {
+      "type": "string",
+      "title": "Context7 API key (optional)",
+      "description": "Raises the Context7 documentation lookup rate limit. Leave empty to use the anonymous limit.",
+      "sensitive": true,
+      "default": ""
+    }
+  }
+}

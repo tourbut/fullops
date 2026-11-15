@@ -1,0 +1,26 @@
+name = "merge: 병합 커밋의 트리가 다르면 lint를 한 번 돌린다"
+origin = "설계 12.2절 L5(병합 커밋, 트리 다름, lint 통과)"
+
+[[step]]
+act = "worker_reports"
+role = "dev"
+key = "A-1"
+
+# 기본 브랜치가 따로 나아갔다
+[[step]]
+act = "file"
+path = "src/other.py"
+content = "print('lead')\n"
+
+[[step]]
+act = "commits"
+message = "기본 브랜치의 다른 변경"
+
+[[step]]
+act = "git"
+args = ["push", "-q", "origin", "main"]
+
+[[step]]
+act = "lead_merges"
+key = "A-1"
+expect = { verdict = "pass", exit = 0, escape = "merge, lint ran" }

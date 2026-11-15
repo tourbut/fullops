@@ -1,0 +1,19 @@
+name = "병렬 방침 off의 안내"
+origin = "설계 12.2절 R1 (DF-22)"
+
+[setup]
+parallel = "off"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "쓰지 않고 직접 처리한다" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues", escape = "쓰지 않고 직접 처리한다" }
+
+[[step]]
+act = "runs_fullops"
+args = ["status"]
+expect = { verdict = "pass", flow = "continues", escape = "쓰지 않고 직접 처리한다" }

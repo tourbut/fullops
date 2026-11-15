@@ -1,0 +1,9 @@
+{
+  "session_id": "11111111-2222-4333-8444-555555555555",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-repo/11111111-2222-4333-8444-555555555555.jsonl",
+  "cwd": "/home/dev/repo",
+  "permission_mode": "default",
+  "prompt_id": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "결제 재시도 버튼을 만들어 줘"
+}

@@ -1,0 +1,61 @@
+name = "dispatch가 Orca의 결과마다 예약 기록을 맞게 다룬다"
+origin = "12.2 I7. 응답을 못 받고 죽은 뒤 다시 실행하는 경우는 crates/fullops/tests/flow.rs에 있다"
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "lead_writes_task"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "run-create"]
+times = 1
+stdout = { ok = true, result = { runId = "run_1" } }
+
+# 실패 영수증: 예약 기록을 지우고 Orca의 안내를 그대로 낸다
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-start"]
+times = 1
+exit = 1
+stdout = { ok = false, result = { dispatchId = "ctx_f", taskId = "task_f", runId = "run_1", state = "failed", failedStage = "terminal_readying", lastError = "가짜 실패", next = "다시 배정한다", residualResources = [] } }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--role", "dev"]
+expect = { verdict = "external", exit = 4, escape = "terminal_readying" }
+
+# result 없이 error로 거절: 시작되지 않은 것이 확실하다
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-start"]
+times = 1
+exit = 1
+stdout = { ok = false, error = { code = "nested_worker_depth_exceeded", message = "가짜 거절" } }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--role", "dev"]
+expect = { verdict = "external", exit = 4, escape = "nested_worker_depth_exceeded" }
+
+# outcome_unknown이어도 종료 코드 0이면 성공이다
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "worker-start"]
+times = 1
+stdout = { ok = true, result = { dispatchId = "ctx_u", taskId = "task_u", runId = "run_1", state = "outcome_unknown" } }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--role", "dev"]
+expect = { verdict = "pass", escape = "dispatch ctx_u" }
+
+[[step]]
+act = "runs_fullops"
+args = ["status"]
+expect = { verdict = "pass", escape = "배정 A-1 → dev" }

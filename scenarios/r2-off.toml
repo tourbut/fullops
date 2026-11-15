@@ -1,0 +1,25 @@
+name = "dispatch의 spec이 병렬 진행을 요청한다(off)"
+origin = "12.2 R2. fake-orca가 받은 stdin과 인자는 crates/fullops/tests/flow.rs에서 본다"
+
+[setup]
+parallel = "off"
+
+[[step]]
+act = "lead_routes"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "lead_writes_task"
+key = "A-1"
+role = "dev"
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run"]
+expect = { verdict = "pass", escape = "Parallel: off" }
+
+[[step]]
+act = "runs_fullops"
+args = ["dispatch", "A-1", "--dry-run"]
+expect = { verdict = "pass", escape = "하위 에이전트와 하위 worker를 쓰지 않고 직접 처리한다" }

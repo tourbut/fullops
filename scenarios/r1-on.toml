@@ -1,0 +1,19 @@
+name = "병렬 방침 on의 안내"
+origin = "설계 12.2절 R1 (DF-22)"
+
+[setup]
+parallel = "on"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "병렬 진행을 요청한다" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues", escape = "병렬 진행을 요청한다" }
+
+[[step]]
+act = "runs_fullops"
+args = ["status"]
+expect = { verdict = "pass", flow = "continues", escape = "병렬 진행을 요청한다" }

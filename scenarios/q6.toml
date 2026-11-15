@@ -1,0 +1,124 @@
+name = "install --check와 doctor: 스킬 하나가 없다 / deps.toml이 바뀌었다"
+origin = "12.2 Q6"
+
+[[step]]
+act = "fakes"
+names = ["claude", "npx"]
+# 통합 패키지 폴더를 흉내 낸 재료. install.json의 source가 이 폴더를 가리켜 플러그인 루트가 된다
+[[step]]
+act = "file"
+path = "../pkg/VERSION"
+content = "2.0.0\n"
+[[step]]
+act = "file"
+path = "../pkg/bin/fullops"
+content = "#!/bin/sh\n"
+[[step]]
+act = "file"
+path = "../pkg/skills/fullops-work/SKILL.md"
+content = "---\nname: fullops-work\n---\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/grok/plugin.json"
+content = "{\"name\":\"fullops\",\"version\":\"2.0.0\",\"description\":\"시험\"}\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/grok/.mcp.json"
+content = "{\"mcpServers\":{\"context7\":{\"type\":\"http\",\"url\":\"https://mcp.context7.com/mcp\"}}}\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/agy/plugin.json"
+content = "{\"name\":\"fullops\",\"displayName\":\"FullOps\",\"description\":\"시험\",\"version\":\"2.0.0\"}\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/agy/hooks.json"
+content = "{\"fullops\":{}}\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/agy/mcp_config.json"
+content = "{\"mcpServers\":{\"context7\":{\"url\":\"https://mcp.context7.com/mcp\"}}}\n"
+[[step]]
+act = "file"
+path = "../home/.fullops/install.json"
+content = "{\"version\":\"0.0.1\",\"sha256\":\"\",\"source\":\"../pkg\",\"at\":0,\"previous\":null}\n"
+[[step]]
+act = "file"
+path = "../home/.claude/skills/typesafe-ai/SKILL.md"
+content = "---\nname: typesafe-ai\n---\n"
+[[step]]
+act = "file"
+path = "../home/.claude/skills/diagram-design/SKILL.md"
+content = "---\nname: diagram-design\n---\n"
+[[step]]
+act = "file"
+path = "../home/.claude/skills/frontend-design/SKILL.md"
+content = "---\nname: frontend-design\n---\n"
+[[step]]
+act = "file"
+path = "../home/.claude/skills/ui-ux-pro-max/SKILL.md"
+content = "---\nname: ui-ux-pro-max\n---\n"
+[[step]]
+act = "file"
+path = "../home/.claude/skills/impeccable/SKILL.md"
+content = "---\nname: impeccable\n---\n"
+[[step]]
+act = "file"
+path = "../home/.claude/skills/web-design-guidelines/SKILL.md"
+content = "---\nname: web-design-guidelines\n---\n"
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["install", "--hosts", "claude"]
+env = { PATH = "../bin", FULLOPS_OFFLINE = "0" }
+expect = { verdict = "pass", exit = 0 }
+# caveman의 SKILL.md가 스킬 폴더에 없다
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["install", "--check", "--hosts", "claude"]
+env = { PATH = "../bin" }
+expect = { verdict = "deny", exit = 2, escape = "claude: skill caveman" }
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["doctor"]
+env = { PATH = "../bin" }
+expect = { verdict = "pass", escape = "claude: skill caveman" }
+[[step]]
+act = "file"
+path = "../home/.claude/skills/caveman/SKILL.md"
+content = "---\nname: caveman\n---\n"
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["install", "--check", "--hosts", "claude"]
+env = { PATH = "../bin" }
+expect = { verdict = "pass", exit = 0 }
+# 플러그인 목록을 읽을 수 있으면 빠진 플러그인과 꺼진 플러그인도 낸다(폐쇄망 설정이 아닐 때만 조회한다)
+[[step]]
+act = "host_replies"
+when = ["claude", "plugin", "list"]
+stdout = [{ id = "fullops@fullops" }, { id = "ponytail@ponytail" }, { id = "pstack@cursor-plugins", enabled = false }]
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["install", "--check", "--hosts", "claude"]
+env = { PATH = "../bin", FULLOPS_OFFLINE = "0" }
+expect = { verdict = "deny", exit = 2, escape = "claude: plugin mattpocock-skills@claude-plugins-official" }
+# 의존 목록이 바뀌면 설치 기록이 낡은 것이 된다
+[[step]]
+act = "file"
+path = "../home/.fullops/deps.toml"
+content = "schema = 1\n\n[self]\nplugin = \"fullops\"\nmarketplace = \"fullops\"\nsource = \"tourbut/fullops\"\nhosts = [\"claude\"]\n\n[[skills]]\nsource = \"JuliusBrussee/caveman\"\nnames = [\"caveman\"]\n"
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["install", "--check", "--hosts", "claude"]
+env = { PATH = "../bin" }
+expect = { verdict = "deny", exit = 2, escape = "claude: 설치 기록이 낡았다" }
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["doctor"]
+env = { PATH = "../bin" }
+expect = { verdict = "pass", escape = "claude: 설치 기록이 낡았다" }

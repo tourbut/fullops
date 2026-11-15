@@ -1,0 +1,29 @@
+# escalation이 한 번만 갔는지(fake-orca의 호출 기록)는 crates/fullops/tests/hook.rs가 본다.
+name = "같은 dispatch의 턴이 API 오류로 두 번 끝나도 escalation은 한 번 보낸다"
+origin = "설계 12.2절 M1"
+
+[[step]]
+act = "orca_replies"
+when = ["orchestration", "send"]
+stdout = { ok = true, result = {  } }
+
+[[step]]
+act = "preamble_arrives"
+who = "dev"
+dispatch = "ctx_9"
+task = "task_9"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "turn_fails"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "turn_fails"
+who = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "turn_fails"
+expect = { verdict = "pass", flow = "continues" }

@@ -1,5 +1,7 @@
 # Rust
 /target/
+# `cargo xtask dist`의 생성물. 개발 브랜치에는 커밋하지 않는다(docs/build.md)
+/dist/
 **/*.rs.bk
 *.pdb
 

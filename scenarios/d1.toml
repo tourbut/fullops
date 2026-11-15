@@ -1,0 +1,28 @@
+name = "분류 없는 키와 unresolved 키는 배정되지 않는다"
+origin = "12.2 D1"
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+bare = true
+expect = { verdict = "deny", rule = "D-01", flow = "stopped", escape = "fullops route" }
+
+[[step]]
+act = "runs_fullops"
+args = ["route", "B-2", "--request", "B-2 요청", "--class", "unresolved"]
+expect = { verdict = "pass" }
+
+[[step]]
+act = "lead_dispatches"
+key = "B-2"
+role = "dev"
+bare = true
+expect = { verdict = "deny", rule = "D-01", flow = "stopped" }
+
+# 분류하고 지시서를 쓴 뒤에는 이어진다
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues", escape = "fullops wait --run" }

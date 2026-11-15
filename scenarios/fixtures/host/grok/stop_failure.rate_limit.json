@@ -1,0 +1,19 @@
+{
+  "hookEventName": "stop_failure",
+  "hook_event_name": "StopFailure",
+  "sessionId": "0193a000-0000-7000-8000-000000000001",
+  "session_id": "0193a000-0000-7000-8000-000000000001",
+  "transcriptPath": "/home/dev/.grok/sessions/0193a000-0000-7000-8000-000000000001/transcript.jsonl",
+  "transcript_path": "/home/dev/.grok/sessions/0193a000-0000-7000-8000-000000000001/transcript.jsonl",
+  "cwd": "/home/dev/repo",
+  "workspaceRoot": "/home/dev/repo",
+  "permissionMode": "default",
+  "permission_mode": "default",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "promptId": "prompt-0001",
+  "error": "rate_limit",
+  "errorDetails": "429 Too Many Requests",
+  "error_details": "429 Too Many Requests",
+  "lastAssistantMessage": "API Error: rate limit reached",
+  "last_assistant_message": "API Error: rate limit reached"
+}

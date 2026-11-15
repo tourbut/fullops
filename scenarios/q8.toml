@@ -1,0 +1,11 @@
+name = "pstack 우선 문장은 Claude Code에만 낸다"
+origin = "설계 12.2절 Q8"
+
+[[step]]
+act = "session_starts"
+expect = { verdict = "context", flow = "continues", escape = "/pstack:*" }
+
+[[step]]
+act = "session_starts"
+who = "dev"
+expect = { verdict = "context", flow = "continues", escape = "/pstack:*" }

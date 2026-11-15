@@ -1,0 +1,235 @@
+name = "review need: 399줄 / 400줄 / 15파일 / always 경로 / 문서만"
+origin = "설계 12.2절 L1. 1.24.0: skip / ask / ask / ask / skip"
+
+# 판정은 --json 출력의 action으로 본다. worker_works는 머리 한 줄과 lines 줄을 쓴다.
+[setup]
+roles = { dev = "worker", art = "worker", ops = "worker", qa = "worker" }
+
+# 399줄
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "L1"
+path = "src/a.py"
+lines = 398
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "need", "--from", "main", "--to", "fullops/dev", "--json"]
+expect = { verdict = "pass", escape = '"action":"skip"' }
+
+# 400줄
+[[step]]
+act = "worker_works"
+role = "dev"
+key = "L1"
+path = "src/a.py"
+lines = 399
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "need", "--from", "main", "--to", "fullops/dev", "--json"]
+expect = { verdict = "pass", escape = '"action":"ask"' }
+
+# 14파일은 skip, 15파일은 ask
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f01.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f02.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f03.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f04.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f05.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f06.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f07.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f08.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f09.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f10.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f11.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f12.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f13.py"
+lines = 1
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f14.py"
+lines = 1
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "need", "--from", "main", "--to", "fullops/art", "--json"]
+expect = { verdict = "pass", escape = '"action":"skip"' }
+
+[[step]]
+act = "worker_works"
+role = "art"
+key = "L1"
+path = "src/f15.py"
+lines = 1
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "need", "--from", "main", "--to", "fullops/art", "--json"]
+expect = { verdict = "pass", escape = '"code_files":15' }
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "need", "--from", "main", "--to", "fullops/art", "--json"]
+expect = { verdict = "pass", escape = '"action":"ask"' }
+
+# always 경로: 정책은 merge-base 시점의 fullops.toml이다
+[[step]]
+act = "file"
+path = ".fullops-squad/fullops.toml"
+content = """
+schema = 2
+applied_version = "2.0.0"
+mode = "coor"
+routing = "legacy"
+test_level = "lite"
+parallel = "on"
+
+[git]
+base = "main"
+remote = "origin"
+
+[roles.art]
+branch = "fullops/art"
+kind = "worker"
+
+[roles.dev]
+branch = "fullops/dev"
+kind = "worker"
+
+[roles.ops]
+branch = "fullops/ops"
+kind = "worker"
+
+[roles.qa]
+branch = "fullops/qa"
+kind = "worker"
+
+[review]
+always = ["db/migrations/**"]
+"""
+
+[[step]]
+act = "commits"
+message = "always 경로를 정한다"
+
+[[step]]
+act = "git"
+who = "ops"
+args = ["merge", "-q", "main"]
+
+[[step]]
+act = "file"
+who = "ops"
+path = "db/migrations/001.sql"
+content = "create table t (id int);\n"
+
+[[step]]
+act = "commits"
+who = "ops"
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "need", "--from", "main", "--to", "fullops/ops", "--json"]
+expect = { verdict = "pass", escape = '"action":"ask"' }
+
+# 같은 변경도 always가 없던 시점에서 갈라진 브랜치에서는 걸리지 않는다. 문서는 코드 줄로 세지 않는다
+[[step]]
+act = "file"
+who = "qa"
+path = "db/migrations/001.sql"
+content = "create table t (id int);\n"
+
+[[step]]
+act = "file"
+who = "qa"
+path = "docs/guide.md"
+content = "# 안내\n\n긴 문서도 코드 줄로 세지 않는다.\n"
+
+[[step]]
+act = "commits"
+who = "qa"
+
+[[step]]
+act = "runs_fullops"
+args = ["review", "need", "--from", "main", "--to", "fullops/qa", "--json"]
+expect = { verdict = "pass", escape = '"action":"skip"' }

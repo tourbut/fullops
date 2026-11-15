@@ -6,9 +6,15 @@ Orca 안에서 개발이 사람 없이 이어지게 하는 하네스의 **Rust �
 
 ## 재구축 방식
 
-문서만 보고 전체를 새로 쓰지 않습니다. 기존 코드·시험·hook 입출력에서 동작을 뽑아 [fullops-spec](https://github.com/tourbut/fullops-spec)에 언어 무관 명세로 두고, Rust판이 영역별로 그 명세를 통과하면 교체합니다.
+기존 Python 코드를 줄 단위로 옮기지 않습니다. 제품의 컨셉과 현재 버전(v1.24.0)의 기능을 기준으로 설계를 먼저 정하고, 그 설계대로 Rust로 다시 만듭니다. 설계는 [docs/design.md](docs/design.md)가 정본입니다.
 
-그동안 **jevpet은 기존 플러그인 1.24.0을 계속 사용**합니다. 명세를 모두 통과한 뒤에만 전환하며, 전환은 사람 승인을 받습니다.
+- 완전히 Rust 기반입니다. hook과 CLI는 실행 중에 Python·Node에 기대지 않습니다. 다시 만드는 이유는 성능입니다(hook은 도구 호출마다 실행됩니다).
+- 합격 기준은 결과 비교입니다. 다 만든 Rust 플러그인을 기존 플러그인과 같은 상황에 놓고, 같은 목적을 이루는지(또는 더 잘 이루는지)와 속도를 비교합니다. 출력 글자나 상태 파일 바이트가 같은지는 기준이 아닙니다.
+- Python판과 상태 파일을 번갈아 쓰지 않습니다. Rust판은 자기 형식을 씁니다.
+- 처음 컨셉에서 나중에 바뀐 것은 바뀐 뒤가 기준입니다(예: Jev의 모델 선택은 1.10.0에서 없앴습니다).
+- 구현은 빠르게 하고 검증은 통합 시험에서 합니다. 단위 시험은 최소로 둡니다.
+
+그동안 **jevpet은 기존 플러그인 1.24.0을 계속 사용**합니다. 합격 기준을 통과한 뒤에만 전환하며, 전환은 사람 승인을 받습니다.
 
 ## 기존 Python판의 실제 구조 (v1.24.0)
 
@@ -46,14 +52,51 @@ Orca 안에서 개발이 사람 없이 이어지게 하는 하네스의 **Rust �
 
 `work.py`, `review.py`, `jev_route.py`, `jev_packet.py`, `issue_mode.py` 본체, `lint.py`, `setup.py`, `update.py`, `board.py` 현황판, 기타 `plugins/fullops-squad/scripts/`의 나머지 스크립트. 시험은 `tests/`에 스크립트별로 있습니다. 과제 흐름 노드·게이트 표는 `docs/flow-graph.md`와 `tests/flow-graph.py`입니다.
 
-## 이식 순서
+## 구현 순서
 
-1. [fullops-spec](https://github.com/tourbut/fullops-spec)의 사례 형식과 실행기
-2. hook 영역 명세 추출 후 Rust 이식 — 호출이 잦은 `flow_gate.py` Stop(대기 행 확인), 사람 턴 기록, StopFailure, `done_gate.py`, `hook_runtime.py`
-3. HARNESS-AUTONOMY에서 최신화된 게이트 — `flow_gate.py`의 준비된 대기 행, `integration.py settle`, 패킷 선택, 이슈 모드 off 시 보류 fencing 해제
-4. `work.py`·`review.py`·`jev_route.py`·`issue_mode.py` 등 배정·완료·리뷰 흐름
-5. Windows·macOS(필요하면 Linux) 바이너리를 포함한 `dist/native`, `dist/directory` 배포본
-6. 명세 전부 통과 후 jevpet 전환(사람 승인)
+[docs/design.md](docs/design.md) 18절의 구현 계획을 따릅니다. 공용 뼈대(타입·인터페이스·저장·시험 도구)를 먼저 깔고, 여덟 묶음(hook, 흐름 명령, lint·문서, 리뷰·통합, 설치·이행·배포·스킬, 비교·성능, Orca 패널, 탐색)을 서로 다른 워크트리에서 동시에 만들었습니다.
+
+### 현재 상태 (2026-11-15)
+
+구현, 통합, 검증과 수정, 1.24.0 대비 비교까지 지났습니다. 실환경 점검과 전환은 아직입니다.
+
+| 단계 | 상태 |
+|---|---|
+| 계약 확인(Claude Code·Codex·Orca, grok·agy)과 모션그래픽 스킬 | 끝났습니다. 문서·도움말·설치본의 코드로 확인했고 세션을 띄워 보지는 않았습니다 |
+| 뼈대(묶음 A) | 끝났습니다 |
+| 여덟 묶음의 구현 | 끝나서 한 브랜치에 합쳤습니다 |
+| 통합 | 끝났습니다. 보류 단계를 모두 풀었고, 묶음마다 따로 구현한 곳을 하나로 모았습니다 |
+| 검증과 수정 | 끝났습니다. 구현에 관여하지 않은 검증자 여섯이 실제 바이너리로 찾은 결함(critical 1건, high 다수)을 영역별로 고쳤고, 흐름 쪽은 검증 → 수정 → 반박 확인을 다섯 바퀴 돌렸습니다. 고친 방식은 [docs/design-changes.md](docs/design-changes.md) 8.4절과 [docs/design.md](docs/design.md) 16.1절에 있습니다 |
+| 1.24.0 대비 비교(합격 기준의 앞쪽) | 돌렸습니다. 아래 결과입니다 |
+| 성능 측정 | 도구(`cargo xtask bench`)와 참고용 첫 측정만 있습니다([docs/bench.md](docs/bench.md)). 조용한 PC에서 다시 재야 합니다 |
+| 실환경 점검 | 아직 하지 않았습니다 |
+| 전환 | 하지 않았습니다. 실환경 점검 뒤 사람 승인을 받아서 합니다. 그때까지 jevpet은 1.24.0을 씁니다 |
+
+1.24.0 대비 비교(`cargo xtask compare`, 방법은 [docs/bench.md](docs/bench.md) 2절). 1.24.0 사본을 py 구동기로, 새 판을 rs 구동기로 같은 시나리오 150개(단계 1603개)에 놓고 hook 판정과 흐름(이어짐·멈춤)을 견줬습니다. 마지막 실행에서 [docs/design.md](docs/design.md) 12.4절의 합격 점검 다섯이 모두 합격입니다.
+
+| 점검 | 결과 |
+|---|---|
+| 회귀 | 0건 |
+| 시나리오의 기대와 다른 단계 | 0건 |
+| 남은 보류(`pending`) | 0건 |
+| 시나리오 파일이 없는 12.2절 ID | 0개 |
+| py 구동기가 끝까지 돌지 못한 시나리오 | 0개 |
+
+단계별로는 같음 1250, 의도한 차이 143(모두 설계 12.3절의 DF를 단계마다 적어 가렸습니다), 기준선 없음 210(1.24.0에 대응이 없는 명령·호스트 등)입니다. 사람 없이 이어 가는 흐름 시나리오에서는 병합된 과제 수가 모두 1.24.0 이상이고 lead가 받은 차단 수가 모두 1.24.0 이하입니다. 게이트를 시험하는 시나리오(c2·c3·p13 등)는 의도한 새 거절 때문에 새 판의 차단이 더 많습니다. 이 비교는 가짜 실행 파일 위에서 한 것이고 문구와 파일 바이트는 견주지 않았습니다.
+
+시험: `cargo build --all-targets`와 두 타깃(`aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`)의 `cargo check --all-targets`가 경고 없이 통과하고, `cargo test --no-fail-fast`가 실패 0으로 통과합니다(Windows).
+
+확인되지 않은 것을 그대로 적습니다.
+
+- 실제 호스트 CLI(Claude Code, Codex, grok, agy)와 실제 Orca에서는 한 번도 실행하지 않았습니다. 시험과 비교는 임시 레포와 가짜 실행 파일(fake-orca, fake-host, fake-curl)로만 했습니다.
+- 호스트 hook과 Orca CLI의 계약은 문서·도움말·설치본의 코드로 확인했고 실제 세션으로 확인하지 않았습니다(예: `--inject` 없는 `orchestration dispatch`가 실제로 worker를 띄우는지). 남은 확인은 [docs/design.md](docs/design.md) 16절과 12.4절의 실환경 점검에 있습니다.
+- macOS와 Linux에서는 실행하지 않았습니다. 두 타깃의 `cargo check`만 통과했습니다. 실행해 본 곳은 Windows입니다.
+- 실제 Jev 엔드포인트를 부르지 않았습니다. 전송 형식은 공식 문서와 1.24.0의 호출 코드로 맞췄습니다.
+- Orca 패널은 `node --test`와 미리보기 캡처로만 확인했고 `orca plugin validate`와 Orca 안의 화면은 확인하지 않았습니다.
+- 네 타깃을 모두 실은 배포본은 만들지 않았습니다(Windows 타깃 하나만 빌드해 봤습니다).
+- 사람이 정해야 하는 것이 열려 있습니다([docs/design.md](docs/design.md) 17절. 검증 뒤 수정에서 더해진 H19~H28 포함). 전환 전에 답해야 합니다.
+
+구현 묶음이 설계의 빈 곳을 어떻게 정했는지는 [docs/design-changes.md](docs/design-changes.md) 7절에, 통합과 검증 뒤 수정에서 바뀐 것은 8절에, 검증에서 드러난 것과 남은 확인, 사람이 정해야 하는 것은 [docs/design.md](docs/design.md) 16·17절에 있습니다.
 
 ## 유지할 결정 (1.24.0 / HARNESS-AUTONOMY)
 

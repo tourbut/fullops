@@ -1,0 +1,39 @@
+# 모르는 도구 이름과 JSON이 아닌 stdin은 동사로 적을 수 없어 crates/fullops/tests/hook.rs가 직접 본다.
+name = "깨진 stdin에는 그 호스트의 통과 글을 낸다"
+origin = "설계 12.2절 A2"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "claude"]
+expect = { verdict = "pass", flow = "continues", escape = "{}" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "codex"]
+expect = { verdict = "pass", flow = "continues", escape = "{}" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "grok"]
+expect = { verdict = "pass", flow = "continues", escape = "{}" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "agy", "--event", "PreToolUse"]
+expect = { verdict = "pass", flow = "continues", escape = "{\"decision\":\"ask\"}" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "agy", "--event", "Stop"]
+expect = { verdict = "pass", flow = "continues", escape = "{\"decision\":\"\"}" }
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["hook", "agy", "--event", "SessionStart"]
+expect = { verdict = "pass", flow = "continues", escape = "{}" }

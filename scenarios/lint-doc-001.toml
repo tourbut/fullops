@@ -1,0 +1,70 @@
+name = "DOC-001: 새 코드 파일의 헤더 설명"
+origin = "8.11절 9번 DOC-001"
+
+[setup]
+remote = false
+roles = {}
+
+[[step]]
+act = "file"
+path = ".fullops-squad/lint/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+# 기준 시점에 헤더 없이 있던 파일
+[[step]]
+act = "file"
+path = "src/old.py"
+content = "import os\n"
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 헤더 설명이 없는 새 코드 파일
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "import os\n\nvalue = os.sep\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING DOC-001 src/pay.py" }
+
+# 비검출: 헤더가 있는 새 파일, 헤더 없이 고친 옛 파일, 코드가 아닌 새 파일
+[[step]]
+act = "file"
+path = "src/pay.py"
+content = "#!/usr/bin/env python3\n\"\"\"결제 재시도.\"\"\"\nimport os\n\nvalue = os.sep\n"
+
+[[step]]
+act = "file"
+path = "src/view.ts"
+content = "// 결제 화면.\nexport const view = 1;\n"
+
+[[step]]
+act = "file"
+path = "src/old.py"
+content = "import os\nimport sys\n"
+
+[[step]]
+act = "file"
+path = "data/table.csv"
+content = "a,b\n"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

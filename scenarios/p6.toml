@@ -1,0 +1,174 @@
+name = "1.24.0에서 옮겨 온 requires_packet만 패킷을 요구한다"
+origin = "설계 12.2절 P6"
+
+[setup]
+roles = { dev = "worker", art = "worker" }
+
+# 준비: 필수 문서 여섯, 코드, 문서를 커밋한다
+[[step]]
+act = "file"
+path = ".fullops-squad/FULLOPS.md"
+content = '''
+# FULLOPS.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/project.md"
+content = '''
+# project.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/README.md"
+content = '''
+# README.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/coding-style.md"
+content = '''
+# coding-style.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/security.md"
+content = '''
+# security.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = ".fullops-squad/rules/common/testing.md"
+content = '''
+# testing.md
+
+공통 기준 문서.
+'''
+
+[[step]]
+act = "file"
+path = "src/pay/retry.rs"
+content = '''
+pub fn retry(order: u32) -> u32 {
+    order
+}
+'''
+
+[[step]]
+act = "file"
+path = "src/pay/card.rs"
+content = '''
+pub fn charge_card() -> u32 {
+    retry(1)
+}
+'''
+
+[[step]]
+act = "file"
+path = "docs/pay.md"
+content = '''
+# 결제 설계
+
+[재시도](../src/pay/retry.rs) 정책을 적는다.
+'''
+
+[[step]]
+act = "commits"
+message = "시나리오 파일"
+
+# 준비: 1.24.0이 남긴 route 기록. requires_packet이 켜져 있다
+[[step]]
+act = "file"
+path = ".fullops-squad/docs/evaluations/jev/OLD-1-route.json"
+content = "{\"version\": \"jev-route-v4\", \"task_key\": \"OLD-1\", \"route\": \"simple\", \"role\": \"dev\", \"requires_packet\": true}\n"
+
+# 분류하면 켜져 있던 값만 옮겨 온다
+[[step]]
+act = "lead_routes"
+df = "DF-29"
+key = "OLD-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }
+
+# 다시 분류해도 requires_packet은 유지된다
+[[step]]
+act = "runs_fullops"
+args = ["route", "OLD-1", "--request", "OLD-1 요청을 다시 분류한다", "--class", "direct", "--role", "dev", "--force"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "OLD-1", "--role", "dev"]
+expect = { verdict = "deny", rule = "J-17", flow = "stopped", escape = "packet build" }
+
+[[step]]
+act = "lead_writes_task"
+key = "OLD-1"
+role = "dev"
+goal = "결제 재시도 버튼"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "edits_file"
+path = ".fullops-squad/handovers/to_dev.md"
+old = "- [ ] 구체적 작업과 수정할 파일"
+new = """
+- [ ] `retry`의 중복 클릭을 막는다
+  * [ ] 테스트를 더한다"""
+
+# 패킷 없이 배정한다. 거절 문구에 걸린 J 규칙이 있다
+[[step]]
+act = "lead_dispatches"
+key = "OLD-1"
+role = "dev"
+expect = { verdict = "deny", rule = "D-12", flow = "stopped", escape = "J-17" }
+
+# 새 키는 패킷을 요구하지 않는다
+[[step]]
+act = "lead_routes"
+key = "NEW-2"
+role = "art"
+expect = { verdict = "pass", flow = "continues" }
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "NEW-2", "--role", "art"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "lead_dispatches"
+key = "NEW-2"
+role = "art"
+expect = { verdict = "pass", flow = "continues" }
+
+# 패킷을 만들면 J-17에 안 걸린다
+[[step]]
+act = "runs_fullops"
+args = ["packet", "build", "OLD-1", "--role", "dev", "--write-inbox"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "runs_fullops"
+args = ["packet", "check", "OLD-1", "--role", "dev"]
+expect = { verdict = "pass", exit = 0, flow = "continues" }
+
+[[step]]
+act = "lead_dispatches"
+df = "DF-16"
+key = "OLD-1"
+role = "dev"
+expect = { verdict = "pass", flow = "continues" }

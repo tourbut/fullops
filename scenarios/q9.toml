@@ -1,0 +1,7 @@
+name = "xtask dist: 통합 패키지와 디렉터리판"
+origin = "12.2 Q9"
+
+# `cargo xtask dist`를 돌리는 동사가 구동기에 없다(구동기는 fullops의 hook과 CLI만 돌린다).
+# 이 시나리오의 실행과 단언은 crates/fullops/tests/bundle_f.rs의 q9 시험이 한다:
+# 빌드한 xtask를 `dist --root <임시 폴더> --prebuilt <가짜 바이너리 폴더> --no-validate`로 돌리고
+# 네 매니페스트, hook 등록 파일 셋, MCP 파일 셋, 디렉터리판의 차이, 스킬 폴더, G4, SHA256SUMS를 본다.

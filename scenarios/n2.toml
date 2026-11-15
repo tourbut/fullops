@@ -1,0 +1,60 @@
+name = "install 중 hook 실행, 플러그인 갱신 뒤 SessionStart"
+origin = "12.2 N2"
+
+# 통합 패키지 폴더를 흉내 낸 재료. install.json의 source가 이 폴더를 가리켜 플러그인 루트가 된다
+[[step]]
+act = "file"
+path = "../pkg/VERSION"
+content = "2.0.0\n"
+[[step]]
+act = "file"
+path = "../pkg/bin/fullops"
+content = "#!/bin/sh\n"
+[[step]]
+act = "file"
+path = "../pkg/skills/fullops-work/SKILL.md"
+content = "---\nname: fullops-work\n---\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/grok/plugin.json"
+content = "{\"name\":\"fullops\",\"version\":\"2.0.0\",\"description\":\"시험\"}\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/grok/.mcp.json"
+content = "{\"mcpServers\":{\"context7\":{\"type\":\"http\",\"url\":\"https://mcp.context7.com/mcp\"}}}\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/agy/plugin.json"
+content = "{\"name\":\"fullops\",\"displayName\":\"FullOps\",\"description\":\"시험\",\"version\":\"2.0.0\"}\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/agy/hooks.json"
+content = "{\"fullops\":{}}\n"
+[[step]]
+act = "file"
+path = "../pkg/hosts/agy/mcp_config.json"
+content = "{\"mcpServers\":{\"context7\":{\"url\":\"https://mcp.context7.com/mcp\"}}}\n"
+[[step]]
+act = "file"
+path = "../home/.fullops/install.json"
+content = "{\"version\":\"0.0.1\",\"sha256\":\"\",\"source\":\"../pkg\",\"at\":0,\"previous\":null}\n"
+# 실행본 단계. 실행 중인 hook이 있을 때 실행본을 바꾸는 부분은 crates/fullops/tests/bundle_f.rs의 n2 시험이 이어서 한다
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["install", "--only", "runtime"]
+env = { PATH = "../bin" }
+expect = { verdict = "pass", exit = 0 }
+# 플러그인이 갱신됐다: 통합 패키지의 VERSION이 고정 위치의 기록(2.0.0)보다 높다
+[[step]]
+act = "file"
+path = "../pkg/VERSION"
+content = "2.0.1\n"
+# 갱신 뒤의 SessionStart가 실행본 단계를 스스로 한다(S-04). 등록 문자열이 --plugin-root를 준다. 실행본을 바꾸는 중에도 hook은 막지 않는다.
+# 바뀐 실행본과 install.json은 crates/fullops/tests/bundle_f.rs의 n2 시험이 본다(시나리오의 기대에는 파일을 보는 칸이 없다)
+[[step]]
+act = "session_starts"
+hook_args = ["--plugin-root", "../pkg"]
+# 1.24.0은 caveman 스킬이 없으면 세션 시작에 경고를 낸다. 새 판은 내지 않는다
+df = "DF-12"
+expect = { flow = "continues" }

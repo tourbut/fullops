@@ -1,0 +1,45 @@
+name = "병렬 사용을 본문 없이 센다"
+origin = "12.2 R6"
+
+[[step]]
+act = "spawns_subagent"
+prompt = "Purpose: research. src/a.py를 읽고 요약한다"
+
+[[step]]
+act = "spawns_subagent"
+prompt = "src/b.py를 구현한다"
+
+[[step]]
+act = "spawns_subagent"
+prompt = "src/c.py를 구현한다"
+
+[[step]]
+act = "runs_workflow"
+
+[[step]]
+act = "lead_dispatches"
+key = "A-1"
+role = "dev"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "worker_subdispatches"
+role = "dev"
+key = "A-1"
+brief = "src/b.py를 맡는다"
+expect = { verdict = "pass" }
+
+[[step]]
+act = "runs_fullops"
+args = ["status", "--json"]
+expect = { verdict = "pass", escape = "\"sub_dispatches\":1" }
+
+[[step]]
+act = "runs_fullops"
+args = ["status", "--json"]
+expect = { verdict = "pass", escape = "\"subagent_calls\":3" }
+
+[[step]]
+act = "runs_fullops"
+args = ["status", "--json"]
+expect = { verdict = "pass", escape = "\"workflow_runs\":1" }

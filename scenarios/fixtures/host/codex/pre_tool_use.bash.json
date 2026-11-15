@@ -1,0 +1,14 @@
+{
+  "session_id": "019a0000-0000-7000-8000-000000000001",
+  "transcript_path": null,
+  "cwd": "/home/dev/repo",
+  "model": "gpt-example-codex",
+  "permission_mode": "default",
+  "turn_id": "turn_0001",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_use_id": "call_EXAMPLE0000000000000000",
+  "tool_input": {
+    "command": "orca orchestration worker-start --spec \"Task key: PAY-12\" --worktree current --agent claude --json"
+  }
+}
