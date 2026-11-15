@@ -31,6 +31,23 @@
 
 설치된 플러그인 두 개(`agy plugin list --json`)와 `config.json`, `plugins/` 폴더는 그대로였다. 도움말은 `agy plugin help`와 `agy mcp <하위 명령> --help`만 안전하다. fullops의 설치 명령과 `doctor`는 agy의 플러그인 하위 명령에 `--help`를 붙이지 않아야 한다.
 
+## 0.1 실환경 확인(2026-11-15, agy CLI의 `--prompt` 세션)
+
+아래는 이 문서의 다른 절보다 앞선다. 문서와 실행 파일에서 옮긴 내용 가운데 실제와 다른 것이 있었다.
+
+| 항목 | 이 문서가 적었던 것 | 실제 |
+|---|---|---|
+| 파일 쓰기 도구 | `write_to_file{TargetFile, CodeContent}` | `write_file{Path, Content, Overwrite}` |
+| 파일 수정 도구 | `replace_file_content{TargetFile, TargetContent, ReplacementContent}` | `edit_file{Path, Target, Replacement}` |
+| 셸 도구 | `run_command{CommandLine}` | 같다(`WaitMsBeforeAsync`, `toolSummary`가 더 온다) |
+| PreToolUse `matcher` | 정규식으로 추정(`a\|b`) | 정규식이 아니다. `"*"`와 도구 이름 하나는 맞고, `"a\|b"`와 `".*"`는 어떤 도구에도 맞지 않았다. 그래서 fullops는 도구 이름마다 한 항목을 등록한다(`AGY_PRE_TOOLS`) |
+| 입력의 이벤트 이름·작업 위치 | 없다 | `hookEventName`과 `cwd`가 온다(`workspacePaths`도 온다). fullops는 여전히 `--event`와 `workspacePaths[0]`을 쓴다 |
+
+- 확인한 방법: 점검 레포의 `.agents/hooks.json`에 모든 도구(`"*"`)의 PreToolUse 입력을 파일로 남기는 hook을 두고 셸·쓰기·수정을 한 번씩 시켰다. 그 입력으로 `scenarios/fixtures/host/agy/pre_tool_use.{write_file,edit_file}.json`을 만들었다.
+- 고치기 전에는 fullops의 agy PreToolUse hook이 한 번도 불리지 않았다(매처 문법). 불렸더라도 쓰기·수정 도구 이름을 몰라 통과시켰을 것이다.
+- 고친 뒤 같은 세션에서 `write_file`로 과제명 인박스를 만들면 T-05, `run_command`로 날것 `orca orchestration worker-start`를 실행하면 T-01로 거부되는 것을 확인했다. SessionStart의 안내는 모델에 닿고, Stop의 차단(X-07)도 동작한다.
+- 플러그인 등록 문자열의 `"bin/fullops"`(확장자 없는 상대 경로)는 Windows의 `cmd /c`가 `bin/fullops.exe`로 풀어 실행한다(플러그인 루트에서 확인).
+
 ## 1. 플러그인
 
 ### 1.1 사실

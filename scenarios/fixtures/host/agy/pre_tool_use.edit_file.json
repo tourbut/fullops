@@ -1,0 +1,21 @@
+{
+  "artifactDirectoryPath": "/home/dev/.gemini/antigravity-cli/brain/095bebf2-a0c5-461c-8373-558e07685eb8",
+  "conversationId": "095bebf2-a0c5-461c-8373-558e07685eb8",
+  "cwd": "/home/dev/repo",
+  "hookEventName": "PreToolUse",
+  "lastUserInput": "notes.txt를 만들고 고쳐 줘.",
+  "modelName": "gemini-4-argon-medium",
+  "stepIdx": 7,
+  "workspacePaths": [
+    "/home/dev/repo"
+  ],
+  "toolCall": {
+    "args": {
+      "Path": "/home/dev/repo/notes.txt",
+      "Replacement": "world",
+      "Target": "hello"
+    },
+    "id": "call_5190160729721227997",
+    "name": "edit_file"
+  }
+}

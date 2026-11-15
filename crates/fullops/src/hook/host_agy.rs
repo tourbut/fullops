@@ -15,13 +15,24 @@ const PASS_PRE_TOOL_USE: &str = r#"{"decision":"ask"}"#;
 /// Stop(StopFailure로 옮긴 Stop 포함)의 통과 값.
 const PASS_STOP: &str = r#"{"decision":""}"#;
 
-// 편집 도구의 인자 이름은 추정이다(미정-M11). 입력에 없으면 그 필드는 None이고 바뀐 뒤 글은 모름이 된다
+// agy CLI의 도구는 `write_file{Path,Content}`·`edit_file{Path,Target,Replacement}`다(2026-11-15 실제 입력).
+// `write_to_file`·`replace_file_content` 꼴은 문서에서 옮긴 IDE 쪽 이름이라 함께 받는다
 fn tool_of(name: &str, args: &Value) -> ToolCall {
     let edit = |chunk: &Value| edit_op(chunk, "TargetContent", "ReplacementContent");
     match name {
         "run_command" => ToolCall {
             command: text(args, "CommandLine"),
             ..tool(name, ToolKind::Shell(os_dialect()))
+        },
+        "write_file" => ToolCall {
+            file_path: text(args, "Path"),
+            content: text(args, "Content"),
+            ..tool(name, ToolKind::Write)
+        },
+        "edit_file" => ToolCall {
+            file_path: text(args, "Path"),
+            edits: edit_op(args, "Target", "Replacement").into_iter().collect(),
+            ..tool(name, ToolKind::Edit)
         },
         "write_to_file" => ToolCall {
             file_path: text(args, "TargetFile"),

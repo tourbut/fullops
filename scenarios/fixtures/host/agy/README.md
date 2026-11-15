@@ -17,7 +17,9 @@ agy 1.4.8이 hook에 주는 입력 JSON과 hook이 내는 출력 JSON의 형식 
 | `pre_invocation.json` | PreInvocation | 모델을 부르기 직전마다 온다. UserPromptSubmit에 가장 가까운 이벤트다 | 문서의 예시 |
 | `pre_tool_use.run_command.json` | PreToolUse | 셸 도구. 명령은 `toolCall.args.CommandLine`이다 | 문서의 예시 |
 | `pre_tool_use.run_command_orca_dispatch.json` | PreToolUse | `lastUserInput`에 Orca의 배정 프롬프트(preamble)가 들어 있는 경우. 프롬프트 이벤트가 없으므로 dispatch는 여기서 묶는다 | 조립한 것이다. 프롬프트 글은 `codex/user_prompt_submit.orca_dispatch.json`과 같다. preamble이 `lastUserInput`에 그대로 오는지는 확인하지 못했다 |
-| `pre_tool_use.write_to_file.json` | PreToolUse | 쓰기 도구 | **추정**. 인자 `TargetFile`·`CodeContent`는 실행 파일에 든 이름이고 문서에는 없다 |
+| `pre_tool_use.write_file.json` | PreToolUse | 쓰기 도구. 인자는 `Path`·`Content`·`Overwrite` | **실제 입력**(2026-11-15, agy CLI의 `--prompt` 세션에서 PreToolUse 입력을 그대로 받아 경로만 바꿨다). 입력에 `hookEventName`과 `cwd`도 온다 |
+| `pre_tool_use.edit_file.json` | PreToolUse | 수정 도구. 인자는 `Path`·`Target`·`Replacement` | **실제 입력**(같은 세션) |
+| `pre_tool_use.write_to_file.json` | PreToolUse | 쓰기 도구(IDE 쪽 이름. agy CLI는 `write_file`을 쓴다) | **추정**. 인자 `TargetFile`·`CodeContent`는 실행 파일에 든 이름이고 문서에는 없다 |
 | `pre_tool_use.replace_file_content.json` | PreToolUse | 편집 도구 | **추정**. 인자 `TargetFile`·`TargetContent`·`ReplacementContent`도 같다 |
 | `pre_tool_use.invoke_subagent.json` | PreToolUse | 하위 에이전트 도구 | **추정**. 도구 이름은 문서에 있다. 인자 `Prompt`는 지어낸 것이다 |
 | `stop.json` | Stop | 정상 종료(`terminationReason: "NO_TOOL_CALL"`, `fullyIdle: true`) | 문서의 예시 |
