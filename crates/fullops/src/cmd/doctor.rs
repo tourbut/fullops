@@ -156,7 +156,8 @@ fn host_row(report: &mut Report) -> Vec<HostId> {
     present
 }
 
-fn deps_row(report: &mut Report, root: Option<&Path>, present: &[HostId]) {
+/// 돌려주는 것은 플러그인 목록에서 본 Python판 플러그인이다.
+fn deps_row(report: &mut Report, root: Option<&Path>, present: &[HostId]) -> Vec<String> {
     match install::load_deps(root) {
         Ok((deps, sha)) => {
             let found = install::check(&deps, &sha, present);
@@ -165,10 +166,142 @@ fn deps_row(report: &mut Report, root: Option<&Path>, present: &[HostId]) {
                 detail.push_str(&format!("\n    {}", found.optional.join("\n    ")));
             }
             report.item("의존", detail, found.missing);
+            return found.python;
         }
         Err(CliError::Internal(why)) => report.item("의존", "deps.toml".into(), vec![why]),
         Err(_) => report.item("의존", "deps.toml".into(), vec!["읽지 못했다.".to_string()]),
     }
+    Vec::new()
+}
+
+/// 환경 변수가 가리키는 설정 폴더, 없으면 홈 아래의 기본 폴더.
+fn config_dir(var: &str, dir: &str) -> Option<PathBuf> {
+    std::env::var_os(var)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| fullops_store::home().map(|h| h.join(dir)))
+}
+
+/// Orca의 사용자 데이터 폴더(Electron userData).
+/// shortcut: macOS·Linux는 Electron 기본 경로로 미룬 것이다, 실환경에서 다르면 고친다
+fn orca_data() -> Option<PathBuf> {
+    if cfg!(windows) {
+        return std::env::var_os("APPDATA")
+            .filter(|v| !v.is_empty())
+            .map(|d| PathBuf::from(d).join("orca"));
+    }
+    let home = fullops_store::home()?;
+    Some(if cfg!(target_os = "macos") {
+        home.join("Library/Application Support/orca")
+    } else {
+        home.join(".config/orca")
+    })
+}
+
+/// 지금 환경이 보지 않는 Claude Code·Codex 홈 `(환경 변수, 호스트, 폴더)`. 있는지만 본다(안에 인증 정보가 있어 읽지 않는다).
+fn other_homes() -> Vec<(&'static str, HostId, PathBuf)> {
+    let home = fullops_store::home();
+    let orca = orca_data();
+    let (now_claude, now_codex) = (
+        config_dir("CLAUDE_CONFIG_DIR", ".claude"),
+        config_dir("CODEX_HOME", ".codex"),
+    );
+    let profiles = orca
+        .as_ref()
+        .map(|o| o.join("claude-profiles"))
+        .into_iter()
+        .flat_map(std::fs::read_dir)
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path().join("home"));
+    let claude = home.as_ref().map(|h| h.join(".claude")).into_iter();
+    let codex = [
+        home.as_ref().map(|h| h.join(".codex")),
+        orca.map(|o| o.join("codex-runtime-home").join("home")),
+    ];
+    let mut out: Vec<_> = claude
+        .chain(profiles)
+        .map(|p| ("CLAUDE_CONFIG_DIR", HostId::Claude, p))
+        .chain(
+            codex
+                .into_iter()
+                .flatten()
+                .map(|p| ("CODEX_HOME", HostId::Codex, p)),
+        )
+        .filter(|(_, host, path)| {
+            let now = if *host == HostId::Codex {
+                &now_codex
+            } else {
+                &now_claude
+            };
+            path.is_dir()
+                && !now
+                    .as_ref()
+                    .is_some_and(|n| same_path(&n.to_string_lossy(), &path.to_string_lossy()))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+fn homes_row(report: &mut Report, others: &[(&'static str, HostId, PathBuf)]) {
+    if others.is_empty() {
+        return;
+    }
+    let mut notes = vec![
+        "이 홈들은 지금 환경의 설치·확인 대상이 아니다. fullops가 들어 있는지는 보지 않았다(안의 파일을 읽지 않는다). 설치는 사람이 정한다. 에이전트는 아래 명령을 대신 실행하지 않는다."
+            .to_string(),
+    ];
+    notes.extend(others.iter().map(|(var, host, path)| {
+        format!(
+            "사람이 설치하기로 하면: 환경 변수 `{var}`를 `{}`로 두고 `fullops install --hosts {host}`를 실행한다(끝나면 `{var}`를 되돌린다).",
+            path.display()
+        )
+    }));
+    let shown: Vec<String> = others
+        .iter()
+        .map(|(_, host, path)| format!("{host} {}", path.display()))
+        .collect();
+    report.item("다른 홈", shown.join(", "), notes);
+}
+
+/// Python판(1.24.0)이 남긴 것. 있는지만 보고 지우지 않는다.
+fn python_row(
+    report: &mut Report,
+    mut found: Vec<String>,
+    others: &[(&'static str, HostId, PathBuf)],
+) {
+    let runtime = fullops_store::home().map(|h| h.join(".fullops-squad").join("runtime"));
+    found.extend(
+        runtime
+            .filter(|r| r.exists())
+            .map(|r| r.display().to_string()),
+    );
+    let homes = [
+        config_dir("CLAUDE_CONFIG_DIR", ".claude"),
+        config_dir("CODEX_HOME", ".codex"),
+        config_dir("GROK_HOME", ".grok"),
+    ];
+    found.extend(
+        homes
+            .into_iter()
+            .flatten()
+            .chain(others.iter().map(|(_, _, path)| path.clone()))
+            .map(|home| home.join("fullops-deps.json"))
+            .filter(|file| file.is_file())
+            .map(|file| file.display().to_string()),
+    );
+    if found.is_empty() {
+        return;
+    }
+    report.item(
+        "Python판 잔재",
+        found.join(", "),
+        vec![
+            "Python판(fullops-squad 1.24.0)이 남아 있다. 지우지 않았다. 모든 레포와 워크트리를 옮기고 2주가 지난 뒤 `fullops install --retire-python`으로 정리 계획을 본다(계획만 낸다)."
+                .to_string(),
+        ],
+    );
 }
 
 /// 이 레포의 모든 워크트리의 세션 폴더.
@@ -414,7 +547,10 @@ pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
     runtime(&mut report, root);
     tools(&mut report);
     let present = host_row(&mut report);
-    deps_row(&mut report, root, &present);
+    let python = deps_row(&mut report, root, &present);
+    let others = other_homes();
+    homes_row(&mut report, &others);
+    python_row(&mut report, python, &others);
     let active = ctx.repo().is_ok();
     let dirs = session_dirs(ctx);
     let sessions = session_files(&dirs);

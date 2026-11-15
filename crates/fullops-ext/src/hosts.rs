@@ -116,8 +116,8 @@ pub fn host_marketplaces(host: HostId) -> Known<BTreeMap<String, String>> {
     Known::Yes(out)
 }
 
-/// 설치돼 켜져 있는 플러그인 id(`<이름>@<마켓플레이스>`. 마켓플레이스 없이 설치한 것은 이름만).
-pub fn host_plugins(host: HostId) -> Known<Vec<String>> {
+/// 설치된 플러그인 `(id, 켜짐)`. id는 `<이름>@<마켓플레이스>`, 마켓플레이스 없이 설치한 것은 이름만.
+pub fn host_plugins(host: HostId) -> Known<Vec<(String, bool)>> {
     let json = match host_json(host, host_commands(host).plugin_list) {
         Known::Yes(json) => json,
         Known::Unknown(why) => return Known::Unknown(why),
@@ -133,9 +133,8 @@ pub fn host_plugins(host: HostId) -> Known<Vec<String>> {
     };
     let mut out = Vec::new();
     for item in items {
-        if item["enabled"] == Value::Bool(false) {
-            continue;
-        }
+        // 꺼진 것도 돌려준다: doctor가 꺼진 Python판 플러그인도 잔재로 알린다
+        let enabled = item["enabled"] != Value::Bool(false);
         let with_market = |name: &str, market: Option<&str>| match market {
             Some(market) => format!("{name}@{market}"),
             None => name.to_string(),
@@ -151,7 +150,7 @@ pub fn host_plugins(host: HostId) -> Known<Vec<String>> {
             HostId::Agy => text(item, &["name"]).map(str::to_string),
         };
         match id {
-            Some(id) => out.push(id),
+            Some(id) => out.push((id, enabled)),
             None => return Known::Unknown("format"),
         }
     }

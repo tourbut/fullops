@@ -967,11 +967,13 @@ pub(super) struct Check {
     pub missing: Vec<String>,
     /// 선택형 항목. 안내만 한다.
     pub optional: Vec<String>,
+    /// 목록에서 본 Python판 플러그인(`<호스트>: <id>`). `doctor`의 잔재 행이 쓴다.
+    pub python: Vec<String>,
 }
 
 /// 아무것도 설치하지 않고 빠진 것을 찾는다(설계 10.3절 `--check`). 호스트 CLI에는 목록 조회만 부른다.
 pub(super) fn check(deps: &Deps, manifest_sha: &str, hosts: &[HostId]) -> Check {
-    let mut missing = Vec::new();
+    let (mut missing, mut python) = (Vec::new(), Vec::new());
     let state = fullops_store::read_deps_state().yes();
     for &host in hosts {
         // 폐쇄망에서는 호스트 CLI를 부르지 않는다(호스트 CLI가 실행될 때 네트워크를 쓸 수 있다)
@@ -980,12 +982,20 @@ pub(super) fn check(deps: &Deps, manifest_sha: &str, hosts: &[HostId]) -> Check 
         } else {
             hosts::host_plugins(host).yes()
         };
-        // 목록을 읽지 못했으면 모른다(빠졌다고 하지 않는다)
+        python.extend(
+            installed
+                .iter()
+                .flatten()
+                .filter(|(id, _)| id.split('@').next() == Some("fullops-squad"))
+                .map(|(id, _)| format!("{host}: {id}")),
+        );
+        // 목록을 읽지 못했으면 모른다(빠졌다고 하지 않는다). 꺼진 플러그인은 없는 것으로 본다
         let has = |id: &str| {
             installed.as_ref().is_none_or(|list| {
                 let name = id.split('@').next().unwrap_or(id);
-                list.iter()
-                    .any(|have| have == id || (host_commands(host).local_package && have == name))
+                list.iter().filter(|(_, on)| *on).any(|(have, _)| {
+                    have == id || (host_commands(host).local_package && have == name)
+                })
             })
         };
         let own = format!("{}@{}", deps.own.plugin, deps.own.marketplace);
@@ -1037,7 +1047,11 @@ pub(super) fn check(deps: &Deps, manifest_sha: &str, hosts: &[HostId]) -> Check 
             )
         })
         .collect();
-    Check { missing, optional }
+    Check {
+        missing,
+        optional,
+        python,
+    }
 }
 
 /// grok의 hook 등록 파일이 가리키는 실행본. 파일이 없거나 읽지 못하면 `None`.

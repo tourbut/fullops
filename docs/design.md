@@ -2784,6 +2784,8 @@ Claude Code 등록을 exec form으로 고른 이유는 셋이다. (1) Git Bash�
   | 바깥 도구 | git 버전(2.41 이상), orca 버전(1.4.256 이상), `curl`의 유무 | 없거나 낮다 |
   | 호스트 | 네 호스트의 실행 파일 유무와 버전. Claude Code는 2.1.295 이상 | PATH에 없으면 "없음"(오류가 아니다). 낮으면 알린다 |
   | 의존 | `install --check`와 같은 확인(10.3절) | 빠진 플러그인·스킬, 낡은 설치 기록. 선택형 항목은 안내만 한다 |
+  | 다른 홈 | 지금 환경의 `CLAUDE_CONFIG_DIR`·`CODEX_HOME`(없으면 `~/.claude`·`~/.codex`) 말고 알려진 홈이 있는지: `~/.claude`·`~/.codex`, Orca 사용자 데이터 폴더(Windows `%APPDATA%/orca`. macOS·Linux는 Electron 기본 경로로 미룬다)의 `claude-profiles/*/home`·`codex-runtime-home/home`. 폴더가 있는지만 보고 안의 파일은 읽지 않는다(인증 정보가 있다) | 있으면 알림만 한다. 설치는 사람이 정한다고 적고(에이전트가 대신 실행하지 않는다. setup·update 스킬도 이 행은 따르지 않는다), 홈마다 "사람이 설치하기로 하면: 환경 변수 `<변수>`를 그 홈으로 두고 `fullops install --hosts <호스트>`를 실행한다". 홈 안을 보지 않으므로 설치한 뒤에도 행은 남는다. 없으면 행을 내지 않는다 |
+  | Python판 잔재 | 의존 확인이 이미 부른 `plugin list` 결과에서 이름이 `fullops-squad`인 플러그인(꺼진 것도 센다. `fullops-meter`는 뺀다), `~/.fullops-squad/runtime`, 지금 홈(`CLAUDE_CONFIG_DIR`·`CODEX_HOME`·`GROK_HOME` 또는 기본 폴더)과 '다른 홈'의 `fullops-deps.json` | 있으면 알림만 한다(지우지 않는다). "모든 레포와 워크트리를 옮기고 2주가 지난 뒤 `fullops install --retire-python`으로 정리 계획을 본다". 없으면 행을 내지 않는다 |
   | Codex hook 신뢰 | 활성 레포에서만 본다. `deps-state.json`에 `hosts.codex`가 있는데(`fullops install`이 Codex에 설치했다), 이 레포의 모든 워크트리(`git worktree list`)의 `sessions/*.json` 가운데 `host`가 `codex`인 파일이 하나도 없다. 세션 파일은 hook이 돌아야 생기므로, 신뢰 전에는 이 조건이 참이다 | "Codex에서 fullops hook이 돈 기록이 없다. Codex를 이 레포에서 쓴다면 `/hooks`에서 fullops hook을 신뢰했는지 확인한다". 세션 파일은 14일 뒤 지워지므로 Codex를 오래 쓰지 않은 레포에서도 나온다(알림일 뿐이다) |
   | grok 폴더 신뢰 | grok이 PATH에 있을 때 `~/.grok/trusted_folders.toml`(`$GROK_HOME`이 있으면 그 아래)에서 `[folders.'<경로>']` 표의 `trusted = true`를 읽어 원본 체크아웃 경로나 그 상위 폴더가 있는지 본다. 읽기만 한다 | 없으면 "grok worker는 폴더 신뢰가 필요하다. 사용자가 grok에서 승인한다" |
   | grok hook 등록 | grok이 PATH에 있을 때 `<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`의 유무와 그 `command`가 가리키는 실행본의 유무 | 파일이 없으면 "`fullops install --hosts grok`", 실행본이 없으면 "grok에서 hook이 돌지 않는다" |
@@ -3416,6 +3418,18 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 8. 문제가 있으면 `migrate --rollback`과 커밋. Python 플러그인은 지우지 않았으므로 바로 돈다.
 
 Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
+
+### 13.5 `fullops migrate --finalize [--apply] [--early]`
+
+전환 2주 뒤 레포의 Python판 흔적을 정리한다. 기본은 계획만 낸다. `--apply`일 때만 옮긴다. 지우지 않는다: Git 공용 디렉터리의 `fullops/py-retired/<에폭 초>/`로 같은 상대 경로를 지켜 옮기므로, 되돌리려면 그 안의 것을 제자리로 다시 옮긴다. 커밋하지 않는다.
+
+- 옮기는 것(Git 공용 디렉터리 기준, 있는 것만): Python판 상태 폴더 다섯(13.2절 1번), `fullops-snapshots/`, `fullops-mode-transition.json`, 기본 체크아웃과 각 워크트리(`worktrees/<이름>/`)의 `fullops-gate/`·`fullops-search/`·`fullops-setup.json`·`fullops-lint.lock`, 맨 마지막에 `fullops/py-backup/`(되돌리기 기록 `migrate.json` 포함). 새 판의 `state.json`·`archive.jsonl`과 레포 파일은 건드리지 않는다.
+- 옮기다 실패한 항목이 있으면(Windows에서 다른 프로그램이 파일을 열고 있을 때) 나머지는 옮기고 `fullops/py-backup/`은 남겨 `--rollback`이 그대로 되게 한다. 옮긴 것과 그 자리, 옮기지 못한 것과 이유를 내고 종료 코드 1로 끝난다. 다시 실행하면 남은 것만 새 `<에폭 초>/` 폴더로 옮긴다.
+- 거절(`FullOps[migrate]`, 종료 코드 2): 전환한 레포가 아니다(`fullops.toml`이 없거나 `fullops.json`이 있다). `git worktree list`의 어느 워크트리에 `fullops.json`이 남았다(옛 hook이 아직 상태 폴더를 쓴다) 또는 목록을 읽지 못했다. `migrate.json`의 `at`부터 14일이 지나지 않았다, 또는 `migrate.json`이 있는데 `at`을 읽지 못했다(`--early`가 이 두 검사만 넘긴다).
+- 알림: `migrate.json`이 없으면(전환을 실행하지 않은 클론·PC) 날짜를 보지 않고 그 사실을 낸다. 정리 뒤에는 `--rollback`이 기록 없이 표식만 되돌린다(13.3절).
+- `.fullops-squad/fullops.json.py-1.24.0`이 있으면 `git rm .fullops-squad/fullops.json.py-1.24.0`을 사람에게 안내한다.
+- `--from-python`·`--rollback`과 함께 주거나 `--dry-run`을 주면 사용법 오류다.
+- PC 쪽 정리(옛 플러그인, `~/.fullops-squad`, `fullops-deps.json`)는 이 명령이 하지 않는다. `doctor`의 'Python판 잔재' 행이 알린다(10.6절).
 
 ## 14. 실행 중 Python·Node 의존이 남는 곳
 

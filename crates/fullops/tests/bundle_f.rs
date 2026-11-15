@@ -1733,3 +1733,252 @@ fn init_mode_and_upgrade() {
         Some(env!("CARGO_PKG_VERSION"))
     );
 }
+
+/// P3·P6: doctor는 Python판 잔재와 지금 환경이 보지 않는 다른 홈을 알리기만 한다. 홈은 임시 폴더다(`APPDATA`도 그 아래).
+#[test]
+fn doctor_reports_python_leftovers_and_other_homes() {
+    let sb = fullops_testkit::Sandbox::empty();
+    let cwd = sb.path("work");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let doctor = |env: &[(&str, &str)]| {
+        let mut all = vec![("PATH", "../bin"), ("FULLOPS_OFFLINE", "0")];
+        all.extend_from_slice(env);
+        let run = sb.fullops(&cwd, &["doctor"], &all, b"");
+        assert_eq!(run.code, Some(0), "{}", run.stderr);
+        run.stdout
+    };
+    // 아무것도 없으면 두 행이 나오지 않는다
+    let clean = doctor(&[]);
+    assert!(
+        !clean.contains("Python판 잔재") && !clean.contains("다른 홈"),
+        "{clean}"
+    );
+
+    sb.install_fakes(&["claude"]);
+    sb.host_rule(serde_json::json!({
+        "when": ["claude", "plugin", "list"],
+        // 꺼진 옛 플러그인도 잔재다(Orca 프로필마다 켜짐이 다르다)
+        "stdout": [{ "id": "fullops-squad@fullops-squad", "enabled": false }, { "id": "fullops-meter@fullops-squad" }],
+    }));
+    let orca = sb.home.join("AppData/Roaming/orca");
+    let profile = orca.join("claude-profiles/p1/home");
+    let orca_codex = orca.join("codex-runtime-home/home");
+    std::fs::create_dir_all(sb.home.join(".fullops-squad/runtime")).unwrap();
+    std::fs::create_dir_all(sb.home.join(".claude")).unwrap();
+    std::fs::create_dir_all(&profile).unwrap();
+    sb.write(&sb.home.join(".codex/fullops-deps.json"), "{}");
+    sb.write(&orca_codex.join("fullops-deps.json"), "{}");
+    let out = doctor(&[("CLAUDE_CONFIG_DIR", profile.to_str().unwrap())]);
+    let row = |name: &str| -> String {
+        let start = out
+            .find(&format!("] {name}:"))
+            .unwrap_or_else(|| panic!("{name}: {out}"));
+        let rest = &out[start..];
+        let end = rest[1..].find("\n[").map_or(rest.len(), |i| i + 1);
+        rest[..end].to_string()
+    };
+    let python = row("Python판 잔재");
+    assert!(
+        python.contains("claude: fullops-squad@fullops-squad"),
+        "{python}"
+    );
+    assert!(!python.contains("fullops-meter"), "{python}");
+    assert!(
+        python.contains("runtime") && python.contains("--retire-python"),
+        "{python}"
+    );
+    assert_eq!(python.matches("fullops-deps.json").count(), 2, "{python}");
+    let homes = row("다른 홈");
+    // 지금 환경의 홈(프로필 p1, ~/.codex)은 빼고, ~/.claude와 Orca Codex 홈을 그 환경 변수로 안내한다
+    assert!(!homes.contains("p1"), "{homes}");
+    assert!(
+        homes.contains("`CLAUDE_CONFIG_DIR`") && homes.contains("--hosts claude"),
+        "{homes}"
+    );
+    assert!(
+        homes.contains("`CODEX_HOME`") && homes.contains("codex-runtime-home"),
+        "{homes}"
+    );
+    // 에이전트가 따라 실행하지 않도록 사람이 정한다고 적는다
+    assert!(homes.contains("사람이 정한다"), "{homes}");
+    // 알리기만 한다: 아무것도 지우지 않았고 플러그인 목록 말고는 부르지 않았다
+    assert!(sb.home.join(".fullops-squad/runtime").is_dir());
+    assert!(orca_codex.join("fullops-deps.json").is_file());
+    let calls = sb.host_calls();
+    assert!(
+        calls.iter().all(|c| {
+            let argv = c["argv"].to_string();
+            argv.contains("list") || argv.contains("--version")
+        }),
+        "{calls:?}"
+    );
+}
+
+/// P5: `migrate --finalize`는 전환 2주 뒤 옛 판 상태를 `py-retired/<시각>/`로 옮긴다. 기본은 계획만 낸다.
+#[test]
+fn migrate_finalize_retires_python_state_after_two_weeks() {
+    let (driver, lead) = python_repo();
+    let sb = &driver.sb;
+    let git = lead.join(".git");
+    // 전환하지 않은 레포는 거절한다
+    let early = sb.cli(&lead, &["migrate", "--finalize"]);
+    assert_eq!(early.code, Some(2), "{}", early.stdout);
+    assert!(
+        early.stderr.contains("전환한 레포가 아니다"),
+        "{}",
+        early.stderr
+    );
+    assert_eq!(sb.cli(&lead, &["migrate", "--from-python"]).code, Some(0));
+    commit_all(sb, &lead, "전환");
+    // 옛 판에 남은 워크트리
+    sb.git_ok(
+        &lead,
+        &["worktree", "add", "-q", "--detach", "../old", "HEAD~1"],
+    );
+    let old = sb.path("old");
+    sb.write(&git.join("worktrees/old/fullops-gate/x.json"), "{}");
+
+    // 2주가 지나지 않았다 / 옛 판 워크트리가 있다
+    let young = sb.cli(&lead, &["migrate", "--finalize"]);
+    assert_eq!(young.code, Some(2));
+    assert!(
+        young.stderr.contains("전환한 지 0일이다"),
+        "{}",
+        young.stderr
+    );
+    assert!(
+        young.stderr.contains("아직 Python판 표식이 있는 워크트리"),
+        "{}",
+        young.stderr
+    );
+    // 그 워크트리도 전환 커밋을 받는다. 날짜는 아직이다
+    let head = sb.git_ok(&lead, &["rev-parse", "HEAD"]);
+    sb.git_ok(&old, &["checkout", "-q", "--detach", &head]);
+    assert_eq!(sb.cli(&lead, &["migrate", "--finalize"]).code, Some(2));
+    // --early는 날짜만 넘긴다
+    assert_eq!(
+        sb.cli(&lead, &["migrate", "--finalize", "--early"]).code,
+        Some(0)
+    );
+    let record = git.join("fullops/py-backup/migrate.json");
+    let mut value = json(&record);
+    value["at"] = serde_json::json!(value["at"].as_i64().unwrap() - 15 * 24 * 60 * 60);
+    sb.write(&record, &value.to_string());
+
+    // 계획: 옮기지 않는다
+    let plan = sb.cli(&lead, &["migrate", "--finalize"]);
+    assert_eq!(plan.code, Some(0), "{}", plan.stderr);
+    for line in [
+        "계획",
+        "fullops/py-backup",
+        "fullops-decisions",
+        "worktrees/old/fullops-gate",
+        "git rm .fullops-squad/fullops.json.py-1.24.0",
+    ] {
+        assert!(plan.stdout.contains(line), "{line}\n{}", plan.stdout);
+    }
+    assert!(record.is_file() && git.join("fullops-decisions").is_dir());
+
+    // 실행: 지우지 않고 옮긴다. 새 판 상태와 레포 파일은 그대로다
+    let applied = sb.cli(&lead, &["migrate", "--finalize", "--apply", "--json"]);
+    assert_eq!(applied.code, Some(0), "{}", applied.stderr);
+    let out: Value = serde_json::from_str(&applied.stdout).unwrap();
+    let to = PathBuf::from(out["to"].as_str().unwrap());
+    assert!(to.join("fullops/py-backup/migrate.json").is_file());
+    assert!(to.join("fullops-decisions/D001.json").is_file());
+    assert!(to.join("worktrees/old/fullops-gate/x.json").is_file());
+    assert!(!git.join("fullops/py-backup").exists() && !git.join("fullops-decisions").exists());
+    assert!(git.join("fullops/state.json").is_file());
+    assert!(lead.join(PY_MARKER_MOVED).is_file());
+    assert_eq!(sb.git_ok(&lead, &["status", "--porcelain"]), "");
+
+    // 다시: 옮길 것이 없고 되돌리기 기록이 없다고 알린다
+    let again = sb.cli(&lead, &["migrate", "--finalize"]);
+    assert_eq!(again.code, Some(0), "{}", again.stderr);
+    assert!(
+        again.stdout.contains("옮길 것이 없다") && again.stdout.contains("migrate.json"),
+        "{}",
+        again.stdout
+    );
+    // 다른 동작과 섞은 인자는 사용법 오류다
+    for args in [
+        &["migrate", "--finalize", "--dry-run"][..],
+        &["migrate", "--rollback", "--apply"],
+    ] {
+        assert_ne!(sb.cli(&lead, args).code, Some(0), "{args:?}");
+    }
+}
+
+/// 정리의 가장자리: 읽지 못한 되돌리기 기록은 '없음'이 아니다. 1.24.0이 쓰던 파일도 옮긴다.
+/// 하나를 옮기지 못하면 나머지는 옮기고 되돌리기 재료는 남기며, 옮긴 것과 그 자리를 알린다.
+#[test]
+fn migrate_finalize_edge_cases() {
+    let (driver, lead) = python_repo();
+    let sb = &driver.sb;
+    let git = lead.join(".git");
+    assert_eq!(sb.cli(&lead, &["migrate", "--from-python"]).code, Some(0));
+    commit_all(sb, &lead, "전환");
+    let record = git.join("fullops/py-backup/migrate.json");
+    let good = std::fs::read_to_string(&record).unwrap();
+
+    // 깨진 기록: --early 없이는 거절하고, 기록이 없다고 하지 않는다
+    sb.write(&record, "{ not json");
+    let broken = sb.cli(&lead, &["migrate", "--finalize", "--apply"]);
+    assert_eq!(broken.code, Some(2), "{}", broken.stdout);
+    assert!(broken.stderr.contains("`at`"), "{}", broken.stderr);
+    assert!(record.is_file() && git.join("fullops-decisions").is_dir());
+    let plan = sb.cli(&lead, &["migrate", "--finalize", "--early"]);
+    assert_eq!(plan.code, Some(0), "{}", plan.stderr);
+    assert!(!plan.stdout.contains("이 PC에 없다"), "{}", plan.stdout);
+    sb.write(&record, &good);
+
+    // 1.24.0의 policy.py·setup.py·lint.py가 Git 디렉터리에 쓰던 파일
+    for file in [
+        "fullops-mode-transition.json",
+        "fullops-setup.json",
+        "fullops-lint.lock",
+    ] {
+        sb.write(&git.join(file), "{}");
+    }
+    let plan = sb.cli(&lead, &["migrate", "--finalize", "--early", "--json"]);
+    let moves: Value = serde_json::from_str(&plan.stdout).unwrap();
+    let moves: Vec<&str> = moves["moves"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    for file in [
+        "fullops-mode-transition.json",
+        "fullops-setup.json",
+        "fullops-lint.lock",
+    ] {
+        assert!(moves.contains(&file), "{file} {moves:?}");
+    }
+    // 되돌리기 재료가 맨 마지막이다
+    assert_eq!(moves.last(), Some(&"fullops/py-backup"), "{moves:?}");
+
+    // 열린 파일 때문에 하나를 옮기지 못한다(Windows에서 백신·색인기·옛 세션이 잡고 있는 경우)
+    #[cfg(windows)]
+    {
+        sb.write(&git.join("fullops-search/code.json"), "{}");
+        let held = std::fs::File::open(git.join("fullops-search/code.json")).unwrap();
+        let partial = sb.cli(&lead, &["migrate", "--finalize", "--apply", "--early"]);
+        drop(held);
+        assert_eq!(partial.code, Some(1), "{}", partial.stdout);
+        for line in [
+            "py-retired",
+            "  fullops-decisions",
+            "fullops-search:",
+            "fullops/py-backup:",
+        ] {
+            assert!(partial.stderr.contains(line), "{line}\n{}", partial.stderr);
+        }
+        assert!(record.is_file() && git.join("fullops-search/code.json").is_file());
+        assert!(!git.join("fullops-decisions").exists());
+        // 닫고 다시 실행하면 남은 것만 옮긴다
+        let rest = sb.cli(&lead, &["migrate", "--finalize", "--apply", "--early"]);
+        assert_eq!(rest.code, Some(0), "{}", rest.stderr);
+        assert!(!record.exists() && !git.join("fullops-search").exists());
+    }
+}

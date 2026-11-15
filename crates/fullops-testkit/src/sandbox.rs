@@ -325,6 +325,8 @@ impl Sandbox {
             .env("FAKE_CURL_DIR", &self.curl_dir)
             .env("HOME", &self.home)
             .env("USERPROFILE", &self.home)
+            // doctor가 Orca의 Codex 홈·Claude 프로필을 이 아래에서 찾는다(이 PC의 Orca 폴더를 보지 않게 한다)
+            .env("APPDATA", self.home.join("AppData").join("Roaming"))
             .env("GIT_CONFIG_GLOBAL", self.home.join(".gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_TERMINAL_PROMPT", "0")

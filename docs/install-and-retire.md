@@ -244,6 +244,7 @@ claude plugin list --json; codex plugin list --json; grok plugin list --json; ag
 | 옛 상태 폴더 5개(`fullops-flow`, `-integration`, `-decisions`, `-autonomy`, `-issues`) | `<git-common-dir>/` | 옛 판 | `<common>/fullops/py-backup/`에 **복사**한다. 열린 결정과 hold는 `state.json`으로, 선행 키는 `archive.jsonl`로 가져온다. 원본은 지우지 않는다 | 2주 뒤 사람이 지운다(4절 P5) |
 | 사람 턴 기록 `fullops-flow/human-turns.jsonl` | 위 폴더 안 | 옛 판 | 가져오지 않는다. 지표는 0부터 다시 센다 | 위와 같다 |
 | `fullops-snapshots/`, 작업 트리별 `fullops-gate/`, `fullops-search/` | `<git-common-dir>`, `<git-dir>` | 옛 판 | 건드리지 않는다 | 모든 역할 워크트리가 새 판으로 넘어간 뒤 |
+| `fullops-mode-transition.json`, 작업 트리별 `fullops-setup.json`, `fullops-lint.lock` | `<git-common-dir>`, `<git-dir>` | `policy.py`, `setup.py`, `lint.py` | 건드리지 않는다 | 위와 같다(`migrate --finalize`가 함께 옮긴다) |
 | `board/`, 옛 `handovers/<KEY>-*.md`, `contexts/`, `docs/agents/frontend.json`, `test/unity-play.json`, 옛 리뷰 폴더, `docs/evaluations/jev/`의 옛 탐색 기록 | 레포 | 옛 판 | 건드리지 않는다. 읽기 전용 이력이다 | 사람이 판단한다(이력으로 남겨도 해가 없다) |
 | 되돌리기 기록 `migrate.json` | `<common>/fullops/py-backup/` | `fullops migrate` | `--rollback`이 쓴다. git 공통 폴더에만 있어 전환을 실행한 PC·클론에만 있다 | `--rollback`이 필요 없어진 뒤 |
 

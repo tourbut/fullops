@@ -1076,23 +1076,174 @@ fn rollback(ctx: &Ctx) -> Result<u8, CliError> {
     Ok(EXIT_OK)
 }
 
+/// 전환 뒤 정리를 기다리는 날 수(설계 13.4절의 '2주').
+const FINALIZE_DAYS: i64 = 14;
+
+/// 되돌리기 재료. 정리에서 맨 마지막에 옮긴다.
+const PY_BACKUP: &str = "fullops/py-backup";
+
+/// 작업 트리마다(`--absolute-git-dir` 아래) Python판이 쓰던 것.
+const PY_PER_TREE: [&str; 4] = [
+    "fullops-gate",
+    "fullops-search",
+    "fullops-setup.json",
+    "fullops-lint.lock",
+];
+
+/// Git 공용 디렉터리 기준으로 정리하는 것: Python판 상태(작업 트리별 것은 `worktrees/<이름>/` 아래), 맨 끝에 되돌리기 재료.
+fn retired_paths(common: &Path) -> Vec<String> {
+    let mut rels: Vec<String> = PY_STATE_DIRS.iter().map(|d| d.to_string()).collect();
+    rels.extend(["fullops-snapshots", "fullops-mode-transition.json"].map(String::from));
+    rels.extend(PY_PER_TREE.map(String::from));
+    for tree in std::fs::read_dir(common.join("worktrees"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let name = tree.file_name().to_string_lossy().into_owned();
+        rels.extend(PY_PER_TREE.map(|d| format!("worktrees/{name}/{d}")));
+    }
+    rels.push(PY_BACKUP.to_string());
+    rels.retain(|rel| common.join(rel).exists());
+    rels
+}
+
+/// 전환 2주 뒤 정리(설계 13.5절). `--early`는 날짜 검사만 넘긴다. 기본은 계획만 내고 `--apply`에서 `<common>/fullops/py-retired/<시각>/`로 옮긴다. 지우지 않는다.
+fn finalize(ctx: &Ctx, apply: bool, early: bool) -> Result<u8, CliError> {
+    let root = init::git_root(&ctx.start)?;
+    let (_, common) = init::git_dirs(&root)
+        .ok_or_else(|| CliError::Internal("Git 디렉터리를 찾지 못했습니다".into()))?;
+    let mut stops = Vec::new();
+    if root.join(PY_MARKER).exists() || !root.join(TOML_MARKER).exists() {
+        stops.push(
+            "전환한 레포가 아니다(`fullops.toml`이 없거나 `fullops.json`이 남아 있다)".into(),
+        );
+    }
+    // 옛 hook이 아직 상태 폴더를 쓰는 워크트리가 있으면 옮기지 않는다
+    match GitCli::cli(root.clone()).worktrees() {
+        Known::Yes(trees) => stops.extend(
+            trees
+                .iter()
+                .filter(|t| t.path.join(PY_MARKER).exists())
+                .map(|t| format!("아직 Python판 표식이 있는 워크트리: {}", t.path.display())),
+        ),
+        Known::Unknown(_) => stops.push("워크트리 목록을 읽지 못했다".into()),
+    }
+    let mut notes = Vec::new();
+    if !record_path(&common).exists() {
+        notes.push(
+            "되돌리기 기록(migrate.json)이 이 PC에 없다. 전환 시각을 몰라 날짜를 보지 않았다. 이 정리 뒤에는 `--rollback`이 표식만 되돌린다."
+                .to_string(),
+        );
+    } else {
+        match read_record(&common)["at"].as_i64() {
+            Some(at) => {
+                let days = (fullops_store::now() - at) / (24 * 60 * 60);
+                if days < FINALIZE_DAYS && !early {
+                    stops.push(format!(
+                        "전환한 지 {days}일이다. {FINALIZE_DAYS}일이 지난 뒤 정리한다"
+                    ));
+                }
+            }
+            // 기록이 있는데 시각을 못 읽으면 날짜를 모른다. 없는 것으로 치지 않는다
+            None if !early => stops
+                .push("되돌리기 기록(migrate.json)에서 전환 시각(`at`)을 읽지 못했다".to_string()),
+            None => {}
+        }
+    }
+    if !stops.is_empty() {
+        return Err(refuse(
+            &stops,
+            "모든 워크트리를 옮기고 전환 뒤 2주가 지난 다음 `fullops migrate --finalize`. 날짜를 무시하려면 `--early`",
+        ));
+    }
+    let moves = retired_paths(&common);
+    let to = common
+        .join("fullops/py-retired")
+        .join(fullops_store::now().to_string());
+    let git_rm = root
+        .join(PY_MARKER_MOVED)
+        .exists()
+        .then(|| format!("git rm {PY_MARKER_MOVED}"));
+    if apply {
+        // 하나가 실패해도 나머지를 옮기고, 무엇을 어디로 옮겼는지 남긴다
+        let (mut moved, mut failed) = (Vec::new(), Vec::new());
+        for rel in &moves {
+            // 다른 것이 실패했으면 되돌리기 재료는 두어 `--rollback`이 그대로 되게 한다
+            if rel == PY_BACKUP && !failed.is_empty() {
+                failed.push(format!("{rel}: 다른 항목이 실패해 옮기지 않았다"));
+                continue;
+            }
+            let target = to.join(rel);
+            let result = std::fs::create_dir_all(target.parent().unwrap_or(&to))
+                .and_then(|()| std::fs::rename(common.join(rel), &target));
+            match result {
+                Ok(()) => moved.push(format!("  {rel}")),
+                Err(e) => failed.push(format!("{rel}: {e}")),
+            }
+        }
+        if !failed.is_empty() {
+            let mut text = vec![format!(
+                "정리 중 일부를 옮기지 못했다. 옮긴 것은 {}에 같은 상대 경로로 있다(되돌리려면 제자리로 다시 옮긴다):",
+                to.display()
+            )];
+            text.extend(moved);
+            text.push("옮기지 못한 것(파일을 연 프로그램을 닫고 `fullops migrate --finalize --apply`를 다시 실행하면 남은 것만 새 폴더로 옮긴다):".into());
+            text.extend(failed.iter().map(|f| format!("  {f}")));
+            return Err(CliError::Internal(text.join("\n")));
+        }
+    }
+    let mut lines = vec![if moves.is_empty() {
+        "옮길 것이 없다.".to_string()
+    } else if apply {
+        format!(
+            "옮겼다(되돌리려면 같은 상대 경로로 다시 옮긴다) → {}:",
+            to.display()
+        )
+    } else {
+        format!(
+            "계획(--apply로 실행한다. 지우지 않고 옮긴다) → {}:",
+            to.display()
+        )
+    }];
+    lines.extend(moves.iter().map(|rel| format!("  {rel}")));
+    lines.extend(notes.iter().cloned());
+    if let Some(cmd) = &git_rm {
+        lines.push(format!(
+            "옛 표식은 사람이 지우고 커밋한다: `{cmd}`. 커밋하지 않았다."
+        ));
+    }
+    ctx.print(
+        &lines.join("\n"),
+        json!({ "apply": apply, "to": path_text(&to), "moves": moves, "notes": notes, "git_rm": git_rm }),
+    );
+    Ok(EXIT_OK)
+}
+
 pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
     use lexopt::prelude::*;
     let (mut python, mut dry_run, mut back) = (false, false, false);
+    let (mut fin, mut apply, mut early) = (false, false, false);
     while let Some(arg) = parser.next()? {
         match arg {
             Long("from-python") => python = true,
             Long("dry-run") => dry_run = true,
             Long("rollback") => back = true,
+            Long("finalize") => fin = true,
+            Long("apply") => apply = true,
+            Long("early") => early = true,
             other => return Err(other.unexpected().into()),
         }
     }
-    match (python, back) {
-        (true, false) => from_python(ctx, dry_run),
+    let plain = !(apply || early);
+    match (python, back, fin) {
+        (true, false, false) if plain => from_python(ctx, dry_run),
         // 되돌리기에는 미리 보기가 없다. --dry-run을 함께 주면 실행하지 않고 사용법을 낸다
-        (false, true) if !dry_run => rollback(ctx),
+        (false, true, false) if !dry_run && plain => rollback(ctx),
+        // 정리는 기본이 계획이다. --dry-run은 받지 않는다(실행은 --apply로만 한다)
+        (false, false, true) if !dry_run => finalize(ctx, apply, early),
         _ => Err(CliError::Usage(
-            "사용법: fullops migrate --from-python [--dry-run] | fullops migrate --rollback".into(),
+            "사용법: fullops migrate --from-python [--dry-run] | fullops migrate --rollback | fullops migrate --finalize [--apply] [--early]".into(),
         )),
     }
 }
