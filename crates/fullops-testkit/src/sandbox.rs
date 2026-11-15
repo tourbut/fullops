@@ -102,7 +102,10 @@ fn bin_path(name: &str) -> PathBuf {
             let exe = std::env::current_exe().expect("시험 실행 파일 경로");
             let dir = exe.parent().expect("실행 파일의 폴더");
             dir.ancestors()
-                .find(|a| a.file_name().is_some_and(|n| n == "debug" || n == "release"))
+                .find(|a| {
+                    a.file_name()
+                        .is_some_and(|n| n == "debug" || n == "release")
+                })
                 .unwrap_or(dir)
                 .to_path_buf()
         }
