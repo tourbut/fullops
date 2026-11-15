@@ -436,6 +436,42 @@ fn old_bins(fixed: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// 배포본 `bin/` 안에서 이 OS·CPU의 실행본 이름(install.rs의 platform_binary와 같다).
+fn platform_name() -> &'static str {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", _) => "fullops.exe",
+        ("macos", "aarch64") => "fullops-darwin-arm64",
+        ("macos", _) => "fullops-darwin-x64",
+        _ => "fullops-linux-x64",
+    }
+}
+
+/// 배포본에 이 OS의 실행본이 없으면 S-04는 실행본을 올리지 않고, 기록에 배포본의 버전을 적지 않는다.
+/// (2026-11-15 macOS·Linux CI에서 드러남: 실행본은 그대로인데 기록만 배포본 버전으로 바뀌었다)
+#[test]
+fn runtime_stage_without_this_platforms_binary_keeps_the_record_honest() {
+    let (driver, _) = play("n2");
+    let sb = &driver.sb;
+    let lead = sb.path("lead");
+    let pkg = sb.root.join("pkg-no-binary");
+    std::fs::create_dir_all(pkg.join("bin")).unwrap();
+    sb.write(
+        &pkg.join("VERSION"),
+        "9.9.9
+",
+    );
+    let start = serde_json::json!({"hook_event_name": "SessionStart", "session_id": "sid-nobin", "cwd": lead, "source": "startup"});
+    let run = sb.hook(
+        &["claude", "--plugin-root", &pkg.to_string_lossy()],
+        &lead,
+        &start,
+    );
+    assert_eq!(run.code, Some(0), "{}", run.stderr);
+    let record = json(&sb.home.join(".fullops/install.json"));
+    assert_ne!(record["version"], "9.9.9", "{record}");
+    assert_eq!(record["version"], env!("CARGO_PKG_VERSION"), "{record}");
+}
+
 /// 고정 위치의 실행본을 직접 돌린다. 방금 바꿔 넣은 실행 파일은 백신이 잠깐 잡고 있을 수 있어 몇 번 다시 띄운다.
 fn run_fixed(
     sb: &fullops_testkit::Sandbox,
@@ -478,9 +514,11 @@ fn n2_runtime_swap_while_a_hook_is_running() {
     // S-04: 통합 패키지의 VERSION(2.0.1)이 기록(2.0.0)보다 높은 SessionStart가 실행본 단계를 한다.
     // 시나리오의 단계가 이미 했으면 이 호출은 아무것도 바꾸지 않는다. 패키지에는 실제 실행본을 둔다
     // (hook이 실행본 단계를 플러그인 루트의 실행본에 맡기든 직접 하든 결과가 같아야 한다)
-    if cfg!(windows) {
-        std::fs::copy(fullops_testkit::bin("fullops"), pkg.join("bin/fullops.exe")).unwrap();
-    }
+    std::fs::copy(
+        fullops_testkit::bin("fullops"),
+        pkg.join("bin").join(platform_name()),
+    )
+    .unwrap();
     // 방금 복사한 실행 파일은 백신이 잠깐 잡고 있을 수 있다. 그때 S-04는 조용히 실패하므로(hook은 통과) 새 세션으로 다시 본다
     for attempt in 0..20 {
         let sid = format!("sid-n2-a{attempt}");
@@ -1762,7 +1800,14 @@ fn doctor_reports_python_leftovers_and_other_homes() {
         // 꺼진 옛 플러그인도 잔재다(Orca 프로필마다 켜짐이 다르다)
         "stdout": [{ "id": "fullops-squad@fullops-squad", "enabled": false }, { "id": "fullops-meter@fullops-squad" }],
     }));
-    let orca = sb.home.join("AppData/Roaming/orca");
+    // doctor의 orca_data와 같은 자리: Windows는 APPDATA(Sandbox가 홈 아래로 준다), 그 밖은 Electron 기본 경로
+    let orca = if cfg!(windows) {
+        sb.home.join("AppData/Roaming/orca")
+    } else if cfg!(target_os = "macos") {
+        sb.home.join("Library/Application Support/orca")
+    } else {
+        sb.home.join(".config/orca")
+    };
     let profile = orca.join("claude-profiles/p1/home");
     let orca_codex = orca.join("codex-runtime-home/home");
     std::fs::create_dir_all(sb.home.join(".fullops-squad/runtime")).unwrap();

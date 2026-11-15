@@ -45,7 +45,7 @@ pub(super) fn package_version(root: Option<&Path>) -> String {
 }
 
 /// 플러그인 루트에서 이 OS·CPU에 맞는 바이너리(설계 10.4절의 배치).
-fn platform_binary(root: &Path) -> Option<PathBuf> {
+pub fn platform_binary(root: &Path) -> Option<PathBuf> {
     let name = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", _) => "fullops.exe",
         ("macos", "aarch64") => "fullops-darwin-arm64",
@@ -165,8 +165,10 @@ fn downgrade(root: Option<&Path>) -> io::Result<Option<fullops_core::model::Refu
 pub fn runtime_stage(plugin_root: Option<&Path>) -> io::Result<Runtime> {
     let home = fullops_home()?;
     let fixed = fixed_bin()?;
-    let source = match plugin_root.and_then(platform_binary) {
-        Some(binary) => binary,
+    // 배포본에 이 OS의 실행본이 없으면 실행 중인 자신을 쓴다. 그때는 배포본의 버전을 기록하지 않는다
+    let from_package = plugin_root.and_then(platform_binary);
+    let source = match &from_package {
+        Some(binary) => binary.clone(),
         None => std::env::current_exe()?,
     };
     let record_path = home.join("install.json");
@@ -196,13 +198,15 @@ pub fn runtime_stage(plugin_root: Option<&Path>) -> io::Result<Runtime> {
     {
         fullops_store::write_atomic(&home.join("deps.toml"), &std::fs::read(deps)?)?;
     }
-    let version = match plugin_root {
-        Some(root) => package_version(Some(root)),
-        // 플러그인 루트 없이 고정 위치의 실행본으로 실행했으면 기록의 버전을 잇는다
-        None if !copied => before["version"]
+    // 기록하는 버전은 실제로 깔린 실행본의 것이다
+    let version = if from_package.is_some() {
+        package_version(plugin_root)
+    } else if copied {
+        package_version(None)
+    } else {
+        before["version"]
             .as_str()
-            .map_or_else(|| package_version(None), str::to_string),
-        None => package_version(None),
+            .map_or_else(|| package_version(None), str::to_string)
     };
     let previous = if copied {
         before["version"].clone()

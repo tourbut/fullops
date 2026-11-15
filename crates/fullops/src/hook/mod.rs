@@ -291,7 +291,7 @@ fn plugin_root(args: &HookArgs) -> Option<PathBuf> {
         .or_else(crate::cli::plugin_root_of_exe)
 }
 
-/// S-04의 조건: 고정 위치 실행본이 없거나 플러그인 루트의 `VERSION`이 `install.json`의 `version`보다 높다.
+/// S-04의 조건: 고정 위치 실행본이 없거나, 플러그인 루트에 이 OS의 실행본이 있고 그 `VERSION`이 `install.json`의 `version`보다 높다.
 fn self_install(args: &HookArgs, root: Option<&Path>) -> bool {
     let (false, Some(root), Some(fixed)) = (args.in_place, root, fullops_store::fixed_bin()) else {
         return false;
@@ -304,6 +304,10 @@ fn self_install(args: &HookArgs, root: Option<&Path>) -> bool {
     };
     if !fixed.exists() {
         return true;
+    }
+    // 이 OS의 실행본이 없는 배포본으로는 올릴 것이 없다(있으면 실행 중인 자신을 세션마다 다시 깐다)
+    if crate::cmd::platform_binary(root).is_none() {
+        return false;
     }
     let record = fullops_store::fullops_home().and_then(|home| {
         fullops_store::read_json::<Value>(&home.join("install.json"))
