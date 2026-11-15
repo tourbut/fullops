@@ -2239,7 +2239,7 @@ crates/
          init,mode,upgrade,migrate,install,doctor,env,gc}.rs
     assets/                    # include_str!의 원본. assets/repo/는 .fullops-squad/의 내장 템플릿이고 그 밖은 릴리스 노트다. deps.toml의 내장 사본은 파일을 따로 두지 않고 plugin/deps.toml을 include_str!로 읽는다(assets::DEPS_TOML)
   fullops-testkit/             # dev: 임시 레포 빌더, fake-orca, fake-host, fake-curl, 시나리오 실행기
-xtask/                         # dist, bench, compare
+xtask/                         # dist, orca-catalog, bench, compare
 plugin/                        # 매니페스트 재료, 스킬(하위 폴더째), bin 런처, deps.toml, INSTALL.md(hook 등록 파일은 두지 않는다. xtask dist가 만든다), hosts/{grok,agy}/의 패키지 재료
 scenarios/                     # 12절
 panel/                         # Orca 패널(빌드 없는 JS와 HTML. trusted-worker 플러그인)
@@ -2766,8 +2766,8 @@ Claude Code 등록을 exec form으로 고른 이유는 셋이다. (1) Git Bash�
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
-- `cargo xtask dist`의 인자: `--root <폴더>`(배포 루트. 기본은 저장소 루트), `--target <타깃>`(여러 번. 고른 타깃만 빌드), `--prebuilt <폴더>`(CI가 모은 바이너리 폴더를 쓴다), `--no-validate`(호스트 CLI의 검증을 부르지 않는다). 한 PC에서 네 타깃을 링크할 수 없고 시험이 저장소를 더럽히면 안 되기 때문이다.
-- 기본 루트로 돌리면 저장소 루트에 `dist/`와 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`)이 생긴다. 이것을 저장소에 넣을지는 사람 결정이다(17절 H16).
+- `cargo xtask dist`의 인자: `--root <폴더>`(배포 루트. 기본은 `target/dist`), `--target <타깃>`(여러 번. 고른 타깃만 빌드), `--prebuilt <폴더>`(CI가 모은 바이너리 폴더를 쓴다), `--no-validate`(호스트 CLI의 검증을 부르지 않는다). 한 PC에서 네 타깃을 링크할 수 없고 시험이 저장소를 더럽히면 안 되기 때문이다.
+- 루트에는 `dist/`와 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`)이 생긴다. 저장소 루트(`--root .`)에 만드는 것은 릴리스 때뿐이고 그 커밋은 `dist/native/fullops`와 카탈로그 둘만 담는다. 기본 루트를 `target/dist`로 둔 것(2026-11-15)은 개발 중에 만든 배포본이 실수로 커밋되지 않게 하려는 것이다. `dist/directory/`는 `.gitignore`가 막는다(17절 H16).
 - `plugin/bin/fullops`(POSIX 런처)의 실행 비트는 Windows에서 만든 커밋에 잡히지 않는다(`git update-index --chmod=+x`가 필요하다). `xtask dist`는 POSIX에서 돌릴 때만 배포본에 실행 비트를 준다(`docs/build.md`).
 - G4 검사는 Orca 패널(`panel/`의 `.js`·`.mjs`)을 뺀다. 저장소에 `LICENSE`가 있으면 패키지에 싣고, 없으면 매니페스트에 `license`를 적지 않는다(17절 H15).
 
@@ -3322,7 +3322,7 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 
 - **같다**: 12.2의 모든 단계에서 판정 종류와 흐름(이어짐·멈춤)이 1.24.0과 같거나, 다르면 12.3에 ID와 이유가 있다. 목록에 없는 차이는 회귀다. 합격은 회귀 0건이다.
 - **더 낫다**: 다음 가운데 하나를 수치로 보인다. (1) K4에서 사람 입력 없이 병합된 과제 수가 더 많거나 같고 lead가 받은 차단 수가 더 적다. (2) D4·I5·J5처럼 1.24.0에서 사람 손이 필요하던 단계가 없어졌다. (3) 2.2절의 성능 목표를 채운다.
-- **성능 측정** `cargo xtask bench`: 이벤트별 대표 입력 13개(비활성 레포, 무관한 Bash, 무관한 Edit, 인박스 Edit, 날것 `worker-start`, `git commit`, worker Stop, lead Stop 4종(깨끗함·통합 대기 10건·준비된 행·열린 Run), SessionStart 2종)를 같은 fixture 레포에서(`archive.jsonl` 5,000줄과 `turns.jsonl` 50,000줄을 넣어 둔다. 영구히 자라는 파일이 lead의 Stop에 주는 영향을 잰다) 각 300회 실행하고 처음 20회를 버린 뒤 p50·p95·최대를 낸다. 시간은 `fullops` 프로세스의 생성부터 종료까지의 벽시계다. bench는 `fullops`를 셸 없이 직접 띄운다. 호스트가 등록 문자열을 실행하려고 끼우는 셸(Codex의 `cmd.exe /C`와 로그인 셸)의 시간과 프로세스는 2.2절의 목표와 이 측정에 넣지 않는다(그 비용은 실환경 점검 3번에서 `fullops why`의 시간과 체감으로 본다). git 호출 수는 git의 추적(`GIT_TRACE2_EVENT`)에서 fullops가 직접 띄운 것만 센다(대리 실행 파일은 호출마다 시간을 더하므로 두지 않는다). Orca 호출 수는 fake-orca의 `calls.jsonl`로, 파일 쓰기 수는 `<git-common-dir>/fullops/`와 `<git-dir>/fullops/`의 바뀐 파일 수로 센다. 세는 실행은 시간을 재는 실행과 따로 한 번 한다. 주요 명령으로는 `fullops rules --json`과 `fullops status --json`을 잰다. py 쪽 `pre_*`의 시간은 PreToolUse와 PostToolUse의 합이다. 같은 PC에서 py-baseline의 hook 명령을 같은 입력으로 돌려 나란히 적는다. 결과는 PC 사양과 함께 `docs/bench.md`에 둔다. CI는 Windows 러너에서 2.2절 목표의 두 배를 넘으면 실패한다(러너 편차 때문).
+- **성능 측정** `cargo xtask bench`: 이벤트별 대표 입력 13개(비활성 레포, 무관한 Bash, 무관한 Edit, 인박스 Edit, 날것 `worker-start`, `git commit`, worker Stop, lead Stop 4종(깨끗함·통합 대기 10건·준비된 행·열린 Run), SessionStart 2종)를 같은 fixture 레포에서(`archive.jsonl` 5,000줄과 `turns.jsonl` 50,000줄을 넣어 둔다. 영구히 자라는 파일이 lead의 Stop에 주는 영향을 잰다) 각 300회 실행하고 처음 20회를 버린 뒤 p50·p95·최대를 낸다. 시간은 `fullops` 프로세스의 생성부터 종료까지의 벽시계다. bench는 `fullops`를 셸 없이 직접 띄운다. 호스트가 등록 문자열을 실행하려고 끼우는 셸(Codex의 `cmd.exe /C`와 로그인 셸)의 시간과 프로세스는 2.2절의 목표와 이 측정에 넣지 않는다(그 비용은 실환경 점검 3번에서 `fullops why`의 시간과 체감으로 본다). git 호출 수는 git의 추적(`GIT_TRACE2_EVENT`)에서 fullops가 직접 띄운 것만 센다(대리 실행 파일은 호출마다 시간을 더하므로 두지 않는다). Orca 호출 수는 fake-orca의 `calls.jsonl`로, 파일 쓰기 수는 `<git-common-dir>/fullops/`와 `<git-dir>/fullops/`의 바뀐 파일 수로 센다. 세는 실행은 시간을 재는 실행과 따로 한 번 한다. 주요 명령으로는 `fullops rules --json`과 `fullops status --json`을 잰다. py 쪽 `pre_*`의 시간은 PreToolUse와 PostToolUse의 합이다. 같은 PC에서 py-baseline의 hook 명령을 같은 입력으로 돌려 나란히 적는다. 결과는 PC 사양과 함께 `docs/bench.md`에 둔다. CI는 bench를 돌리지 않는다(러너 편차 때문. 위처럼 같은 PC에서 사람이 잰다).
 - **실환경 점검**(자동화하지 않는다. 전환 전 사람이 한 번): Windows의 Claude Code와 Codex 각각에서(역할을 grok이나 agy로 돌릴 레포는 그 호스트에서도) `fullops install` → `init` → 배정 → 완료 → 병합 → 다음 배정이 사람 입력 없이 이어지는지, 한도 오류 때 F-01이 가는지, Orca가 세션을 깨우는 입력이 기계로 분류되는지 본다. `fullops why` 출력으로 남긴다. 계약 확인이 문서와 코드로만 본 것을 아래 표로 한 번씩 실제로 본다. 결과가 가정과 다르면 "고칠 곳"만 고친다.
 
   | # | 볼 것 | 방법 | 가정과 다르면 고칠 곳 |

@@ -25,7 +25,7 @@ cargo check --target x86_64-unknown-linux-gnu
 cargo xtask dist [--root <폴더>] [--target <타깃>]... [--prebuilt <폴더>] [--no-validate]
 ```
 
-만드는 것은 다음과 같다. `--root`의 기본은 저장소 루트다.
+만드는 것은 다음과 같다. `--root`의 기본은 `target/dist`다(`.gitignore`의 `/target/` 안이라 개발 중에 만든 배포본이 커밋되지 않는다). 저장소 루트에 만드는 것은 릴리스 때(`--root .`, 아래 '릴리스')뿐이다.
 
 | 자리(`<루트>` 기준) | 내용 |
 |---|---|
@@ -97,6 +97,42 @@ cargo xtask dist [--root <폴더>] [--target <타깃>]... [--prebuilt <폴더>] 
 5. `Cargo.lock`이 바뀌면 1번부터 다시 한다.
 
 실행할 때의 폐쇄망 동작은 따로다. `FULLOPS_OFFLINE=1`이면 `fullops install`은 실행본 단계만 하고, Jev 분류와 탐색은 로컬 후보로 동작한다. 통합 패키지는 바이너리를 싣고 있으므로 폐쇄망에서도 내려받기 없이 설치된다.
+
+## 릴리스 워크플로
+
+`.github/workflows/release.yml`이 릴리스 커밋을 만들어 PR로 올린다(`docs/install-and-retire.md` 1.8절, 5절 D1·D2·D4·D5·D10). 릴리스 커밋과 패널 카탈로그 항목은 손으로 만들지 않는다. 사람이 PR을 보고 머지하는 것이 공개 승인이다. 워크플로는 main에 바로 push하지 않고 태그도 만들지 않는다(태그 `v<버전>`이 필요하면 머지된 커밋에 사람이 만든다). 서명 없이 시작하고 출처는 `tourbut/fullops`(`plugin/deps.toml`의 `[self].source`)다.
+
+- 릴리스 커밋에는 `dist/native/fullops`(바이너리 넷 포함), 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`), Orca 패널 카탈로그 `orca-catalog.json`만 싣는다. `dist/directory/`는 싣지 않는다. 개발 커밋은 이것들을 건드리지 않는다.
+- 돌리기 전에 `Cargo.toml`의 workspace 버전과 `package.json`의 `version`을 함께 올리고 `crates/fullops/assets/releases/<버전>.md`를 써서 main에 머지해 둔다. 패널을 바꿨으면 `panel/orca-plugin.json`의 `version`도 올린다. 그 뒤 GitHub Actions에서 `release`를 main에서 수동 실행(workflow_dispatch)하고 버전을 넣는다.
+
+| 잡 | 하는 일 |
+|---|---|
+| `check` | main에서 돌았는지, 입력 버전이 `Cargo.toml`·`package.json`의 버전과 같은지, 릴리스 노트가 있는지 본다. `cargo xtask orca-catalog --root .`로 패널 버전이 겹치지 않는지도 네 빌드 전에 미리 본다 |
+| `test` | `ci.yml`을 부른다(Windows·macOS·Linux의 빌드·시험, 교차 검사, 패널과 npx 실행기의 `node --test`) |
+| `build` | 타깃마다 `cargo build --release -p fullops --target <타깃>`. Windows 러너가 `x86_64-pc-windows-msvc`, macOS 러너가 `aarch64-apple-darwin`과 `x86_64-apple-darwin`, Linux 러너가 `x86_64-unknown-linux-gnu`를 빌드하고 패키지 안의 이름으로 아티팩트에 올린다 |
+| `dist` | Linux 러너에서 바이너리 넷을 모아 `cargo xtask dist --root . --prebuilt prebuilt --no-validate`, 이어 `cargo xtask orca-catalog --root . --commit <이 실행의 main 커밋>`. 새 브랜치 `release/v<버전>-<실행 번호>`에 커밋하고 main으로 PR을 연다 |
+
+- POSIX 러너에서 만들므로 런처와 macOS·Linux 바이너리의 실행 비트가 커밋에 잡힌다(위 '실행 비트').
+- 저장소 설정에서 'Allow GitHub Actions to create and approve pull requests'가 켜져 있어야 PR을 열 수 있다. `GITHUB_TOKEN`이 연 PR에서는 `ci` 워크플로가 다시 돌지 않는다(이미 `test` 잡에서 돌았다).
+- 호스트 CLI 검증은 CI에서 하지 않는다(`--no-validate`). 머지 전에 사람이 그 브랜치를 받아 위 '검증'의 명령을 돌린다.
+
+### Orca 패널 카탈로그
+
+패널은 hook·CLI와 따로 Orca 플러그인으로 배포한다. Orca의 git 직접 설치는 저장소 루트만 읽으므로, 저장소 루트의 `orca-catalog.json`(카탈로그 v2)이 `source.path: "panel"`로 패널 폴더를 가리킨다. 설치 키는 `tourbut.fullops-panel`이다.
+
+```
+cargo xtask orca-catalog [--root <폴더>] [--commit <SHA>]
+```
+
+- `--root`의 기본은 `xtask dist`와 같은 `target/dist`다. 저장소 루트(`--root .`)에 쓰는 것은 릴리스 워크플로뿐이다. `--commit`을 빼면 HEAD를 쓰는데, 개발 브랜치의 커밋은 squash 머지 뒤 main에 남지 않아 그 항목으로는 사용자가 패널을 설치하지 못한다.
+- `orca plugin release-entry panel`이 내는 releases 항목을 같은 규칙으로 만든다(CI에는 orca CLI가 없다). 그 커밋의 `panel/` git 객체를 읽어 Orca의 내용 해시(`contentHash`)를 재고, `orca-plugin.json`에서 `version`·`execution`·`minimumOrca`·`name`·`contributes`·`capabilities`를 옮긴다. 해시 규칙은 Orca 1.4.256의 `hashPluginTree`와 대조했다(`xtask/src/orca_catalog.rs`의 시험).
+- `source`는 `{kind: "git", url: "https://github.com/tourbut/fullops.git", ref: "main", path: "panel"}`다. `ref`는 Orca가 받아 오는 브랜치이고, 패널 버전은 각 release의 `commit`(40자 SHA)으로 가리킨다(D5). 본체 태그 `v<버전>`과 겹치지 않는다.
+- `commit`은 릴리스 커밋이 아니라 워크플로가 돈 main 커밋이다. 릴리스 커밋은 PR이 squash 머지되면 main에 남지 않지만, 그 부모인 main 커밋은 남는다. 그래서 `release`를 main에서만 돌린다.
+- 이미 `<루트>/orca-catalog.json`이 있으면 releases를 이어 쓴다. 패널 내용이 그대로면 항목을 늘리지 않고, 내용이 바뀌었는데 `panel/orca-plugin.json`의 `version`이 이미 있으면 멈춘다. 새 항목은 맨 앞에 두고 32개까지 남긴다.
+- 패널이 `panels` 밖의 기여(명령·단축키 등)를 더하면 그 요약 규칙을 `xtask/src/orca_catalog.rs`에 더해야 한다. 그 전까지는 멈춘다(요약이 매니페스트와 다르면 Orca가 설치를 거절한다).
+- 첫 공개 전에 사람이 패널을 Orca에서 실제로 돌려 본다(`panel/README.md` '확인', 미정-M4). 머지 전에 `orca plugin validate orca-catalog.json --json`으로 카탈로그를 확인하고, 할 수 있으면 그 커밋을 체크아웃해 `orca plugin release-entry panel --json`과 releases 맨 앞 항목을 비교한다.
+
+사용자 설치는 `orca plugin catalog add tourbut/fullops`(카탈로그 승인) → `orca plugin install tourbut.fullops-panel`(코드 실행 승인)이다(`panel/README.md` '설치').
 
 ## 유통
 

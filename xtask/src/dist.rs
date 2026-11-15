@@ -23,7 +23,7 @@ const USAGE: &str = "사용법: cargo xtask dist [--root <폴더>] [--target <�
 type Res<T = ()> = Result<T, String>;
 
 struct Args {
-    /// 배포본을 둘 루트. 기본은 저장소 루트다(`<루트>/dist/…`와 `<루트>`의 카탈로그 둘).
+    /// 배포본을 둘 루트. 기본이 `target/dist`인 것은 저장소 루트의 `dist/`를 릴리스 커밋(`--root .`)만 바꾸게 하려는 것이다.
     root: PathBuf,
     /// 싣는 타깃. 비어 있으면 넷 모두다.
     targets: Vec<String>,
@@ -32,7 +32,7 @@ struct Args {
     validate: bool,
 }
 
-fn repo() -> PathBuf {
+pub(crate) fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(Path::to_path_buf)
@@ -41,7 +41,7 @@ fn repo() -> PathBuf {
 
 fn parse(args: &[String]) -> Res<Args> {
     let mut out = Args {
-        root: repo(),
+        root: repo().join("target").join("dist"),
         targets: Vec::new(),
         prebuilt: None,
         validate: true,

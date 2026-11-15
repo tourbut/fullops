@@ -103,7 +103,7 @@ Windows에서 npx를 거치지 않을 때는 `<폴더>\bin\fullops.exe install`�
 
 | 안 | 배포 절차 | 사용자 설치 | 갱신 |
 |---|---|---|---|
-| **(A) 카탈로그. tourbut/fullops 루트에 `orca-catalog.json`(v2)** | `orca plugin validate panel` → `orca plugin release-entry panel`로 releases 항목과 `source.path` 출력 → 그 항목(`source {url, ref: <커밋>, path: "panel"}`)을 `orca-catalog.json`에 넣어 main에 커밋 | `orca plugin catalog add tourbut/fullops`(카탈로그 승인 `cat1-…` 지문) → `orca plugin install tourbut.fullops-panel`(코드 실행 승인) | 카탈로그가 새 releases를 내면 자동이다(`pluginUpdatePolicy` 기본 auto [확인: `plugin-update-policy.js`]) |
+| **(A) 카탈로그. tourbut/fullops 루트에 `orca-catalog.json`(v2)** | 릴리스 워크플로가 `cargo xtask orca-catalog --root .`로 `orca plugin release-entry panel`과 같은 releases 항목(`version`, `commit`, `contentHash` 등)을 만들어 `orca-catalog.json`(`source {kind: "git", url, ref: "main", path: "panel"}`)에 넣고 릴리스 PR에 싣는다. `ref`는 Orca가 받아 오는 브랜치이고 패널 버전은 항목의 `commit`이 가리킨다(`docs/build.md` '릴리스 워크플로') | `orca plugin catalog add tourbut/fullops`(카탈로그 승인 `cat1-…` 지문) → `orca plugin install tourbut.fullops-panel`(코드 실행 승인) | 카탈로그가 새 releases를 내면 자동이다(`pluginUpdatePolicy` 기본 auto [확인: `plugin-update-policy.js`]) |
 | (A') 레포 주인이 이미 운영하는 카탈로그가 있으면 거기에 항목 추가 | 같음(source의 url은 tourbut/fullops, path는 `panel`) | 이미 그 카탈로그를 등록한 사람은 `orca plugin install tourbut.fullops-panel`만 하면 된다 | 같음 |
 | (B) 패널만 루트에 둔 별도 저장소(예: `tourbut/fullops-panel`) | `panel/`을 그 저장소로 옮기거나 동기화한다 → 태그 `v2.0.0` → 저장소에 `orca-plugin` 토픽 | `orca plugin install tourbut/fullops-panel`(승인) | `orca plugin update tourbut.fullops-panel`(최신 `vX.Y.Z` 태그로) |
 | (C) 로컬 폴더(개발용) | - | `orca plugin install <경로>\panel`. 키가 `local.fullops-panel`이 되어 나중의 `tourbut.fullops-panel`과 별개로 남는다 | 폴더를 다시 복사한다 |
@@ -197,10 +197,10 @@ claude plugin list --json; codex plugin list --json; grok plugin list --json; ag
 ### 1.8 릴리스 절차(제안. 각 단계에 사람 승인이 필요)
 
 1. 버전을 올리고 `crates/fullops/assets/releases/<버전>.md`를 쓴다.
-2. CI가 네 타깃을 빌드한다 → `cargo xtask dist --prebuilt <폴더>` → `claude plugin validate dist/native/fullops` 등을 검증한다(design.md:2745).
+2. CI가 네 타깃을 빌드한다 → `cargo xtask dist --root . --prebuilt <폴더> --no-validate` → 릴리스 PR을 연다. `claude plugin validate dist/native/fullops` 등은 머지 전에 사람이 그 브랜치에서 돌린다(`docs/build.md` '릴리스 워크플로').
 3. **(사람 승인)** `dist/native/fullops`와 카탈로그 둘을 main에 커밋한다(D1·D2가 정해진 뒤).
 4. **(사람 승인)** 태그 `v<버전>`을 만들고, 필요하면 GitHub Release를 만든다.
-5. **(사람 승인)** 패널: `orca plugin release-entry panel`의 출력으로 `orca-catalog.json`을 갱신해 커밋한다(1.5절 (A)).
+5. **(사람 승인)** 패널: 릴리스 워크플로가 `cargo xtask orca-catalog --root .`로 `orca-catalog.json`을 갱신해 2번의 PR에 싣는다(1.5절 (A)). 머지 전에 `orca plugin validate orca-catalog.json`으로 확인한다.
 6. 깨끗한 PC나 임시 HOME에서 `npx --yes github:tourbut/fullops install --dry-run`을 돌리고, 실제 설치 → `install --check` → `doctor` 순서로 확인한다.
 
 ---

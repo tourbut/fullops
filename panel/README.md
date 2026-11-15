@@ -41,6 +41,22 @@ orca plugin dev request panel status.read --json     # worker의 답을 본다(�
 orca plugin shot panel --panel status --theme dark --out panel-dark.png --json
 ```
 
+## 설치
+
+패널은 저장소 `tourbut/fullops`의 카탈로그(루트의 `orca-catalog.json`)로 배포한다. Orca의 git 직접 설치(`orca plugin install tourbut/fullops`)는 저장소 루트만 읽으므로 이 하위 폴더의 패널을 설치하지 못한다. `fullops install`과 npx 실행기는 Orca를 건드리지 않는다. Orca가 떠 있고 설정에서 플러그인이 켜져 있어야 한다.
+
+```sh
+orca plugin catalog add tourbut/fullops --json         # approval_required와 cat1-… 지문이 나온다
+orca plugin catalog add tourbut/fullops --approve <지문> --json
+orca plugin install tourbut.fullops-panel --json       # 코드를 실행하므로 approval_required와 지문이 나온다
+orca plugin install tourbut.fullops-panel --approve <지문> --json
+```
+
+- 두 번 모두 사람이 나온 내용(허가, publisher, 저장소)을 보고 Orca가 준 지문으로 다시 실행한다. 에이전트가 대신 승인하지 않는다.
+- 갱신: 카탈로그에 새 release가 올라오면 Orca가 따라간다. 손으로는 `orca plugin update tourbut.fullops-panel`. 권한이나 패널이 늘면 다시 승인해야 하고, 승인 전에는 있던 버전이 돈다.
+- 제거: `orca plugin uninstall tourbut.fullops-panel`(승인 필요 없음). 카탈로그까지 지우려면 `orca plugin catalog list --json`에서 그 카탈로그를 찾아 `orca plugin catalog rm <id|이름>`.
+- 카탈로그 항목은 릴리스 워크플로가 `cargo xtask orca-catalog`로 만든다(`docs/build.md` '릴리스 워크플로'). 손으로 고치지 않는다.
+
 ## 확인하지 못한 것
 
 - worker가 `node:fs`로 Git 공용 디렉터리를 읽을 수 있는가(미정-M4). Orca 1.4.256의 코드로는 worker가 실행 인자 없이 `fork`된 Node 프로세스이고 권한 모델을 켜지 않으므로 읽을 수 있다고 본다. 실제로 돌려 보지는 않았다. 읽지 못하면 설계대로 `fullops status --json`을 띄우는 쪽으로 바꾼다.

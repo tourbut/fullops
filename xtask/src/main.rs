@@ -1,8 +1,9 @@
-//! 개발 작업 실행기(설계 10.1절). `cargo xtask <dist|bench|compare>`.
+//! 개발 작업 실행기(설계 10.1절). `cargo xtask <dist|orca-catalog|bench|compare>`.
 
 mod bench;
 mod compare;
 mod dist;
+mod orca_catalog;
 
 use std::process::ExitCode;
 
@@ -14,7 +15,8 @@ fn main() -> ExitCode {
         "dist" => dist::run(&rest),
         "bench" => bench::run(&rest),
         "compare" => compare::run(&rest),
-        _ => Err("사용법: cargo xtask <dist|bench|compare>".to_string()),
+        "orca-catalog" => orca_catalog::run(&rest),
+        _ => Err("사용법: cargo xtask <dist|orca-catalog|bench|compare>".to_string()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
