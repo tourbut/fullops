@@ -699,7 +699,7 @@ hook 규칙 표(`RULES`)는 34개가 된다: 뼈대의 32개에 S-06과 T-13을 
 | G | 14 | rs 구동기의 흐름 동사가 `env`를 넘기지 않는다 | 세션 핸들이 있는 lead는 `runs_fullops`로 적는다 | 12.1, formats 9.4 |
 | G | 15 | 시나리오 파일 이름과 ID | 이름의 첫 `-` 앞이 12.2절의 ID다 | 12.1 |
 | G | 16 | 비활성 레포의 목표 15ms가 프로세스 바닥값과 거의 같다 | 합친 뒤 다시 재고 정한다 | 12.4, 16(M9) |
-| G | 17 | testkit의 `bin_path`가 `target/<profile>/deps/`를 가정한다 | `xtask`가 자신을 `deps/`에 복사해 다시 실행한다(`rerun_in_deps`) | 문서에 적지 않음(구현 세부) |
+| G | 17 | testkit의 `bin_path`가 `target/<profile>/deps/`를 가정한다 | `xtask`가 자신을 `deps/`에 복사해 다시 실행한다(`rerun_in_deps`). 2026-11-15: rustc 1.100의 새 빌드 배치(`<프로필>/build/<패키지>/<해시>/out/`)에서 깨져, `bin_path`가 위쪽의 `debug`·`release` 폴더를 찾게 고치고 `rerun_in_deps`를 지웠다 | 문서에 적지 않음(구현 세부) |
 | H | 1 | 설계는 패널을 TypeScript라고 적었다 | 빌드 단계와 npm 의존이 없는 JS(`worker.mjs`)와 HTML 한 파일 | 10.1, 14 |
 | H | 2 | 계약 문서에 매니페스트의 파일 이름과 필드가 없다 | `orca-plugin.json`, `manifestVersion` 2, `contributes.panels`, `capabilities`, worker의 `activate` | contracts/orca 5 |
 | H | 3 | 패널 프레임이 두 가지다(데스크톱의 격리 게스트, 브라우저 클라이언트의 srcdoc) | 인라인만 허용하는 쪽에 맞춰 CSS와 JS를 `index.html` 하나에 넣었다 | contracts/orca 5, 10.1 |

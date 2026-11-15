@@ -18,30 +18,6 @@ pub fn workspace() -> PathBuf {
     xtask.parent().unwrap_or(xtask).to_path_buf()
 }
 
-/// testkit은 자기 실행 파일이 `target/<profile>/deps/` 아래에 있다고 보고 그 옆에서 `fullops`와 가짜 실행 파일을 찾는다.
-/// xtask는 `target/<profile>/`에 있으므로 자신을 `deps/`에 복사해 거기서 다시 실행한다. 다시 실행했으면 `true`다.
-// shortcut: testkit의 bin_path가 폴더를 받지 않는다, 받게 되면(A 담당) 이 함수를 지운다
-pub fn rerun_in_deps(task: &str, args: &[String]) -> Result<bool, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let dir = exe.parent().ok_or("실행 파일의 폴더를 알 수 없습니다")?;
-    if dir.file_name().is_some_and(|name| name == "deps") {
-        return Ok(false);
-    }
-    let copy = dir.join("deps").join(format!(
-        "xtask-{task}-{}{}",
-        std::process::id(),
-        std::env::consts::EXE_SUFFIX
-    ));
-    std::fs::copy(&exe, &copy).map_err(|e| format!("{}: {e}", copy.display()))?;
-    let status = Command::new(&copy).arg(task).args(args).status();
-    let _ = std::fs::remove_file(&copy);
-    match status {
-        Ok(status) if status.success() => Ok(true),
-        Ok(status) => Err(format!("`xtask {task}`가 실패했습니다({status})")),
-        Err(e) => Err(format!("`xtask {task}`를 다시 실행하지 못했습니다: {e}")),
-    }
-}
-
 /// 구동기 하나가 낸 단계 하나.
 #[derive(Clone)]
 struct Out {
@@ -294,9 +270,6 @@ fn lead_blocks(scenario: &Scenario, steps: &[Out]) -> usize {
 }
 
 pub fn run(args: &[String]) -> Result<(), String> {
-    if rerun_in_deps("compare", args)? {
-        return Ok(());
-    }
     let root = workspace();
     let mut target = root.join("scenarios");
     let mut out = None;
