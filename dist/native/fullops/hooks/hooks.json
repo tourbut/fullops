@@ -1,0 +1,95 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "args": [
+              "hook",
+              "claude",
+              "--plugin-root",
+              "${CLAUDE_PLUGIN_ROOT}"
+            ],
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/fullops",
+            "onFailure": "continue",
+            "timeout": 8,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|Agent|Task|Workflow"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "args": [
+              "hook",
+              "claude",
+              "--plugin-root",
+              "${CLAUDE_PLUGIN_ROOT}"
+            ],
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/fullops",
+            "onFailure": "continue",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "args": [
+              "hook",
+              "claude",
+              "--plugin-root",
+              "${CLAUDE_PLUGIN_ROOT}"
+            ],
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/fullops",
+            "onFailure": "continue",
+            "timeout": 20,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "args": [
+              "hook",
+              "claude",
+              "--plugin-root",
+              "${CLAUDE_PLUGIN_ROOT}"
+            ],
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/fullops",
+            "onFailure": "continue",
+            "timeout": 15,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "args": [
+              "hook",
+              "claude",
+              "--plugin-root",
+              "${CLAUDE_PLUGIN_ROOT}"
+            ],
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/fullops",
+            "onFailure": "continue",
+            "timeout": 5,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

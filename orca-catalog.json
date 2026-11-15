@@ -1,0 +1,36 @@
+{
+  "catalogVersion": 2,
+  "name": "fullops",
+  "owner": "tourbut",
+  "plugins": [
+    {
+      "description": "fullops가 쓰는 status.json을 읽어 과제, 통합 대기, 결정, 지표를 보여 주는 읽기 전용 패널이다.",
+      "id": "tourbut.fullops-panel",
+      "releases": [
+        {
+          "capabilities": [
+            "workspace:read"
+          ],
+          "commit": "3e307276693c0bc0e7baa473585bdb324307d2e1",
+          "contentHash": "b3260b4387a43ed840f05380de1588c1cce28c781d56b7929145acaa541799ec",
+          "contributes": [
+            {
+              "kind": "panels",
+              "name": "fullops"
+            }
+          ],
+          "execution": "trusted-worker",
+          "minimumOrca": "1.4.256",
+          "name": "fullops",
+          "version": "2.0.0"
+        }
+      ],
+      "source": {
+        "kind": "git",
+        "path": "panel",
+        "ref": "main",
+        "url": "https://github.com/tourbut/fullops.git"
+      }
+    }
+  ]
+}
