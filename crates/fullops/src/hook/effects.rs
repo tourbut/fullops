@@ -341,9 +341,16 @@ pub fn after_output(facts: &mut RealFacts, effects: &[Effect], errors: &mut Vec<
             Effect::SelfInstall => {
                 // 실행본 단계(`install --only runtime`과 같은 함수). 플러그인 등록과 의존 설치는 하지 않는다
                 if let Some(root) = facts.plugin_root.clone()
-                    && crate::cmd::runtime_stage(Some(&root)).is_err()
+                    && let Err(e) = crate::cmd::runtime_stage(Some(&root))
                 {
-                    errors.push("self_install");
+                    // 추적에 오류 종류를 남긴다(`fullops why`로 본다)
+                    errors.push(match e.kind() {
+                        std::io::ErrorKind::NotFound => "self_install_not_found",
+                        std::io::ErrorKind::PermissionDenied => "self_install_denied",
+                        std::io::ErrorKind::ExecutableFileBusy => "self_install_busy",
+                        std::io::ErrorKind::AlreadyExists => "self_install_exists",
+                        _ => "self_install",
+                    });
                 }
             }
             Effect::PeekCompletions { run } => {

@@ -628,7 +628,9 @@ token, 이슈 본문, 댓글, 프롬프트는 넣지 않는다. 필드는 두 �
 | `~/.fullops/deps.toml` | 실행본을 복사할 때 통합 패키지에서 함께 복사한 의존 목록(10.7절) |
 | `~/.fullops/deps-state.json` | 의존 설치 기록(10.3절) |
 | `~/.fullops/package/<버전>/grok/`, `~/.fullops/package/<버전>/agy/` | `install`의 `plugin` 단계가 통합 패키지의 재료로 조립한 grok 패키지와 agy 패키지(10.3절 "조립하는 패키지"). 두 호스트의 `plugin install`에 이 경로를 넘긴다. `install --prune`이 지금 버전이 아닌 것과 `.old-<시각>` 폴더를 지운다 |
-| `~/.fullops/skill-backups/<호스트>/<스킬 이름>/<폴더 sha256 앞 12자>/` | 스킬을 다시 설치하기 전에 있던 폴더의 사본. 같은 내용은 한 번만 둔다. `install --prune`이 지운다 |
+| `~/.fullops/package/<버전>/source/`, `source.old-<시각>/` | 실행본 단계가 보관한 통합 패키지(10.3절 "설치·정리 보강" P1). `install.json`의 `source`가 가리킨다. `.old-<시각>`은 `install --prune`이 지운다 |
+| `~/.fullops/skill-backups/<호스트>/<스킬 이름>/<폴더 sha256 앞 12자>/` | 스킬을 다시 설치하기 전에 있던 폴더의 사본과 원래 자리 기록 `.fullops-origin.json`(10.3절 P9). 같은 내용은 한 번만 둔다. `install --restore-skills`의 원본이라 `install --prune`은 지우지 않는다(지우려면 사람이 지운다) |
+| `~/.fullops/py-retired/<시각>/<번호>-<이름>`, `moved.json` | `install --retire-python --apply`가 옮겨 둔 옛 판(1.24.0)의 파일과 그 기록(10.3절 P4). `--restore <시각>`이 되돌린다 |
 | `~/.fullops/cache/jev/<요청 sha256>.json` | Jev 응답 캐시(분류와 탐색이 함께 쓴다) |
 
 홈은 Windows에서 `USERPROFILE`, 그 밖에서는 `HOME`이다. hook 등록 문자열 가운데 Windows용은 `%USERPROFILE%`, POSIX 셸용은 `$HOME`을 쓴다. Git Bash의 `$HOME`은 사용자가 `HOME`을 따로 정하면 `USERPROFILE`과 다를 수 있으므로 Windows에서 `$HOME`을 쓰는 문자열을 두지 않는다(10.4절).
@@ -2237,10 +2239,12 @@ crates/
          init,mode,upgrade,migrate,install,doctor,env,gc}.rs
     assets/                    # include_str!의 원본. assets/repo/는 .fullops-squad/의 내장 템플릿이고 그 밖은 릴리스 노트다. deps.toml의 내장 사본은 파일을 따로 두지 않고 plugin/deps.toml을 include_str!로 읽는다(assets::DEPS_TOML)
   fullops-testkit/             # dev: 임시 레포 빌더, fake-orca, fake-host, fake-curl, 시나리오 실행기
-xtask/                         # dist, bench, compare
+xtask/                         # dist, orca-catalog, bench, compare
 plugin/                        # 매니페스트 재료, 스킬(하위 폴더째), bin 런처, deps.toml, INSTALL.md(hook 등록 파일은 두지 않는다. xtask dist가 만든다), hosts/{grok,agy}/의 패키지 재료
 scenarios/                     # 12절
-panel/                         # Orca 패널(빌드 없는 JS와 HTML. trusted-worker 플러그인)
+panel/                         # Orca 패널(빌드 없는 JS와 HTML. trusted-worker 플러그인). 루트의 orca-catalog.json(릴리스 때 생긴다)이 source.path "panel"로 가리킨다
+package.json  npx/             # npx 실행기(fullops.cjs)와 그 시험. Node 내장 모듈만 쓴다(10.3절)
+dist/native/fullops/           # 릴리스 커밋만 바꾸는 통합 패키지. 루트의 카탈로그 둘이 가리킨다(10.5절, 17절 H16)
 ```
 
 의존 방향: `fullops-core` ← `fullops-store`, `fullops-core` ← `fullops-ext`, 둘 ← `fullops`. `core`는 `serde`·`serde_json`·`fancy-regex`·`globset`·`sha2`만 쓴다(`serde_json`과 `sha2`는 지시서 지문과 `input_sha256`의 키 정렬 JSON 계산 때문에 이번 개정에서 더했다. 파일과 프로세스에는 여전히 닿지 않는다). `store`와 `ext`는 서로 모른다. 외부 크레이트: `serde`, `serde_json`, `toml`, `fancy-regex`, `globset`, `sha2`, `lexopt`(인자 해석). 비동기 런타임, HTTP·TLS, SQLite, git 라이브러리, 날짜 라이브러리는 쓰지 않는다. 시각은 에폭 초다(날짜 문자열은 자체 변환).
@@ -2616,9 +2620,12 @@ Claude Code가 PowerShell 도구의 PATH에 실제로 `bin/`을 넣는지와 그
 **`fullops install`.**
 
 ```
-fullops install [--hosts <claude,codex,grok,agy>|all] [--only runtime|plugin|deps]... [--dry-run] [--json]
+fullops install [--hosts <claude,codex,grok,agy>|all] [--only runtime|plugin|deps]... [--dry-run] [--allow-downgrade] [--json]
 fullops install --check [--hosts …] [--json]
 fullops install --prune | --rollback | --remove-hooks
+fullops install --restore-skills [--apply]
+fullops install --retire-python [--repos <경로,…>] [--remove-meter] [--apply]
+fullops install --retire-python --restore <시각> [--apply]
 ```
 
 기본은 세 단계를 모두, PATH에 실행 파일이 있는 호스트 전부에 한다. `--hosts`로 일부만 고른다. 고른 호스트의 실행 파일이 PATH에 없으면 그 호스트를 건너뛰고 "`<호스트>` CLI가 PATH에 없어 건너뛴다"를 알린다(실패가 아니다). 호스트 CLI 자체의 설치와 로그인은 하지 않는다. 활성 레포가 아니어도 된다. 레포는 건드리지 않는다.
@@ -2640,7 +2647,7 @@ fullops install --prune | --rollback | --remove-hooks
 - 설치 기록 `~/.fullops/deps-state.json`: `{"v":1,"manifest_sha256":"<deps.toml의 sha256>","hosts":{"claude":{"at":1794500000,"self_version":"2.0.0","complete":true,"failed":[]}}}`. 호스트의 호스트별 명령과 그 호스트가 대상인 스킬 명령이 모두 성공하면 `complete`가 참이다. `failed`에는 실패한 명령의 `what`을 넣는다(스킬 명령의 실패는 대상 호스트마다 넣는다).
 - `--check`: 아무것도 설치하지 않는다. 호스트마다 (1) fullops 플러그인이 설치 목록에 있는가 (2) 의존 플러그인이 있는가 (3) 사용자 스킬의 `SKILL.md`가 그 호스트의 스킬 폴더에 있는가 (4) 설치 기록의 `manifest_sha256`이 지금 `deps.toml`과 같고 `complete`인가 (5) grok이면 hook 등록 파일이 있고 그 `command`가 가리키는 실행본이 있는가를 본다. (5)가 빠지면 `grok: hook 등록` 줄을 낸다. 빠진 것을 `<호스트>: plugin <id>`·`<호스트>: skill <이름>`·`<호스트>: 설치 기록이 낡았다` 줄로 내고, 하나라도 있으면 종료 코드 2다. 이름이 `*`인 스킬 묶음은 개별 이름을 알 수 없으므로 설치 기록으로만 확인한다. 선택형 항목(`[[optional]]`)은 "선택(설치하지 않음)" 줄로만 낸다.
 
-**실행본 단계**(`install --only runtime`, S-04의 자동 설치가 같은 일을 한다). 자기 자신(또는 플러그인 루트의 맞는 바이너리)을 `~/.fullops/bin/fullops.new-<pid>`로 복사 → 있던 파일을 `fullops.old-<시각>`으로 이름 변경 → 새 파일을 제자리로 이름 변경 → 플러그인 루트의 `deps.toml`을 `~/.fullops/deps.toml`로 복사 → `install.json` 쓰기. 중간에 실패하면 이름을 되돌린다. 실행 중인 hook은 이름이 바뀐 옛 파일로 끝까지 돈다(Windows도 실행 중인 exe의 이름은 바꿀 수 있다). `--prune`은 옛 실행본, 스킬 백업, `~/.fullops/package/` 아래에서 `install.json`의 `version`이 아닌 버전 폴더와 `.old-<시각>` 폴더를 지우고 잠긴 것은 건너뛴다. `--rollback`은 가장 최근 옛 파일로 되돌린다. `--remove-hooks`는 fullops가 직접 쓴 hook 등록 파일(`<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`)을 지우고 지운 경로를 낸다. 호스트 CLI의 `plugin uninstall`은 부르지 않는다(플러그인 제거는 사람이 한다).
+**실행본 단계**(`install --only runtime`, S-04의 자동 설치가 같은 일을 한다). 자기 자신(또는 플러그인 루트의 맞는 바이너리)을 `~/.fullops/bin/fullops.new-<pid>`로 복사 → 있던 파일을 `fullops.old-<시각>`으로 이름 변경 → 새 파일을 제자리로 이름 변경 → 플러그인 루트의 `deps.toml`을 `~/.fullops/deps.toml`로 복사 → `install.json` 쓰기. 중간에 실패하면 이름을 되돌린다. 실행 중인 hook은 이름이 바뀐 옛 파일로 끝까지 돈다(Windows도 실행 중인 exe의 이름은 바꿀 수 있다). `--prune`은 옛 실행본과 `~/.fullops/package/` 아래에서 `install.json`의 `version`이 아닌 버전 폴더와 `.old-<시각>` 폴더를 지우고 잠긴 것은 건너뛴다. `--rollback`은 가장 최근 옛 파일로 되돌린다. `--remove-hooks`는 fullops가 직접 쓴 hook 등록 파일(`<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`)을 지우고 지운 경로를 낸다. 호스트 CLI의 `plugin uninstall`은 부르지 않는다(플러그인 제거는 사람이 한다).
 
 **조립하는 패키지**(grok과 agy). 두 호스트는 Claude Code용 폴더를 그대로 쓸 수 없다. grok은 같은 `hooks/hooks.json`을 읽어 `hook claude`를 부르게 되고, agy는 `hooks/hooks.json`을 읽지 않고 루트의 `hooks.json`과 자기 스키마의 `plugin.json`을 요구한다(10.4절). 저장소에 바이너리를 한 벌만 두기 위해 두 호스트의 패키지는 배포하지 않고, 설치할 때 통합 패키지의 재료로 조립한다. `plugin` 단계가 grok이나 agy를 다룰 때 다음을 차례로 한다.
 
@@ -2664,11 +2671,11 @@ fullops install --prune | --rollback | --remove-hooks
 - 디렉터리판은 자기 폴더 밖에 쓰지 않는다. `--in-place`로 플러그인 폴더의 바이너리를 직접 실행하고 자동 설치를 하지 않는다. 의존 플러그인도 설치하지 않는다(사람이 `<플러그인 폴더>/bin/fullops install`을 실행하면 한다).
 - `state.json`의 `v`가 실행본이 아는 값보다 크면 hook은 통과하고 lead에게 세션당 한 번 "설치본이 낡았다"를 알린다.
 
-**처음 설치하는 길**은 둘이고 결과가 같다. (1) Claude Code나 Codex에서 그 호스트의 마켓플레이스 명령으로 fullops를 설치한 뒤 `<플러그인 폴더>/bin/fullops install`(Claude Code 세션에서는 `fullops install`)을 한 번 실행한다. 나머지 호스트와 의존이 설치된다. 이때 플러그인 루트는 그 호스트의 버전별 캐시 폴더이고, grok과 agy에는 그 폴더가 아니라 조립한 패키지의 경로가 넘어간다. (2) 통합 패키지 폴더를 받아(clone 또는 복사. 유통 방식은 H3) 그 안의 `bin/fullops install`을 실행한다. grok이나 agy만 쓰는 PC는 (2)로 설치한다(두 호스트의 마켓플레이스에는 올리지 않는다). setup 스킬은 (1)의 뒷부분을 안내한다. 1.24.0의 `npx` 통합 설치기에 해당하는 것이 이 명령이고, Node 설치기는 두지 않는다.
+**처음 설치하는 길**은 셋이고 결과가 같다. (1) Claude Code나 Codex에서 그 호스트의 마켓플레이스 명령으로 fullops를 설치한 뒤 `<플러그인 폴더>/bin/fullops install`(Claude Code 세션에서는 `fullops install`)을 한 번 실행한다. 나머지 호스트와 의존이 설치된다. 이때 플러그인 루트는 그 호스트의 버전별 캐시 폴더이고, grok과 agy에는 그 폴더가 아니라 조립한 패키지의 경로가 넘어간다. (2) 통합 패키지 폴더를 받아(clone 또는 복사. 유통은 H3) 그 안의 `bin/fullops install`을 실행한다. (3) `npx --yes github:tourbut/fullops install|update|check`(1.24.0의 통합 설치기와 같은 꼴. 레포 주인의 결정 2026-11-15). npx가 받는 것은 저장소 루트의 작은 Node 실행기 `npx/fullops.cjs`와 main에 커밋된 통합 패키지(`dist/native/fullops`)다. 실행기는 인자를 검사하고(`claude-code`는 `claude`로 바꾼다), 이 OS·CPU의 바이너리를 고르고, `SHA256SUMS`로 검증하고, POSIX에서 실행 비트를 준 뒤 셸 없이 `fullops install [--check] [--hosts …] [--dry-run]`을 실행해 종료 코드를 그대로 돌려준다. `update`는 `install`과 같고 `check`는 `install --check`다. `--repo <경로>`를 주면 성공한 뒤 그 레포에 `.fullops-squad/fullops.toml`이 있을 때만 `fullops upgrade --repo <경로>`를 부른다. 없으면 부르지 않고(upgrade는 활성 레포가 아니면 2를 낸다) 아직 Python판(`fullops.json`만 있다)이면 `migrate --from-python --dry-run`을, 아니면 `init`(setup-fullops 스킬)을 고정 위치 실행본의 전체 경로로 안내하며 종료 코드는 설치의 0이다. 패키지에 `orca-catalog.json`이 있으면(첫 패널 릴리스 뒤) 끝에 Orca 패널 설치 명령(17절 H14)을 한 줄 안내하고 `orca`는 부르지 않는다. 옛 설치기의 `--codex-home`은 대신할 길(`CODEX_HOME`)을 알리고 종료 코드 1로 거절한다. 설치 로직(호스트 CLI, 마켓플레이스, 스킬, 출처 충돌)은 실행기에 두지 않는다. 실행기는 Node 내장 모듈만 쓰고 배포 폴더 밖이라 G4 검사 대상이 아니다(14절). grok이나 agy만 쓰는 PC는 (2)나 (3)으로 설치한다(두 호스트의 마켓플레이스에는 올리지 않는다). setup 스킬은 (1)의 뒷부분을 안내한다.
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
-- 마켓플레이스 출처 충돌의 거절은 `FullOps[install]`이다(종료 코드 2).
+- 마켓플레이스 출처 충돌의 거절은 `FullOps[install]`이다. 그 호스트만 멈추고 실패로 적으므로 install 전체는 종료 코드 4로 끝난다(2026-11-15 코드에 맞춰 고침. 처음에는 2로 적었다).
 - 설치 기록의 `complete`: npx가 없어 스킬 단계를 건너뛰었거나 패키지 폴더가 없어 grok·agy 플러그인을 건너뛴 호스트는 실패가 아니지만(종료 코드 0, `failed`는 빈 목록) `complete = false`다. `--only`로 일부 단계만 한 실행은 이전 `complete`를 잇는다. `deps.toml`의 sha256이 바뀌면 이번에 설치하지 않은 호스트의 `complete`도 내린다.
 - `install --check`: 플러그인 목록을 읽지 못하면(모름) 빠졌다고 하지 않는다. grok·agy는 로컬 경로로 설치해 목록의 id에 마켓플레이스가 없을 수 있으므로 이름(`fullops`)만 맞아도 있는 것으로 본다. `FULLOPS_OFFLINE=1`이면 호스트 CLI를 부르지 않는다(8.1절).
 - 실행본 단계: 플러그인 루트가 없고 이미 고정 위치의 실행본으로 실행했으면 자기 자신을 복사하지 않는다(`install.json`의 버전과 `source`를 잇는다).
@@ -2681,6 +2688,18 @@ fullops install --prune | --rollback | --remove-hooks
 - 스킬 백업: 이름이 `*`인 묶음은 대상 호스트의 스킬 폴더에 있는 `*/SKILL.md` 폴더를 모두 백업한다(1.24.0과 같다). 백업에 실패한 묶음은 설치하지 않고 그 단계의 `what`을 대상 호스트의 `failed`에 넣는다. 백업은 `<앞 12자>.new-<pid>`에 복사한 뒤 이름을 바꾼다.
 - 옛 실행본 이름 `fullops.old-<시각>`의 시각은 같은 이름이 있으면 1초씩 올린 값이다.
 - `claude`·`codex`의 플러그인 명령(9.5절 표)은 계약 문서에 없고 1.24.0의 `deps.py`가 부르던 명령과 같다는 것만 확인했다(미정-M12).
+
+**설치·정리 보강**(2026-11-15. 근거는 `docs/install-and-retire.md` 4절 P1·P2·P4·P9와 5절 D7).
+
+- 배포본 보관(P1): 실행본 단계는 플러그인 루트가 통합 패키지(`hosts/`가 있다)이면 그 폴더를 `~/.fullops/package/<VERSION>/source/`로 복사하고 `install.json`의 `source`를 그 자리로 적는다. npx 캐시처럼 지워질 수 있는 폴더를 적지 않기 위해서다(8.1절 CLI 규칙의 (2)가 이 자리를 플러그인 루트로 찾는다). 이미 있고 폴더 내용의 sha256이 같으면 건너뛰고, 다르면 `source.new-<pid>`에 복사한 뒤 바꿔 넣는다(옛 것은 `source.old-<시각>`, `--prune`이 지운다). 실행본을 바꾸기 전에 하며, 실패하면 아무것도 바꾸지 않는다. 디렉터리판(`hosts/` 없음)은 복사하지 않고 그 폴더의 절대 경로를 적는다. 플러그인 루트가 없으면 기록의 `source`를 잇는다. S-04도 같은 함수라 같은 일을 한다. `--prune`은 기록의 `source`가 든 버전 폴더를 지우지 않는다(`--rollback` 뒤에는 기록의 버전과 다를 수 있다). `--dry-run`은 "배포본 보관 → <경로>"를 낸다.
+- 하향 거절(P2): `runtime` 단계가 들어 있는 install(`--dry-run` 포함)은 들어오는 버전(플러그인 루트의 `VERSION`, 없으면 이 실행본의 버전)이 `install.json`의 `version`보다 낮으면(semver) `FullOps[install]`로 거절한다(종료 코드 2, 아무것도 바꾸지 않는다). 고정 위치 실행본이 없거나, 플러그인 루트 없이 고정 위치 실행본으로 실행했거나, 버전을 읽지 못하면 거절하지 않는다. 일부러 낮추려면 `--allow-downgrade`. `--rollback`은 실행본 단계를 거치지 않으므로 이 검사와 겹치지 않고, 고정(`pinned`)은 같은 버전이나 높은 버전의 실행본 단계가 그대로 푼다.
+- 스킬 되살리기(P9): 스킬 백업 폴더 `<앞 12자>/` 안에 `.fullops-origin.json`(`{"origins":[원래 경로…],"at":<처음 백업한 시각>}`)을 함께 적는다. 같은 내용이 다른 자리에서 다시 백업되면 `origins`에 더한다. `--restore-skills`는 기본으로 계획만 낸다: 원래 경로마다 가장 먼저 남긴 백업을 골라 "되돌림: <백업> → <원래 경로>", 지금 내용이 같으면 "이미 같다", 원래 경로 기록이 없는 백업(이전 판의 백업)은 "원래 자리 모름"으로만 낸다. `--apply`면 지금 있는 폴더를 먼저 같은 규칙으로 백업한 뒤(되돌림도 되돌릴 수 있다) 백업을 원래 자리에 넣는다. 원래 자리가 링크면 링크만 지우고 실제 폴더를 둔다. 기록 파일은 복사하지 않는다. `--restore-skills`는 늘 가장 먼저 남긴 백업을 고르므로, 되돌림을 다시 되돌리려면 `skill-backups/`에 남은 그 사본을 사람이 복사한다. 그래서 `--prune`은 `skill-backups/`를 지우지 않는다.
+- 옛 판 정리(P4) `--retire-python`. 기본은 계획만 내고 `--apply`에서만 실행한다. 다루는 것은 1.24.0 코드가 쓰는 자리의 표뿐이다: 호스트 홈(`CLAUDE_CONFIG_DIR`·`CODEX_HOME`·`GROK_HOME`, `~/.claude`·`~/.codex`·`~/.grok`·`~/.agy`, Windows의 `%APPDATA%/orca/codex-runtime-home/home`과 `claude-profiles/*/home`) 아래의 `fullops-deps.json`(`deps.py:103-107`)과 `fullops-skill-backups`(`deps.py:201`), `~/.cache/fullops-squad/jev`(`jev_observe.py:266`), 그리고 마지막에 `~/.fullops-squad/runtime/fullops-squad`(`hook_runtime.py:15`). 이름이 `fullops-squad`인 플러그인·마켓플레이스 밖은 건드리지 않고, `deps.toml`이 쓰는 이름과 겹치면 호스트 쪽은 건너뛴다.
+  - 실행 조건: `--repos <경로,…>`의 레포마다 `git worktree list`의 모든 워크트리에 `.fullops-squad/fullops.json`이 없어야 한다. 목록을 주지 않았거나, 표식이 남았거나, 워크트리 목록을 읽지 못하면 `FullOps[install]`로 거절한다(종료 코드 2, 계획은 stderr에 낸다).
+  - 호스트: 목록 조회 말고 부르는 것은 계약 문서(`docs/contracts/grok.md` 1.1절)에서 확인한 grok의 `grok plugin uninstall fullops-squad --confirm`과 `grok plugin marketplace remove <url>`뿐이다(`--confirm`은 확인 질문에 막히지 않게 준다. `--apply`가 사람의 확인이다). Claude Code·Codex는 제거 명령이 계약 문서에 없어 안내만 한다. `fullops-meter@fullops-squad`와 Claude Code 마켓플레이스 `fullops-squad`는 기본으로 남기라고 안내하고, `--remove-meter`를 주면 지우는 안내를 낸다. npm 전역 패키지(`@upstash/context7-mcp`, `@alibaba-group/open-code-review`)는 안내만 한다. 어떤 하위 명령에도 `--help`를 붙이지 않는다. `FULLOPS_OFFLINE=1`이면 호스트 CLI를 부르지 않는다.
+  - 지우지 않고 `~/.fullops/py-retired/<시각>/<번호>-<이름>`으로 옮기고, 옮길 때마다 `moved.json`(`[{from,to}]`)을 새로 쓴다. runtime은 옛 판 플러그인이 어디에도 없을 때만 마지막에 옮긴다. 확인하는 범위는 둘이다. (1) grok 명령 뒤 다시 본 Claude Code·Codex·grok의 목록. 이 목록은 지금 환경(`CLAUDE_CONFIG_DIR`·`CODEX_HOME`)의 홈만 본다. CLI가 PATH에 없으면 그 호스트의 기본 홈(`~/.claude`·`~/.codex`·`~/.grok`)이 없을 때만 빈 목록이고, 있으면 모른다. (2) 위 호스트 홈 표의 모든 홈의 설정 파일: `settings.json`의 `enabledPlugins` 키와 `config.toml`의 `[plugins]` 키(값이 거짓이어도 센다. 읽지 못하면 모른다). 옛 판 플러그인은 `@` 앞 이름이 `fullops-squad`인 id(grok은 이름)이고, `fullops-meter@fullops-squad`는 runtime을 쓰지 않으므로 `--remove-meter`일 때만 센다. (2)에서 옛 판이 남았거나 모르는 홈의 `fullops-deps.json`은 옮기지 않는다(그 홈의 플러그인을 지운 뒤에 옮긴다). 하나라도 남았거나 모르면 runtime을 옮기지 않고 종료 코드 3으로 알린다(사람이 지운 뒤 다시 실행한다). grok 명령이 실패하면 종료 코드 4다.
+  - `--restore <시각>`은 `moved.json`을 거꾸로 읽어 원래 자리로 옮긴다(기본은 계획, `--apply`로 실행). 원래 자리에 이미 있으면 건너뛴다. 호스트 플러그인은 되돌리지 않는다(옛 설치기로 다시 설치한다).
+- `--restore-skills`·`--retire-python`도 `--dry-run`·`--check`와 함께 주면 사용법 오류(종료 코드 1)다. `--apply`는 이 둘과만, `--repos`·`--restore`·`--remove-meter`는 `--retire-python`과만 받는다.
 
 ### 10.4 패키지 배치와 hook 등록
 
@@ -2745,12 +2764,12 @@ Claude Code 등록을 exec form으로 고른 이유는 셋이다. (1) Git Bash�
 - `dist`의 검증: 만든 뒤 `claude plugin validate dist/native/fullops`, `claude plugin validate --strict dist/directory/fullops`를 돌리고, 조립 함수(10.3절 "조립하는 패키지" 2번과 같은 코드)로 임시 폴더에 grok 패키지와 agy 패키지를 만들어 `grok plugin validate <폴더>`, `agy plugin validate --strict <폴더>`를 돌린다. 각각 그 CLI가 PATH에 있을 때만 돌린다(없으면 건너뛰고 알린다). Codex의 검증 명령은 원본에 없다. 호스트 CLI에 `--help`를 붙여 부르지 않는다(9.5절).
 - 릴리스 프로필: `opt-level = 3`, `lto = "thin"`, `codegen-units = 1`, `panic = "unwind"`(hook의 `catch_unwind` 때문), `strip = true`.
 - 폐쇄망 빌드: `cargo vendor`한 의존을 저장소 밖 보관소에 두고 `--offline`으로 빌드하는 절차를 `docs/build.md`에 적는다(묶음 F).
-- 바이너리 유통과 서명은 사람 결정이다(17절 H3).
+- 바이너리 유통: main에 릴리스 커밋으로 `dist/native/fullops`와 카탈로그 둘을 싣는다. 서명은 하지 않는다(17절 H3·H16, 확정). 릴리스 절차는 `docs/build.md` '릴리스 워크플로'다.
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
-- `cargo xtask dist`의 인자: `--root <폴더>`(배포 루트. 기본은 저장소 루트), `--target <타깃>`(여러 번. 고른 타깃만 빌드), `--prebuilt <폴더>`(CI가 모은 바이너리 폴더를 쓴다), `--no-validate`(호스트 CLI의 검증을 부르지 않는다). 한 PC에서 네 타깃을 링크할 수 없고 시험이 저장소를 더럽히면 안 되기 때문이다.
-- 기본 루트로 돌리면 저장소 루트에 `dist/`와 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`)이 생긴다. 이것을 저장소에 넣을지는 사람 결정이다(17절 H16).
+- `cargo xtask dist`의 인자: `--root <폴더>`(배포 루트. 기본은 `target/dist`), `--target <타깃>`(여러 번. 고른 타깃만 빌드), `--prebuilt <폴더>`(CI가 모은 바이너리 폴더를 쓴다), `--no-validate`(호스트 CLI의 검증을 부르지 않는다). 한 PC에서 네 타깃을 링크할 수 없고 시험이 저장소를 더럽히면 안 되기 때문이다.
+- 루트에는 `dist/`와 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`)이 생긴다. 저장소 루트(`--root .`)에 만드는 것은 릴리스 때뿐이고 그 커밋은 `dist/native/fullops`와 카탈로그 둘만 담는다. 기본 루트를 `target/dist`로 둔 것(2026-11-15)은 개발 중에 만든 배포본이 실수로 커밋되지 않게 하려는 것이다. `dist/directory/`는 `.gitignore`가 막는다(17절 H16).
 - `plugin/bin/fullops`(POSIX 런처)의 실행 비트는 Windows에서 만든 커밋에 잡히지 않는다(`git update-index --chmod=+x`가 필요하다). `xtask dist`는 POSIX에서 돌릴 때만 배포본에 실행 비트를 준다(`docs/build.md`).
 - G4 검사는 Orca 패널(`panel/`의 `.js`·`.mjs`)을 뺀다. 저장소에 `LICENSE`가 있으면 패키지에 싣고, 없으면 매니페스트에 `license`를 적지 않는다(17절 H15).
 
@@ -2767,6 +2786,8 @@ Claude Code 등록을 exec form으로 고른 이유는 셋이다. (1) Git Bash�
   | 바깥 도구 | git 버전(2.41 이상), orca 버전(1.4.256 이상), `curl`의 유무 | 없거나 낮다 |
   | 호스트 | 네 호스트의 실행 파일 유무와 버전. Claude Code는 2.1.295 이상 | PATH에 없으면 "없음"(오류가 아니다). 낮으면 알린다 |
   | 의존 | `install --check`와 같은 확인(10.3절) | 빠진 플러그인·스킬, 낡은 설치 기록. 선택형 항목은 안내만 한다 |
+  | 다른 홈 | 지금 환경의 `CLAUDE_CONFIG_DIR`·`CODEX_HOME`(없으면 `~/.claude`·`~/.codex`) 말고 알려진 홈이 있는지: `~/.claude`·`~/.codex`, Orca 사용자 데이터 폴더(Windows `%APPDATA%/orca`. macOS·Linux는 Electron 기본 경로로 미룬다)의 `claude-profiles/*/home`·`codex-runtime-home/home`. 폴더가 있는지만 보고 안의 파일은 읽지 않는다(인증 정보가 있다) | 있으면 알림만 한다. 설치는 사람이 정한다고 적고(에이전트가 대신 실행하지 않는다. setup·update 스킬도 이 행은 따르지 않는다), 홈마다 "사람이 설치하기로 하면: 환경 변수 `<변수>`를 그 홈으로 두고 `fullops install --hosts <호스트>`를 실행한다". 홈 안을 보지 않으므로 설치한 뒤에도 행은 남는다. 없으면 행을 내지 않는다 |
+  | Python판 잔재 | 의존 확인이 이미 부른 `plugin list` 결과에서 이름이 `fullops-squad`인 플러그인(꺼진 것도 센다. `fullops-meter`는 뺀다), `~/.fullops-squad/runtime`, 지금 홈(`CLAUDE_CONFIG_DIR`·`CODEX_HOME`·`GROK_HOME` 또는 기본 폴더)과 '다른 홈'의 `fullops-deps.json` | 있으면 알림만 한다(지우지 않는다). "모든 레포와 워크트리를 옮기고 2주가 지난 뒤 `fullops install --retire-python`으로 정리 계획을 본다". 없으면 행을 내지 않는다 |
   | Codex hook 신뢰 | 활성 레포에서만 본다. `deps-state.json`에 `hosts.codex`가 있는데(`fullops install`이 Codex에 설치했다), 이 레포의 모든 워크트리(`git worktree list`)의 `sessions/*.json` 가운데 `host`가 `codex`인 파일이 하나도 없다. 세션 파일은 hook이 돌아야 생기므로, 신뢰 전에는 이 조건이 참이다 | "Codex에서 fullops hook이 돈 기록이 없다. Codex를 이 레포에서 쓴다면 `/hooks`에서 fullops hook을 신뢰했는지 확인한다". 세션 파일은 14일 뒤 지워지므로 Codex를 오래 쓰지 않은 레포에서도 나온다(알림일 뿐이다) |
   | grok 폴더 신뢰 | grok이 PATH에 있을 때 `~/.grok/trusted_folders.toml`(`$GROK_HOME`이 있으면 그 아래)에서 `[folders.'<경로>']` 표의 `trusted = true`를 읽어 원본 체크아웃 경로나 그 상위 폴더가 있는지 본다. 읽기만 한다 | 없으면 "grok worker는 폴더 신뢰가 필요하다. 사용자가 grok에서 승인한다" |
   | grok hook 등록 | grok이 PATH에 있을 때 `<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`의 유무와 그 `command`가 가리키는 실행본의 유무 | 파일이 없으면 "`fullops install --hosts grok`", 실행본이 없으면 "grok에서 hook이 돌지 않는다" |
@@ -2804,7 +2825,7 @@ skill_cli = ["npx", "--yes", "skills@latest"]     # 사용자 스킬 설치 도�
 [self]                                            # fullops 플러그인 자신
 plugin = "fullops"
 marketplace = "fullops"
-source = "tourbut/fullops"                        # 마켓플레이스 출처. 유통 방식(H3)이 정하면 이 값만 바뀐다
+source = "tourbut/fullops"                        # 마켓플레이스 출처는 tourbut/fullops(H3 확정)
 hosts = ["claude", "codex", "grok", "agy"]        # grok과 agy는 마켓플레이스가 아니라 조립한 패키지의 폴더 경로로 설치한다(10.3절)
 
 [marketplaces]                                    # 이름 = 출처
@@ -3019,7 +3040,7 @@ grok과 agy에 ponytail을 스킬로 넣는 줄은 1.24.0의 `portable_skills`�
 | `deps --runtime-only`·`--prune-runtime` | `fullops install --only runtime`·`--prune` | v1 |
 | `dependencies.json`, `DEPENDENCIES.md` | `deps.toml`(10.7절), 패키지의 `INSTALL.md` | 대체 |
 | `build.py`, `install.py` | `cargo xtask dist`, `fullops install` | 대체 |
-| `bin/fullops-squad.cjs`(Codex·Claude Code·grok 통합 설치기, `--hosts`, `install\|update\|check`) | `fullops install [--hosts]`, `install --check`. agy까지 넷을 다룬다 | v1, 방법 변경(Node 설치기 없음). `--codex-home`(추가 Codex 홈)은 없다. 다른 홈은 `CODEX_HOME`을 주고 다시 실행한다 |
+| `bin/fullops-squad.cjs`(Codex·Claude Code·grok 통합 설치기, `--hosts`, `install\|update\|check`) | `npx --yes github:tourbut/fullops install\|update\|check`(`npx/fullops.cjs`) → `fullops install [--hosts]`, `install --check`. agy까지 넷을 다룬다 | v1, 방법 변경(같은 꼴의 npx 명령이 남고, Node 실행기는 바이너리를 골라 검증해 넘기기만 한다. 설치 로직은 Rust다. 10.3절). `--codex-home`(추가 Codex 홈)은 없다. 다른 홈은 `CODEX_HOME`을 주고 다시 실행한다(Orca Codex 홈·Claude 프로필처럼 fullops가 아는 다른 홈은 `doctor`의 '다른 홈' 행이 알린다) |
 | `adapters/`(호스트별 매니페스트 덧붙임, 디렉터리판) | `plugin/`의 호스트별 덧붙임과 `xtask dist`(10.5절) | 대체 |
 | `mods/fullops-meter` | Orca 패널 | 버림(#18) |
 | `mcp.json`(Context7) | `deps.toml`의 `[[mcp]]`에서 만든 `.mcp.json`, `hosts/grok/.mcp.json`, `hosts/agy/mcp_config.json`. 원격 HTTP 등록만 | v1 |
@@ -3280,7 +3301,7 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 | DF-14 | 탐색 색인이 정의를 Python AST가 아니라 모든 언어 공통의 줄 훑기로 뽑고 docstring을 담지 않는다 | 실행 중 Python이 없다. 지도의 설명 글이 조금 달라질 뿐이고 결과는 추천이다 |
 | DF-15 | worker가 실행 중이어도, Run을 연 세션이 Orca가 깨울 수 있는 세션이면 대기 프로세스 없이 Stop을 통과시킨다(I2·I3). 1.24.0은 막고 `orca_wait`를 걸게 했다 | 현재 Orca는 조율자가 턴을 끝내면 메일이 올 때 깨운다. 그 위에 폴링을 겹치면 스크립트의 소비형 `check`가 조율자의 메일을 가져간다. Codex·grok lead도 포그라운드로 턴을 잡고 있지 않아도 된다 |
 | DF-16 | 패킷과 지시서의 연결이 `attempt` 값이 아니라 `round`와 지시서 지문이고, 지문에 front matter가 들지 않는다. 배정 때 패킷의 `head`는 worker `HEAD`와 같을 필요 없이 조상이면 된다 | 준비 커밋이 패킷을 담으므로 같을 수 없다. front matter의 `status`·`updated` 변경이 패킷을 무효로 만들지 않는다 |
-| DF-17 | 의존 설치가 npm 전역 설치(`ocr`, `context7-mcp`)를 하지 않고 `open-code-review-delegate` 스킬을 넣지 않는다. 설치기가 Node 스크립트가 아니라 `fullops install`이고 agy까지 한 번에 다룬다 | OCR은 자체 구현, Context7은 원격 HTTP다. 레포 주인의 결정(2026-11-14) |
+| DF-17 | 의존 설치가 npm 전역 설치(`ocr`, `context7-mcp`)를 하지 않고 `open-code-review-delegate` 스킬을 넣지 않는다. 설치 로직이 Node 스크립트가 아니라 `fullops install`이고(npx 실행기는 바이너리를 넘기기만 한다) agy까지 한 번에 다룬다 | OCR은 자체 구현, Context7은 원격 HTTP다. 레포 주인의 결정(2026-11-14) |
 | DF-18 | 받은 메시지의 처리 표시가 Orca의 ack가 아니라 `state.json`의 `acked_at`이다. 통합 대기인 구현 보고는 `merge`·`hold`·통합 확인이 표시하고, 그 밖의 메시지(리뷰·조사 보고, 실패 보고, 질문 등)는 `wait --ack`가 표시한다. `wait --ack`의 값은 메시지 ID다 | 현재 Orca에는 `ack` 명령과 전달 ID가 없다 |
 | DF-20 | 탐색 패킷에서 지시서 파일이 context를 돌리지 않아도 항상 필수 항목이다. 패킷의 입력 지문에 경로별 원문 해시 전체 대신 그 묶음의 해시 하나(`sources_sha256`)를 싣는다. `find`·`context`의 입력에 키 유무(`provider`)가 든다 | 항목이 되는 조건을 하나로 줄이고 패킷 파일을 작게 둔다. 키 없이 만든 로컬 결과가 키를 넣은 뒤 조용히 재사용되지 않게 한다 |
 | DF-21 | Orca가 깨우는 세션에서는 `fullops wait`가 `--no-wait` 없이도 기다리지 않는다 | DF-15와 같은 이유다. 1.24.0의 `orca_wait`는 항상 기다렸다 |
@@ -3303,7 +3324,7 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 
 - **같다**: 12.2의 모든 단계에서 판정 종류와 흐름(이어짐·멈춤)이 1.24.0과 같거나, 다르면 12.3에 ID와 이유가 있다. 목록에 없는 차이는 회귀다. 합격은 회귀 0건이다.
 - **더 낫다**: 다음 가운데 하나를 수치로 보인다. (1) K4에서 사람 입력 없이 병합된 과제 수가 더 많거나 같고 lead가 받은 차단 수가 더 적다. (2) D4·I5·J5처럼 1.24.0에서 사람 손이 필요하던 단계가 없어졌다. (3) 2.2절의 성능 목표를 채운다.
-- **성능 측정** `cargo xtask bench`: 이벤트별 대표 입력 13개(비활성 레포, 무관한 Bash, 무관한 Edit, 인박스 Edit, 날것 `worker-start`, `git commit`, worker Stop, lead Stop 4종(깨끗함·통합 대기 10건·준비된 행·열린 Run), SessionStart 2종)를 같은 fixture 레포에서(`archive.jsonl` 5,000줄과 `turns.jsonl` 50,000줄을 넣어 둔다. 영구히 자라는 파일이 lead의 Stop에 주는 영향을 잰다) 각 300회 실행하고 처음 20회를 버린 뒤 p50·p95·최대를 낸다. 시간은 `fullops` 프로세스의 생성부터 종료까지의 벽시계다. bench는 `fullops`를 셸 없이 직접 띄운다. 호스트가 등록 문자열을 실행하려고 끼우는 셸(Codex의 `cmd.exe /C`와 로그인 셸)의 시간과 프로세스는 2.2절의 목표와 이 측정에 넣지 않는다(그 비용은 실환경 점검 3번에서 `fullops why`의 시간과 체감으로 본다). git 호출 수는 git의 추적(`GIT_TRACE2_EVENT`)에서 fullops가 직접 띄운 것만 센다(대리 실행 파일은 호출마다 시간을 더하므로 두지 않는다). Orca 호출 수는 fake-orca의 `calls.jsonl`로, 파일 쓰기 수는 `<git-common-dir>/fullops/`와 `<git-dir>/fullops/`의 바뀐 파일 수로 센다. 세는 실행은 시간을 재는 실행과 따로 한 번 한다. 주요 명령으로는 `fullops rules --json`과 `fullops status --json`을 잰다. py 쪽 `pre_*`의 시간은 PreToolUse와 PostToolUse의 합이다. 같은 PC에서 py-baseline의 hook 명령을 같은 입력으로 돌려 나란히 적는다. 결과는 PC 사양과 함께 `docs/bench.md`에 둔다. CI는 Windows 러너에서 2.2절 목표의 두 배를 넘으면 실패한다(러너 편차 때문).
+- **성능 측정** `cargo xtask bench`: 이벤트별 대표 입력 13개(비활성 레포, 무관한 Bash, 무관한 Edit, 인박스 Edit, 날것 `worker-start`, `git commit`, worker Stop, lead Stop 4종(깨끗함·통합 대기 10건·준비된 행·열린 Run), SessionStart 2종)를 같은 fixture 레포에서(`archive.jsonl` 5,000줄과 `turns.jsonl` 50,000줄을 넣어 둔다. 영구히 자라는 파일이 lead의 Stop에 주는 영향을 잰다) 각 300회 실행하고 처음 20회를 버린 뒤 p50·p95·최대를 낸다. 시간은 `fullops` 프로세스의 생성부터 종료까지의 벽시계다. bench는 `fullops`를 셸 없이 직접 띄운다. 호스트가 등록 문자열을 실행하려고 끼우는 셸(Codex의 `cmd.exe /C`와 로그인 셸)의 시간과 프로세스는 2.2절의 목표와 이 측정에 넣지 않는다(그 비용은 실환경 점검 3번에서 `fullops why`의 시간과 체감으로 본다). git 호출 수는 git의 추적(`GIT_TRACE2_EVENT`)에서 fullops가 직접 띄운 것만 센다(대리 실행 파일은 호출마다 시간을 더하므로 두지 않는다). Orca 호출 수는 fake-orca의 `calls.jsonl`로, 파일 쓰기 수는 `<git-common-dir>/fullops/`와 `<git-dir>/fullops/`의 바뀐 파일 수로 센다. 세는 실행은 시간을 재는 실행과 따로 한 번 한다. 주요 명령으로는 `fullops rules --json`과 `fullops status --json`을 잰다. py 쪽 `pre_*`의 시간은 PreToolUse와 PostToolUse의 합이다. 같은 PC에서 py-baseline의 hook 명령을 같은 입력으로 돌려 나란히 적는다. 결과는 PC 사양과 함께 `docs/bench.md`에 둔다. CI는 bench를 돌리지 않는다(러너 편차 때문. 위처럼 같은 PC에서 사람이 잰다).
 - **실환경 점검**(자동화하지 않는다. 전환 전 사람이 한 번): Windows의 Claude Code와 Codex 각각에서(역할을 grok이나 agy로 돌릴 레포는 그 호스트에서도) `fullops install` → `init` → 배정 → 완료 → 병합 → 다음 배정이 사람 입력 없이 이어지는지, 한도 오류 때 F-01이 가는지, Orca가 세션을 깨우는 입력이 기계로 분류되는지 본다. `fullops why` 출력으로 남긴다. 계약 확인이 문서와 코드로만 본 것을 아래 표로 한 번씩 실제로 본다. 결과가 가정과 다르면 "고칠 곳"만 고친다.
 
   | # | 볼 것 | 방법 | 가정과 다르면 고칠 곳 |
@@ -3344,14 +3365,16 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 
 ### 13.2 `fullops migrate --from-python [--dry-run]`
 
-전제(하나라도 아니면 거절하고 남은 것을 낸다): 모든 역할 인박스가 비어 있다. Python판 통합 대기가 없다(hold는 허용). 이슈 자동 모드가 꺼져 있고 점유·답변 대기 잡이 없다. 작업 트리가 깨끗하다. `plugin_version`이 `1.24.0`이다.
+전제(하나라도 아니면 거절하고 남은 것을 낸다): 모든 역할 인박스가 비어 있다. Python판 통합 대기가 없다(hold는 허용). 이슈 자동 모드가 꺼져 있고 점유·답변 대기 잡이 없다. 작업 트리가 깨끗하다(`migrate`를 실행한 작업 트리만 본다. 1.24.0은 모든 워크트리를 봤다. 역할 워크트리에 커밋하지 않은 변경이 없는지는 사람이 확인한다). `plugin_version`이 `1.24.0`이다.
+
+표의 '되돌리기'는 `--rollback`(13.3절)이 하는 일이다. 1번 사본과 4번의 `state.json`·`archive.jsonl`은 지우지 않고 남긴다(Python판은 읽지 않는다. 2026-11-15 코드에 맞춰 고침). `fullops migrate --finalize`(13.5절. 기본은 계획만, `--apply`로 실행)는 지우지 않고 `<git-common-dir>/fullops/py-retired/<에폭 초>/`로 옮긴다. 옮기는 것은 Git 공용 디렉터리의 Python판 흔적뿐이다: 옛 상태 폴더 5개 원본, `fullops-snapshots/`, `fullops-mode-transition.json`, 작업 트리별 `fullops-gate/`·`fullops-search/`·`fullops-setup.json`·`fullops-lint.lock`, 맨 마지막에 `py-backup/`(1번 사본과 되돌리기 기록 `migrate.json`). `fullops.json.py-1.24.0`의 `git rm`은 안내만 한다. `state.json`·`archive.jsonl`은 새 판의 상태라 옮기지도 지우지도 않는다.
 
 | 순서 | 하는 일 | 되돌리기 |
 |---|---|---|
-| 1 | `<git-common-dir>/fullops/py-backup/`에 Python판 상태 폴더(`fullops-flow`, `fullops-integration`, `fullops-decisions`, `fullops-autonomy`, `fullops-issues`)를 복사한다. 원본은 건드리지 않는다 | 복사본 삭제 |
+| 1 | `<git-common-dir>/fullops/py-backup/`에 Python판 상태 폴더(`fullops-flow`, `fullops-integration`, `fullops-decisions`, `fullops-autonomy`, `fullops-issues`)를 복사한다. 원본은 건드리지 않는다 | 남긴다 |
 | 2 | `fullops.json`과 `orca-agents.md`의 라우팅 기준 표식 줄에서 `fullops.toml`을 만든다. `설계 역할` → `kind = "design"`, `coordinator 역할` → `"coordinator"`, `tester 역할` → `"tester"`, `제품 기획 역할`·`기술 계획 역할`이 둘 다 있으면 `routing = "split"`과 `tech_plan_role`. 역할 설명 줄은 `about`. `review_policy`는 `[review]`. `subagent_level`은 `parallel`로 옮긴다(`off` → `off`, `lite`·`standard`·`full` → `on`, 없으면 `on`. 8.15절). 값이 없는 것을 `on`으로 옮기는 것은 바로 뒤 원칙의 하나뿐인 예외다: 1.24.0에서 키가 없으면 실제 동작은 `off`였지만 고른 값이 아니므로 새 기본값을 준다(H12). 그 밖의 누락 값은 1.24.0의 실제 동작(`mode`는 `coor`, `test_level`은 `standard`)으로 채운다. 옮긴 값은 보고서에 낸다(`subagent_level`이 없었으면 "1.24.0에서는 하위 위임이 꺼져 있었다. 그대로 두려면 `parallel = \"off\"`로 고친다"를 함께 낸다). 읽지 못한 줄은 보고서에 낸다 | 파일 삭제 |
 | 3 | `lint/lint.json`의 정규식 규칙을 하나씩 컴파일해 본다. 실패한 규칙을 보고서에 낸다(파일은 고치지 않는다) | - |
-| 4 | 열린 결정(`fullops-decisions/D*.json`의 `status: open`)과 hold가 있는 통합 기록을 `state.json`으로 가져온다. 살아 있는 `PLANS.md` 행의 `선행:` 키 가운데 흐름 노드가 `report` 이상인 것을 `archive.jsonl`에 넣는다(`landed_at`에 전환 시각을 쓴다. `stage_of` 1번이 그 줄을 `Done`으로 본다). 그 밖(닫힌 결정, 흐름 노드, 사람 턴, route 기록, 섀도 판정, 이슈 상태)은 가져오지 않는다 | `state.json`·`archive.jsonl` 삭제 |
+| 4 | 열린 결정(`fullops-decisions/D*.json`의 `status: open`)과 hold가 있는 통합 기록을 `state.json`으로 가져온다. 살아 있는 `PLANS.md` 행의 `선행:` 키 가운데 흐름 노드가 `report` 이상인 것을 `archive.jsonl`에 넣는다(`landed_at`에 전환 시각을 쓴다. `stage_of` 1번이 그 줄을 `Done`으로 본다). 그 밖(닫힌 결정, 흐름 노드, 사람 턴, route 기록, 섀도 판정, 이슈 상태)은 가져오지 않는다 | 남긴다. 전환 뒤 생긴 열린 결정과 hold를 화면에 낸다 |
 | 5 | `PLANS.md` 문법 검사 결과를 보고서에 낸다(고치지 않는다) | - |
 | 6 | `AGENTS.md`·`CLAUDE.md`·`GEMINI.md`의 관리 블록을 새 것으로 바꾸고, `.fullops-squad/.gitignore`에 필요한 줄을 더하고, 없는 템플릿 파일을 더한다 | 블록·줄 복원 |
 | 7 | `git mv .fullops-squad/fullops.json .fullops-squad/fullops.json.py-1.24.0` | `git mv`로 복원 |
@@ -3400,6 +3423,18 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 
 Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 
+### 13.5 `fullops migrate --finalize [--apply] [--early]`
+
+전환 2주 뒤 레포의 Python판 흔적을 정리한다. 기본은 계획만 낸다. `--apply`일 때만 옮긴다. 지우지 않는다: Git 공용 디렉터리의 `fullops/py-retired/<에폭 초>/`로 같은 상대 경로를 지켜 옮기므로, 되돌리려면 그 안의 것을 제자리로 다시 옮긴다. 커밋하지 않는다.
+
+- 옮기는 것(Git 공용 디렉터리 기준, 있는 것만): Python판 상태 폴더 다섯(13.2절 1번), `fullops-snapshots/`, `fullops-mode-transition.json`, 기본 체크아웃과 각 워크트리(`worktrees/<이름>/`)의 `fullops-gate/`·`fullops-search/`·`fullops-setup.json`·`fullops-lint.lock`, 맨 마지막에 `fullops/py-backup/`(되돌리기 기록 `migrate.json` 포함). 새 판의 `state.json`·`archive.jsonl`과 레포 파일은 건드리지 않는다.
+- 옮기다 실패한 항목이 있으면(Windows에서 다른 프로그램이 파일을 열고 있을 때) 나머지는 옮기고 `fullops/py-backup/`은 남겨 `--rollback`이 그대로 되게 한다. 옮긴 것과 그 자리, 옮기지 못한 것과 이유를 내고 종료 코드 1로 끝난다. 다시 실행하면 남은 것만 새 `<에폭 초>/` 폴더로 옮긴다.
+- 거절(`FullOps[migrate]`, 종료 코드 2): 전환한 레포가 아니다(`fullops.toml`이 없거나 `fullops.json`이 있다). `git worktree list`의 어느 워크트리에 `fullops.json`이 남았다(옛 hook이 아직 상태 폴더를 쓴다) 또는 목록을 읽지 못했다. `migrate.json`의 `at`부터 14일이 지나지 않았다, 또는 `migrate.json`이 있는데 `at`을 읽지 못했다(`--early`가 이 두 검사만 넘긴다).
+- 알림: `migrate.json`이 없으면(전환을 실행하지 않은 클론·PC) 날짜를 보지 않고 그 사실을 낸다. 정리 뒤에는 `--rollback`이 기록 없이 표식만 되돌린다(13.3절).
+- `.fullops-squad/fullops.json.py-1.24.0`이 있으면 `git rm .fullops-squad/fullops.json.py-1.24.0`을 사람에게 안내한다.
+- `--from-python`·`--rollback`과 함께 주거나 `--dry-run`을 주면 사용법 오류다.
+- PC 쪽 정리(옛 플러그인, `~/.fullops-squad`, `fullops-deps.json`)는 이 명령이 하지 않는다. `doctor`의 'Python판 잔재' 행이 알린다(10.6절).
+
 ## 14. 실행 중 Python·Node 의존이 남는 곳
 
 | 항목 | 종류 | 왜 남는가 | 언제 없애는가 |
@@ -3410,6 +3445,7 @@ Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 | `bin/fullops` 런처 | POSIX sh | 한 명령 문자열로 OS·CPU에 맞는 바이너리를 고른다. macOS·Linux의 Claude Code hook, agy hook, Codex의 첫 설치 전 폴백이 거친다(`exec`로 바뀌므로 프로세스는 하나다) | 호스트가 OS별 hook 명령을 지원하면 없앤다 |
 | Jev 호출(분류와 탐색) | `curl` 프로세스 | 9.3절 | 이슈 자동 모드를 넣을 때 내장 HTTP와 함께 다시 정한다 |
 | `fullops install`의 사용자 스킬 설치 | Node(`npx skills@latest`) | 외부 스킬의 설치는 그 생태계의 도구(skills CLI)가 호스트별 경로를 안다. 설치할 때만 쓰고 hook과 흐름 명령은 쓰지 않는다. `npx`가 없으면 스킬 단계만 건너뛴다 | 호스트 CLI가 스킬 설치 명령을 주면 그것으로 바꾼다(`deps.toml`의 `skill_cli`만 바뀐다) |
+| npx 실행기 `npx/fullops.cjs`(저장소 루트, `package.json`의 `bin`) | Node 20.18.1 이상(내장 모듈만. npm 의존 없음) | `npx --yes github:tourbut/fullops install\|update\|check`의 진입점이다(10.3절 '처음 설치하는 길' (3)). 바이너리를 골라 검증하고 `fullops install`에 넘기기만 하며 설치할 때만 돈다. 배포 폴더에 들어가지 않아 G4 검사 밖이다. 다른 길((1)·(2))은 Node 없이 설치한다 | 없애지 않는다(레포 주인의 결정, 2026-11-15) |
 | `fullops install`의 플러그인 등록 | 호스트 CLI(`claude`·`codex`·`grok`·`agy`) 프로세스 | 플러그인 등록은 호스트의 일이다 | - |
 | 의존 플러그인·스킬 자체(ponytail, pstack, caveman 등) | 그 플러그인의 소관 | fullops가 싣지 않고 설치만 한다 | - |
 | 프로젝트가 `lint.json`에 등록한 명령(npm, ruff 등) | 프로젝트 소관 | 프로젝트의 도구다 | - |
@@ -3563,13 +3599,13 @@ Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 
 ## 17. 사람이 정해야 하는 것
 
-되돌리기 어려운 것만 적는다. "상태"가 **확정**인 것은 레포 주인이 정했다(2026-11-13~14). **열림**인 것은 기본안으로 구현했고, 답이 다르면 해당 절과 코드를 고친다. H19~H28은 검증 뒤 수정 담당들이 기본안으로 정하고 사람에게 남긴 것이다(2026-11-14~15). 전환(13.4절) 전에 모두 답한다.
+되돌리기 어려운 것만 적는다. "상태"가 **확정**인 것은 레포 주인이 정했다(2026-11-13~15). **열림**인 것은 기본안으로 구현했고, 답이 다르면 해당 절과 코드를 고친다. H19~H28은 검증 뒤 수정 담당들이 기본안으로 정하고 사람에게 남긴 것이다(2026-11-14~15). 전환(13.4절) 전에 모두 답한다.
 
 | ID | 결정 | 기본안 또는 확정한 내용 | 상태 | 되돌리기 어려운 이유 |
 |---|---|---|---|---|
 | H1 | 이슈 #18의 "패널이 읽는 상태 파일 형식은 Python판과 호환" 조건 | 지운다. 패널과 봇은 `status.json`과 `fullops decision list --json`을 읽는다. 민감 정보 제외 원칙은 유지한다 | 열림 | orca-helm이나 봇이 `fullops-decisions/D*.json`을 직접 읽고 있으면 전환과 같은 시점에 그쪽도 바꿔야 한다. 그 사용 여부를 확인해 달라 |
 | H2 | 이름과 버전 | 플러그인·CLI 이름 `fullops`, 첫 버전 `2.0.0`, 레포 폴더 `.fullops-squad/` 유지, 활성 표식 `fullops.toml`, 홈 폴더 `~/.fullops/` | **확정** | 마켓플레이스에 올린 이름은 바꾸기 어렵다. 공존 이행이 이름이 다르다는 데 기댄다 |
-| H3 | 바이너리 유통과 서명, 마켓플레이스 출처 | 타깃별 바이너리를 배포 전용 브랜치(또는 전용 저장소)의 통합 패키지 폴더에 커밋한다. 폐쇄망에서 내려받기 없이 설치된다. 서명은 하지 않고 시작한다. 마켓플레이스 출처(`deps.toml`의 `[self].source`)는 그 브랜치나 저장소이고 기본값은 `tourbut/fullops`다. Claude Code와 Codex가 통합 패키지 하나를 읽고 grok·agy의 패키지는 설치할 때 그 재료로 조립하므로 저장소의 바이너리는 한 벌이다. grok과 agy의 안내서는 플러그인에 바이너리를 넣는 것을 권하지 않는다(agy 패키지에는 `bin/`이 들어간다. 걸러 내는 장치는 문서에 없다. 미정-M11) | 열림 | 릴리스마다 저장소가 커지고 지울 수 없다. Windows SmartScreen과 macOS 공증이 첫 실행을 막을 수 있다(추측). 인증서 비용이 든다. 사용자들이 등록한 마켓플레이스 출처는 나중에 바꾸기 어렵다 |
+| H3 | 바이너리 유통과 서명, 마켓플레이스 출처 | 타깃별 바이너리를 `tourbut/fullops`의 main에 **릴리스 커밋으로만** 통합 패키지 폴더(`dist/native/fullops`)째 커밋한다. npx 실행기(`npx --yes github:tourbut/fullops install`)와 Claude Code·Codex 마켓플레이스가 그 한 트리를 읽는다. 폐쇄망에서 내려받기 없이 설치된다. 서명은 하지 않고 시작한다(SmartScreen·macOS 공증이 npx 캐시의 바이너리를 막는지는 첫 공개 전에 깨끗한 PC에서 확인한다. install-and-retire.md D11). 마켓플레이스 출처(`deps.toml`의 `[self].source`)는 `tourbut/fullops`다. Claude Code와 Codex가 통합 패키지 하나를 읽고 grok·agy의 패키지는 설치할 때 그 재료로 조립하므로 저장소의 바이너리는 한 벌이다. grok과 agy의 안내서는 플러그인에 바이너리를 넣는 것을 권하지 않는다(agy 패키지에는 `bin/`이 들어간다. 걸러 내는 장치는 문서에 없다. 미정-M11) | **확정**(2026-11-15, 레포 주인. 처음 기본안의 배포 전용 브랜치 대신 main) | 릴리스마다 저장소가 커지고 지울 수 없다(커지면 기본 브랜치를 배포 전용 브랜치로 바꾼다). Windows SmartScreen과 macOS 공증이 첫 실행을 막을 수 있다(추측). 인증서 비용이 든다. 사용자들이 등록한 마켓플레이스 출처는 나중에 바꾸기 어렵다 |
 | H4 | 이슈 자동 모드를 전환 뒤로 미룸 | 미룬다 | **확정** | 미루면 전환 시점에 대기열·질문 outbox를 비워야 한다. 비우지 않으면 질문이 중복 게시될 수 있다 |
 | H5 | 감싼 명령의 새 거절(DF-1, DF-8, DF-9, DF-23). 검증 뒤 수정에서 DF-1이 넓어졌다: `--inject`가 없는 날것 `orchestration dispatch`도 T-01로 거부하고, 셸 분류가 서브셸·앞붙이 명령·중첩 셸·`Start-Process`·큰따옴표 안 백틱까지 풀어 전에는 통과하던 명령(예: 이스케이프하지 않은 백틱으로 `orca orchestration worker-start`를 적은 커밋 글)도 거부된다 | 받아들인다 | 열림 | "새 차단을 넣지 않는다"는 원칙에서 한 걸음 나간다. 스킬의 절차 문구가 감싼 명령 기준으로 다시 쓰이고, Orca CLI 인자가 바뀌면 `fullops`를 다시 배포해야 한다 |
 | H6 | 버리는 기능 | 웹·Unity 조작 테스트, OCR CLI와 `open-code-review-delegate` 스킬, HTML 현황판과 단계 정의, `session_cache`. (grok·agy 지원, caveman 주입, 모션그래픽 스킬 `fullops-motion`은 버리지 않는다. v1에 넣었다) | **확정** | 전환하는 순간 그 레포에서 사라진다 |
@@ -3580,9 +3616,9 @@ Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 | H11 | grok과 agy에서 hook이 어디까지 도는가 | 네 호스트 모두 hook을 등록한다(7.2절). grok은 전역 등록 파일로, agy는 패키지의 `hooks.json`으로 넣는다. 남은 조건은 하나다: agy에서 hook 실패가 도구 호출을 막는 것으로 확인되면(미정-M11, 실환경 점검 13번) agy에는 hook 없이 설치한다(G2가 먼저다) | **확정**(2026-11-14, 묶음 0b의 결과) | grok의 lead 세션은 세션 시작 안내가 모델에게 닿지 않고, agy의 IDE·데스크톱 앱에서는 hook이 돌지 않는다. 그런 세션을 lead로 쓰는 레포는 게이트가 줄어든다. 전환한 뒤에 알게 되면 되돌리기가 번거롭다 |
 | H12 | 병렬 진행의 기본값과 이행 | `parallel`의 기본은 `on`(권장)이다. `migrate`는 1.24.0의 `lite`·`standard`·`full`을 `on`으로, `off`를 `off`로 옮긴다. 키가 없던 레포(1.24.0에서 실제로는 `off`로 돌았다)도 `on`으로 옮기고 보고서에 그 사실을 낸다. `ultra`(Claude Code worker를 울트라코드로 띄운다)는 사람이 `fullops.toml`에 직접 적을 때만 켜진다. worker의 울트라코드는 spec의 키워드가 아니라 실행 인자로 켠다(8.15절) | 방향은 **확정**(레포 주인, 2026-11-14). `lite`와 누락을 `on`으로 옮기는 것, `ultra`의 방식은 열림 | 설정 값은 한 줄로 되돌리지만 쓴 사용량은 되돌릴 수 없다. `lite`를 일부러 고른 레포는 전환 뒤 서브에이전트 사용이 늘어난다. 키가 없어 꺼진 채 돌던 레포는 전환 뒤 처음으로 서브에이전트를 쓰게 된다. `ultra`는 worker가 auto 모드나 bypass로 뜨지 않으면 Workflow 승인 창에서 멈춘다(8.15절) |
 | H13 | `install`이 grok의 전역 hook 폴더에 fullops 전용 등록 파일을 쓰는 것 | 쓴다(`<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`). 계획과 결과에 경로를 보여 주고 `install --remove-hooks`가 지운다. 있는 설정 파일은 고치지 않는다 | 열림 | 지우기는 쉽다. 여기 적는 이유는 "호스트 설정을 대신 바꾸지 않는다"(2.3절)의 하나뿐인 예외이고, 플러그인을 지워도 이 파일이 남아 hook이 계속 돌기 때문이다 |
-| H14 | Orca 패널 플러그인의 id·버전과 배포 자리 | id `fullops-panel`, version `2.0.0`(설치 ID는 `<저장소 주인>.fullops-panel`이 된다). 이 저장소의 `panel/` 하위 폴더로 배포한다(Orca 카탈로그는 하위 경로를 받는다). 매니페스트에 `repository`는 넣지 않았다(H3이 열려 있다) | 열림(묶음 H가 정한 기본안) | 카탈로그에 올린 플러그인 id는 바꾸기 어렵다. 사용자가 승인한 지문이 id에 묶인다 |
+| H14 | Orca 패널 플러그인의 id·버전과 배포 자리 | id `fullops-panel`, version `2.0.0`, 설치 키 `tourbut.fullops-panel`. 이 저장소 루트의 Orca 카탈로그 `orca-catalog.json`(카탈로그 v2, `source {kind: "git", url: "https://github.com/tourbut/fullops.git", ref: "main", path: "panel"}`)로 배포한다. Orca의 git 직접 설치(`orca plugin install tourbut/fullops`)는 저장소 루트만 읽어 하위 폴더를 설치하지 못하기 때문이다. 패널 버전은 태그가 아니라 카탈로그 releases 항목의 커밋 SHA로 가리킨다(본체 태그 `v<버전>`과 겹치지 않게). 항목은 릴리스 워크플로가 `cargo xtask orca-catalog --root .`로 `orca plugin release-entry panel`과 같은 규칙으로 만들어 릴리스 PR에 싣고, 첫 릴리스 때 파일이 생긴다(`docs/build.md` '릴리스 워크플로'). 사용자는 `orca plugin catalog add tourbut/fullops` 뒤 `orca plugin install tourbut.fullops-panel`을 하고 Orca가 보여 주는 `--approve` 명령으로 승인한다. npx 실행기는 이 명령을 안내만 한다 | **확정**(2026-11-15, 레포 주인. Orca 안에서의 패널 실환경 점검(M4)은 남았다) | 카탈로그에 올린 플러그인 id는 바꾸기 어렵다. 사용자가 승인한 지문이 id에 묶인다 |
 | H15 | `LICENSE`와 매니페스트의 `license`·`repository` | 저장소에 `LICENSE` 파일이 없다. 있으면 `xtask dist`가 패키지에 싣는다. 매니페스트에 `license` 값을 넣지 않았고 `plugin/plugin.json`의 `repository`는 `https://github.com/tourbut/fullops`다 | 열림 | 배포한 패키지의 라이선스 표기는 이미 받은 사용자에게서 되돌릴 수 없다 |
-| H16 | `xtask dist`의 산출물과 카탈로그를 어느 브랜치에 두는가 | 기본 루트로 돌리면 저장소 루트에 `dist/`와 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`)이 생긴다. 지금은 저장소에 넣지 않았다. 개발 브랜치의 `.gitignore`에 `/dist/`를 넣고 카탈로그와 통합 패키지는 H3의 배포 전용 브랜치(또는 저장소)에만 커밋하는 것이 기본안이다 | 열림(H3과 함께 정한다) | 바이너리가 든 커밋은 저장소 이력에서 지울 수 없다. 카탈로그의 자리는 사용자가 등록한 마켓플레이스 출처가 된다 |
+| H16 | `xtask dist`의 산출물과 카탈로그를 어느 브랜치에 두는가 | main. 릴리스 커밋만 `dist/native/fullops`와 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`)을 바꾸고 개발 커밋은 건드리지 않는다. `xtask dist`의 기본 루트를 `target/dist`로 두어 개발 중에는 저장소 루트에 생기지 않게 하고, 릴리스 때만 `--root .`을 준다. `.gitignore`는 `/dist/directory/`만 막는다(10.5절, `docs/build.md` '릴리스 워크플로') | **확정**(2026-11-15, 레포 주인) | 바이너리가 든 커밋은 저장소 이력에서 지울 수 없다. 카탈로그의 자리는 사용자가 등록한 마켓플레이스 출처가 된다 |
 | H17 | Windows의 프로세스 트리 종료를 Job Object로 할 것인가 | 지금은 `taskkill /T /F /PID`다(8.11절 8번). Job Object를 쓰려면 unsafe FFI 또는 `windows-sys` 크레이트가 필요하다(지금 방침은 unsafe 금지, 새 크레이트 금지). 허용하면 `proc.rs`의 `kill_tree` Windows 쪽만 바뀐다 | 열림 | 되돌리기는 쉽다. 여기 적는 이유는 'unsafe 없음'과 의존 크레이트 방침을 바꾸는 결정이고, 그대로 두면 타임아웃 뒤 남은 손자 프로세스(시험 러너, 개발 서버)가 사용자 PC에 남을 수 있기 때문이다 |
 | H18 | `migrate --rollback`이 `fullops.toml`을 `fullops.toml.rolled-back`으로 바꾸는 것 | 바꾼다(13.3절). 처음 설계는 그대로 남겨 둔다고 했지만, 남기면 두 판의 hook이 함께 돌아 Python판이 바로 돌지 않는다 | 열림(묶음 F가 정한 기본안) | 되돌린 뒤 다시 전환하려면 `migrate --from-python`을 다시 돌려야 한다(이름을 손으로 되돌리면 그 사이 Python판이 바꾼 상태와 어긋난다). 활성 표식의 유무가 두 판의 hook 동작을 가른다 |
 | H19 | 타입으로 읽히지 않는 `state.json`의 처리와 문구 | 손으로 고친 타입 오류라도 '새 형식(설치본이 낡음)'으로 거절하고 옮기지 않는다(6.5절). 데이터를 잃지 않는 쪽이다 | 열림(검증 뒤 수정의 기본안) | 문구를 '읽을 수 없는 값'으로 나누지 않으면 사람이 설치본을 의심하며 헤맨다. 옮기는 쪽으로 바꾸면 열린 결정·보류를 잃을 수 있다 |
@@ -3666,5 +3702,5 @@ Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 - 시험: `cargo build --all-targets`와 두 타깃(`aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`)의 `cargo check --all-targets`가 경고 없이 통과하고, `cargo test --no-fail-fast`가 실패 0으로 통과한다(오래 걸리는 시험 2개는 원래부터 ignore다).
 - 성능 측정(12.4절의 성능 표, 미정-M9)은 조용한 PC에서 다시 재야 한다.
 - 확인되지 않은 것: 실제 호스트 CLI(Claude Code, Codex, grok, agy)와 실제 Orca에서의 실행은 한 번도 하지 않았다(시험과 비교는 testkit의 가짜 실행 파일로만 했다). 호스트 hook·Orca CLI의 계약은 문서·도움말·설치본의 코드로 확인한 것이고 실제 세션으로 확인하지 않았다(16절 M1~M5, M10~M13). macOS와 Linux에서는 실행하지 않았다(두 타깃의 `cargo check`만 통과했다). 실제 Jev 엔드포인트도 부르지 않았다. 패널의 `orca plugin validate`·`check`와 Orca 안의 화면도 확인하지 않았다(미리보기 캡처와 `node --test`만 했다). 남은 확인은 12.4절의 실환경 점검과 16절에 있다.
-- 전환(13.4절)은 실환경 점검 뒤 사람 승인을 받아서 한다. 17절의 열린 결정(H14~H28 포함)도 그 전에 정한다.
+- 전환(13.4절)은 실환경 점검 뒤 사람 승인을 받아서 한다. 17절의 열린 결정(H15, H17~H28 등)도 그 전에 정한다.
 - 구현 묶음이 설계의 빈 곳을 정한 것은 `docs/design-changes.md` 7절에, 통합과 검증 뒤 수정이 정한 것은 8절에 건별로 있다.

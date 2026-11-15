@@ -1,0 +1,44 @@
+# 빌드와 시험(docs/build.md '개발 빌드와 시험'). 릴리스 워크플로가 먼저 이것을 부른다.
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # Windows 기본 셸(pwsh)은 여러 줄 중 마지막 명령의 실패만 본다
+    shell: bash
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'windows-latest' && 'aarch64-apple-darwin,x86_64-unknown-linux-gnu' || '' }}
+      - name: 빌드
+        run: cargo build --all-targets
+      - name: 시험
+        run: cargo test --no-fail-fast
+      - name: 교차 검사
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo check --all-targets --target aarch64-apple-darwin
+          cargo check --all-targets --target x86_64-unknown-linux-gnu
+      - name: npx 실행기 시험
+        # 실행기는 OS마다 고르는 바이너리와 실행 비트가 달라 세 OS에서 돈다
+        run: node --test npx/fullops.test.cjs
+      - name: 패널 시험
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: panel
+        run: node --test

@@ -14,7 +14,7 @@ FullOps는 레포마다 켠다. 활성 표식은 `.fullops-squad/fullops.toml`�
 1. `fullops install --check`로 이 PC의 호스트마다 플러그인·의존 플러그인·사용자 스킬·설치 기록을 확인한다. 아무것도 설치하지 않는 명령이다. 빠진 것이 있으면 종료 코드가 2다.
 2. 빠진 것이 있으면 사용자에게 알리고 승인을 받은 뒤 `fullops install`을 실행한다. 고정 위치 실행본이 아직 없는 첫 설치에서는 플러그인 폴더의 실행본으로 실행한다: `<플러그인 폴더>/bin/fullops install`. Windows에서는 `<플러그인 폴더>\bin\fullops.exe install`이다. 무엇을 부를지 먼저 보려면 `--dry-run`을 붙인다.
 3. `fullops install`은 호스트 CLI의 설치 명령만 부른다. 신뢰는 사람이 한다. Codex는 세션에서 `/hooks`로 fullops hook을 한 번 신뢰한다. grok은 원본 레포의 폴더를 신뢰한다(`/hooks-trust`). agy는 다시 시작한다. 이 단계를 대신 하지 않고 사용자에게 알린다.
-4. `fullops doctor`로 실행본, git·orca·curl, 호스트, 의존, hook 등록을 본다. 알림이 있으면 그 줄이 적은 명령을 따른다.
+4. `fullops doctor`로 실행본, git·orca·curl, 호스트, 의존, hook 등록을 본다. 알림이 있으면 그 줄이 적은 명령을 따른다. 단 '다른 홈' 행은 사용자에게 알리기만 하고 그 홈에 설치하지 않는다(설치는 사람이 정한다).
 
 ## 1. 구성 정하기
 

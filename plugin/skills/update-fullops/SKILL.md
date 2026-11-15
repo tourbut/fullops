@@ -16,7 +16,7 @@ description: 사용자가 FullOps 업데이트 또는 활성 레포에서 update
    - Codex: hook 등록 문자열이 바뀐 갱신 뒤에는 사용자가 `/hooks`에서 fullops hook을 다시 신뢰해야 hook이 돈다. 새 세션에서 이어 간다.
    - grok: 새 세션에서 이어 간다. hook은 전역 등록 파일이 고정 위치 실행본을 부르므로 실행본만 갱신되면 된다.
    - agy: agy를 다시 시작한다. agy의 hook은 agy가 복사해 간 패키지의 실행본을 쓰므로 `fullops install`을 다시 하기 전에는 옛 버전으로 돈다.
-4. `fullops install --check`와 `fullops doctor`로 빠진 것과 낡은 것이 없는지 본다.
+4. `fullops install --check`와 `fullops doctor`로 빠진 것과 낡은 것이 없는지 본다. `doctor`의 '다른 홈' 행은 사용자에게 알리기만 하고 그 홈에 설치하지 않는다(설치는 사람이 정한다).
 5. 레포 적용: `fullops upgrade`를 실행한다. `applied_version` 이후의 릴리스 노트와 필수 적용 검사의 결과가 나온다. 이 명령은 레포를 고치지 않는다.
 6. 필수 적용 항목은 모두 적용한다. 해당 없음이나 보류로 분류해 넘기지 않는다. 적용할 수 없으면 멈추고 사유를 사용자에게 보고한다. 릴리스 노트의 나머지 항목은 오래된 것부터 읽고 이 레포에 적용, 해당 없음, 보류로 나눠 적용할 수 있는 것을 수행한다. 없는 템플릿 파일은 `fullops init`을 기존 역할로 다시 실행해 더한다(있는 파일은 고치지 않는다).
 7. `.fullops-squad/docs/exec-plans/phases/FULLOPS-UPDATE-<대상 버전>.md`에 갱신 전 버전, 레포 적용 버전, 대상 버전, 릴리스별 판정과 근거, 바꾼 파일, 검증, 보류의 담당과 재개 조건을 적는다.

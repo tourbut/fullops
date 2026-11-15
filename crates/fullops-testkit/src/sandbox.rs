@@ -93,17 +93,19 @@ impl Setup {
 /// 시험이 쓰는 최소 `PLANS.md`. 열과 절 제목은 1.24.0 템플릿과 같다.
 pub const PLANS: &str = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n\n## 위임 범위\n\n";
 
-/// 바이너리 폴더. `FULLOPS_TESTKIT_BIN_DIR`이 있으면 그 폴더이고, 없으면 실행 파일의 폴더(`deps/` 아래면 그 위)다.
+/// 바이너리 폴더. `FULLOPS_TESTKIT_BIN_DIR`이 있으면 그 폴더이고, 없으면 실행 파일 위쪽의 프로필 폴더(`debug`·`release`)다.
+/// 시험 실행 파일은 cargo 버전에 따라 `<프로필>/deps/`에도, `<프로필>/build/<패키지>/<해시>/out/`에도 놓인다.
 fn bin_path(name: &str) -> PathBuf {
     let dir = match std::env::var_os("FULLOPS_TESTKIT_BIN_DIR") {
         Some(dir) => PathBuf::from(dir),
         None => {
             let exe = std::env::current_exe().expect("시험 실행 파일 경로");
             let dir = exe.parent().expect("실행 파일의 폴더");
-            let in_deps = dir.file_name().is_some_and(|name| name == "deps");
-            in_deps
-                .then(|| dir.parent())
-                .flatten()
+            dir.ancestors()
+                .find(|a| {
+                    a.file_name()
+                        .is_some_and(|n| n == "debug" || n == "release")
+                })
                 .unwrap_or(dir)
                 .to_path_buf()
         }
@@ -325,6 +327,8 @@ impl Sandbox {
             .env("FAKE_CURL_DIR", &self.curl_dir)
             .env("HOME", &self.home)
             .env("USERPROFILE", &self.home)
+            // doctor가 Orca의 Codex 홈·Claude 프로필을 이 아래에서 찾는다(이 PC의 Orca 폴더를 보지 않게 한다)
+            .env("APPDATA", self.home.join("AppData").join("Roaming"))
             .env("GIT_CONFIG_GLOBAL", self.home.join(".gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_TERMINAL_PROMPT", "0")

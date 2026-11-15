@@ -7,7 +7,7 @@
 //! - `FULLOPS_PY_BASELINE`이 있으면 py 구동기가 같은 입력으로 1.24.0의 hook 명령을 돌린 값을 나란히 적는다.
 //! - `--check`는 p95가 2.2절 목표의 두 배를 넘으면 실패한다(CI용).
 
-use crate::compare::{rerun_in_deps, workspace};
+use crate::compare::workspace;
 use fullops_core::model::{ArchiveLine, State, Turn};
 use fullops_store::{Repo, discover};
 use fullops_testkit::host_shapes::{Event, HookCall, Tool, hook_call, verdict_of};
@@ -544,9 +544,6 @@ pub fn run_bench(runs: usize, py_runs: usize, check: bool) -> Result<(), String>
 }
 
 pub fn run(args: &[String]) -> Result<(), String> {
-    if rerun_in_deps("bench", args)? {
-        return Ok(());
-    }
     let (mut runs, mut py_runs, mut check) = (300, 30, false);
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {

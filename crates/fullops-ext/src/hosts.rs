@@ -1,7 +1,7 @@
 //! 호스트 CLI 조회와 스킬 설치 도구 호출(설계 9.5절). `fullops install`과 `doctor`만 부른다. 묶음 F의 파일이다.
 //! `skill_roots`는 뼈대의 완성본이다(S-06과 `install --check`가 함께 쓴다).
 //! 호스트 CLI의 어떤 하위 명령에도 `--help`를 붙여 부르지 않는다(agy의 `plugin` 하위 명령은 `--help`를 인자 값으로 받아 실제로 동작한다).
-//! 부르는 명령은 `fullops_core::deps::HOST_COMMANDS`의 표와 `<실행 파일> --version`뿐이다.
+//! 부르는 명령은 `fullops_core::deps::HOST_COMMANDS`의 표와 `<실행 파일> --version`, 그리고 `run_argv`로 넘긴 grok 제거 명령뿐이다.
 
 use crate::proc::{ProcResult, ProcStatus, run};
 use fullops_core::deps::{Step, host_commands};
@@ -116,8 +116,8 @@ pub fn host_marketplaces(host: HostId) -> Known<BTreeMap<String, String>> {
     Known::Yes(out)
 }
 
-/// 설치돼 켜져 있는 플러그인 id(`<이름>@<마켓플레이스>`. 마켓플레이스 없이 설치한 것은 이름만).
-pub fn host_plugins(host: HostId) -> Known<Vec<String>> {
+/// 설치된 플러그인 `(id, 켜짐)`. id는 `<이름>@<마켓플레이스>`, 마켓플레이스 없이 설치한 것은 이름만.
+pub fn host_plugins(host: HostId) -> Known<Vec<(String, bool)>> {
     let json = match host_json(host, host_commands(host).plugin_list) {
         Known::Yes(json) => json,
         Known::Unknown(why) => return Known::Unknown(why),
@@ -133,9 +133,8 @@ pub fn host_plugins(host: HostId) -> Known<Vec<String>> {
     };
     let mut out = Vec::new();
     for item in items {
-        if item["enabled"] == Value::Bool(false) {
-            continue;
-        }
+        // 꺼진 것도 돌려준다: doctor가 꺼진 Python판 플러그인도 잔재로 알린다
+        let enabled = item["enabled"] != Value::Bool(false);
         let with_market = |name: &str, market: Option<&str>| match market {
             Some(market) => format!("{name}@{market}"),
             None => name.to_string(),
@@ -151,7 +150,7 @@ pub fn host_plugins(host: HostId) -> Known<Vec<String>> {
             HostId::Agy => text(item, &["name"]).map(str::to_string),
         };
         match id {
-            Some(id) => out.push(id),
+            Some(id) => out.push((id, enabled)),
             None => return Known::Unknown("format"),
         }
     }
@@ -198,6 +197,11 @@ pub fn skill_roots(host: HostId) -> Vec<PathBuf> {
 /// 계획의 명령 하나를 실행한다(`Assemble`·`HookFile`은 넘기지 않는다). 실행 파일은 PATH에서 찾은 전체 경로로 띄운다.
 pub fn run_step(step: &Step, timeout: Duration) -> ProcResult {
     run_found(&step.argv, timeout)
+}
+
+/// 표 밖의 호스트 명령 하나. `install --retire-python`이 계약 문서에서 확인한 grok 제거 명령에만 쓴다.
+pub fn run_argv(argv: &[String], timeout: Duration) -> ProcResult {
+    run_found(argv, timeout)
 }
 
 #[cfg(test)]

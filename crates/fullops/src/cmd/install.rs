@@ -45,7 +45,7 @@ pub(super) fn package_version(root: Option<&Path>) -> String {
 }
 
 /// 플러그인 루트에서 이 OS·CPU에 맞는 바이너리(설계 10.4절의 배치).
-fn platform_binary(root: &Path) -> Option<PathBuf> {
+pub fn platform_binary(root: &Path) -> Option<PathBuf> {
     let name = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", _) => "fullops.exe",
         ("macos", "aarch64") => "fullops-darwin-arm64",
@@ -94,6 +94,72 @@ pub struct Runtime {
     pub copied: bool,
 }
 
+/// 통합 패키지(`hosts/`가 있는 플러그인 루트)를 보관할 자리 `~/.fullops/package/<버전>/source`. 디렉터리판이면 `None`.
+fn kept_source(root: &Path) -> io::Result<Option<PathBuf>> {
+    if !root.join("hosts").is_dir() {
+        return Ok(None);
+    }
+    let version = package_version(Some(root));
+    Ok(Some(
+        fullops_home()?.join("package").join(version).join("source"),
+    ))
+}
+
+/// 통합 패키지를 보관 자리로 복사한다. npx 캐시처럼 지워질 수 있는 폴더를 `install.json`의 `source`로 남기지 않게 한다.
+/// 이미 같은 내용이면 건너뛴다. 디렉터리판은 사람이 둔 폴더에서 그대로 돌므로 복사하지 않고 그 자리를 적는다.
+fn keep_source(root: &Path) -> io::Result<PathBuf> {
+    let Some(target) = kept_source(root)? else {
+        return std::path::absolute(root);
+    };
+    if same_file(root, &target)
+        || (target.is_dir() && folder_sha256(&target)? == folder_sha256(root)?)
+    {
+        return Ok(target);
+    }
+    let parent = target
+        .parent()
+        .ok_or_else(|| io::Error::other("보관할 자리가 없습니다"))?;
+    std::fs::create_dir_all(parent)?;
+    let staging = parent.join(format!("source.new-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    let old = parent.join(format!("source.old-{}", fullops_store::now()));
+    copy_tree(root, &staging)
+        .and_then(|()| swap_in(&staging, &target, &old))
+        .inspect_err(|_| {
+            let _ = std::fs::remove_dir_all(&staging);
+        })?;
+    Ok(target)
+}
+
+/// 낮은 버전으로 바꾸려는 실행본 단계의 거절(설계 10.3절). 고정 위치 실행본이 없거나 버전을 읽지 못하면 거절하지 않는다.
+fn downgrade(root: Option<&Path>) -> io::Result<Option<fullops_core::model::Refusal>> {
+    let fixed = fixed_bin()?;
+    // 플러그인 루트 없이 고정 위치 실행본으로 돌리면 기록의 버전을 잇는다(바꾸지 않는다)
+    if !fixed.exists() || (root.is_none() && same_file(&std::env::current_exe()?, &fixed)) {
+        return Ok(None);
+    }
+    let record: Value = fullops_store::read_json(&fullops_home()?.join("install.json"))
+        .yes()
+        .flatten()
+        .unwrap_or(Value::Null);
+    let Some(installed) = record["version"].as_str() else {
+        return Ok(None);
+    };
+    let incoming = package_version(root);
+    let lower = matches!(
+        (crate::hook::version(&incoming), crate::hook::version(installed)),
+        (Some(new), Some(old)) if new < old
+    );
+    Ok(lower.then(|| fullops_core::model::Refusal {
+        rule: "install",
+        reason: format!(
+            "설치된 실행본({installed})보다 낮은 버전({incoming})으로 바꾸지 않는다."
+        ),
+        escape: "새 버전의 배포본으로 다시 설치한다. 일부러 낮추려면 `fullops install --allow-downgrade`, 바로 앞 실행본으로 되돌리려면 `fullops install --rollback`".into(),
+        exit: EXIT_REFUSED,
+    }))
+}
+
 /// 실행본 단계(설계 10.3절): 실행본과 `deps.toml`을 고정 위치에 두고 `install.json`을 쓴다.
 /// `install --only runtime`과 S-04의 자동 설치가 함께 쓴다. 실행 중인 hook은 이름이 바뀐 옛 파일로 끝까지 돈다.
 pub fn runtime_stage(plugin_root: Option<&Path>) -> io::Result<Runtime> {
@@ -108,6 +174,11 @@ pub fn runtime_stage(plugin_root: Option<&Path>) -> io::Result<Runtime> {
         .yes()
         .flatten()
         .unwrap_or(Value::Null);
+    // 실행본을 바꾸기 전에 보관한다: 보관에 실패하면 실행본과 기록이 어긋나지 않게 아무것도 바꾸지 않는다
+    let source_text = match plugin_root {
+        Some(root) => json!(path_text(&keep_source(root)?)),
+        None => before["source"].clone(),
+    };
     let copied = !same_file(&source, &fixed);
     if copied {
         let bin_dir = fixed.parent().unwrap_or(&home);
@@ -132,10 +203,6 @@ pub fn runtime_stage(plugin_root: Option<&Path>) -> io::Result<Runtime> {
             .as_str()
             .map_or_else(|| package_version(None), str::to_string),
         None => package_version(None),
-    };
-    let source_text = match plugin_root {
-        Some(root) => json!(path_text(&std::path::absolute(root)?)),
-        None => before["source"].clone(),
     };
     let previous = if copied {
         before["version"].clone()
@@ -250,36 +317,170 @@ fn skills_at_risk(root: &Path, names: &[&str]) -> Vec<PathBuf> {
         .collect()
 }
 
+/// 스킬 백업 폴더 안에 원래 자리를 적는 파일. 되살릴 때는 복사하지 않는다.
+const ORIGIN_FILE: &str = ".fullops-origin.json";
+
+fn hash12(hash: &str) -> &str {
+    hash.get(..12).unwrap_or(hash)
+}
+
+/// 스킬 폴더 하나를 `<backups>/<호스트>/<이름>/<앞 12자>/`에 한 번만 복사하고 원래 자리를 `ORIGIN_FILE`에 더한다.
+fn backup_skill(backups: &Path, host: &str, dir: &Path) -> io::Result<()> {
+    let Some(name) = dir.file_name() else {
+        return Ok(());
+    };
+    let hash = folder_sha256(dir)?;
+    let target = backups.join(host).join(name).join(hash12(&hash));
+    let origin = path_text(dir);
+    if target.exists() {
+        let meta = target.join(ORIGIN_FILE);
+        // 원래 자리 기록이 없는 옛 백업에는 덧붙이지 않는다(그때의 자리를 모른다)
+        let Some(mut record) = fullops_store::read_json::<Value>(&meta).yes().flatten() else {
+            return Ok(());
+        };
+        if let Some(list) = record["origins"].as_array_mut()
+            && !list.iter().any(|o| o.as_str() == Some(origin.as_str()))
+        {
+            list.push(json!(origin));
+            fullops_store::write_json(&meta, &record)?;
+        }
+        return Ok(());
+    }
+    // 반쯤 복사된 폴더가 온전한 백업으로 보이지 않게 새 폴더에 복사한 뒤 이름을 바꾼다
+    let staging = target.with_extension(format!("new-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    copy_tree(dir, &staging)
+        .and_then(|()| {
+            fullops_store::write_json(
+                &staging.join(ORIGIN_FILE),
+                &json!({"origins": [origin], "at": fullops_store::now()}),
+            )
+        })
+        .and_then(|()| std::fs::rename(&staging, &target))
+        .inspect_err(|_| {
+            let _ = std::fs::remove_dir_all(&staging);
+        })
+}
+
 /// 다시 설치하기 전에 있던 스킬 폴더를 `~/.fullops/skill-backups/<호스트>/<이름>/<앞 12자>/`에 한 번만 복사한다.
 fn backup_skills(step: &Step) -> io::Result<()> {
     let backups = fullops_home()?.join("skill-backups");
     let names = skill_names(step);
     for &host in &step.hosts {
         for root in hosts::skill_roots(host) {
-            for dir in skills_at_risk(&root, &names) {
-                let Some(name) = dir.file_name().filter(|_| dir.is_dir()) else {
-                    continue;
-                };
-                let hash = folder_sha256(&dir)?;
-                let target = backups
-                    .join(host.as_str())
-                    .join(name)
-                    .join(hash.get(..12).unwrap_or(&hash));
-                if target.exists() {
-                    continue;
-                }
-                // 반쯤 복사된 폴더가 온전한 백업으로 보이지 않게 새 폴더에 복사한 뒤 이름을 바꾼다
-                let staging = target.with_extension(format!("new-{}", std::process::id()));
-                let _ = std::fs::remove_dir_all(&staging);
-                copy_tree(&dir, &staging)
-                    .and_then(|()| std::fs::rename(&staging, &target))
-                    .inspect_err(|_| {
-                        let _ = std::fs::remove_dir_all(&staging);
-                    })?;
+            for dir in skills_at_risk(&root, &names)
+                .into_iter()
+                .filter(|d| d.is_dir())
+            {
+                backup_skill(&backups, host.as_str(), &dir)?;
             }
         }
     }
     Ok(())
+}
+
+/// `--restore-skills`(설계 10.3절): 원래 자리가 적힌 백업 가운데 가장 먼저 남긴 것을 그 자리로 되돌린다.
+/// 기본은 계획만 낸다. `--apply`면 지금 있는 폴더를 먼저 백업한 뒤 바꾼다(되돌림도 되돌릴 수 있다).
+fn restore_skills(ctx: &Ctx, apply: bool) -> Result<u8, CliError> {
+    let backups = fullops_home()?.join("skill-backups");
+    let dirs = |dir: &Path| -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        out.sort();
+        out
+    };
+    // 원래 자리 → (백업 시각, 호스트, 백업 폴더). 같은 자리에 여럿이면 가장 먼저 남긴 것
+    let mut chosen: BTreeMap<String, (i64, String, PathBuf)> = BTreeMap::new();
+    let mut unknown = Vec::new();
+    for host_dir in dirs(&backups) {
+        let host = host_dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        for copy in dirs(&host_dir).iter().flat_map(|name| dirs(name)) {
+            if copy.to_string_lossy().contains(".new-") {
+                continue;
+            }
+            let record = fullops_store::read_json::<Value>(&copy.join(ORIGIN_FILE))
+                .yes()
+                .flatten();
+            let Some(record) = record.filter(|r| r["origins"].is_array()) else {
+                unknown.push(path_text(&copy));
+                continue;
+            };
+            let at = record["at"].as_i64().unwrap_or(0);
+            for origin in record["origins"].as_array().into_iter().flatten() {
+                let Some(origin) = origin.as_str() else {
+                    continue;
+                };
+                if chosen.get(origin).is_none_or(|(old, _, _)| at < *old) {
+                    chosen.insert(origin.to_string(), (at, host.clone(), copy.clone()));
+                }
+            }
+        }
+    }
+    let mut lines = Vec::new();
+    let mut planned = Vec::new();
+    for (origin, (_, host, copy)) in &chosen {
+        let place = Path::new(origin);
+        let same = place.is_dir()
+            && folder_sha256(place).is_ok_and(|h| copy.file_name() == Some(hash12(&h).as_ref()));
+        if same {
+            lines.push(format!("이미 같다: {origin}"));
+            continue;
+        }
+        lines.push(format!("되돌림: {} → {origin}", copy.display()));
+        planned.push(json!({"from": path_text(copy), "to": origin}));
+        if apply {
+            put_back(&backups, host, copy, place).map_err(|e| {
+                CliError::Internal(format!("스킬을 되돌리지 못했습니다({origin}): {e}"))
+            })?;
+        }
+    }
+    for copy in &unknown {
+        lines.push(format!("원래 자리 모름(되돌리지 않는다): {copy}"));
+    }
+    if !apply && !planned.is_empty() {
+        lines.push("계획만 냈다. 실행하려면 `fullops install --restore-skills --apply`".into());
+    }
+    if lines.is_empty() {
+        lines.push(format!("되돌릴 스킬 백업이 없다: {}", backups.display()));
+    }
+    ctx.print(
+        &lines.join("\n"),
+        json!({"apply": apply, "restore": planned, "unknown": unknown}),
+    );
+    Ok(EXIT_OK)
+}
+
+/// 백업 하나를 원래 자리에 넣는다. 지금 있는 폴더는 백업한 뒤 비운다(내용은 백업에 남는다).
+fn put_back(backups: &Path, host: &str, copy: &Path, place: &Path) -> io::Result<()> {
+    let staging = backups.join(format!(".restore-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    copy_tree(copy, &staging)?;
+    let _ = std::fs::remove_file(staging.join(ORIGIN_FILE));
+    let result = (|| {
+        if place.is_dir() {
+            backup_skill(backups, host, place)?;
+        }
+        if std::fs::symlink_metadata(place).is_ok() {
+            // 링크면 링크만 지운다(가리키던 폴더는 그대로다)
+            std::fs::remove_dir_all(place).or_else(|_| std::fs::remove_file(place))?;
+        }
+        if let Some(parent) = place.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::rename(&staging, place)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+    result
 }
 
 #[derive(Default)]
@@ -291,6 +492,11 @@ struct Args {
     prune: bool,
     rollback: bool,
     remove_hooks: bool,
+    allow_downgrade: bool,
+    restore_skills: bool,
+    /// `--restore-skills`·`--retire-python`의 실행. 없으면 계획만 낸다.
+    apply: bool,
+    retire: super::retire::Args,
 }
 
 fn parse_args(mut parser: lexopt::Parser) -> Result<Args, CliError> {
@@ -330,6 +536,22 @@ fn parse_args(mut parser: lexopt::Parser) -> Result<Args, CliError> {
             Long("prune") => args.prune = true,
             Long("rollback") => args.rollback = true,
             Long("remove-hooks") => args.remove_hooks = true,
+            Long("allow-downgrade") => args.allow_downgrade = true,
+            Long("restore-skills") => args.restore_skills = true,
+            Long("apply") => args.apply = true,
+            Long("retire-python") => args.retire.on = true,
+            Long("remove-meter") => args.retire.remove_meter = true,
+            Long("restore") => args.retire.restore = Some(parser.value()?.string()?),
+            Long("repos") => {
+                let value = parser.value()?.string()?;
+                args.retire.repos.extend(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|p| !p.is_empty())
+                        .map(PathBuf::from),
+                );
+            }
             other => return Err(other.unexpected().into()),
         }
     }
@@ -505,6 +727,12 @@ fn install(ctx: &Ctx, args: &Args) -> Result<u8, CliError> {
 
     // 1. 실행본 단계
     let mut runtime_json = Value::Null;
+    if wants("runtime")
+        && !args.allow_downgrade
+        && let Some(refusal) = downgrade(root)?
+    {
+        return Err(CliError::Refused(vec![refusal]));
+    }
     if wants("runtime") {
         let fixed = fixed_bin()?;
         if args.dry_run {
@@ -514,6 +742,9 @@ fn install(ctx: &Ctx, args: &Args) -> Result<u8, CliError> {
                 fixed.display(),
                 home.join("deps.toml").display()
             ));
+            if let Some(kept) = root.map(kept_source).transpose()?.flatten() {
+                lines.push(format!("[runtime] 배포본 보관 → {}", kept.display()));
+            }
             lines.push(format!(
                 "[runtime] 쓰기: {}",
                 home.join("install.json").display()
@@ -736,11 +967,13 @@ pub(super) struct Check {
     pub missing: Vec<String>,
     /// 선택형 항목. 안내만 한다.
     pub optional: Vec<String>,
+    /// 목록에서 본 Python판 플러그인(`<호스트>: <id>`). `doctor`의 잔재 행이 쓴다.
+    pub python: Vec<String>,
 }
 
 /// 아무것도 설치하지 않고 빠진 것을 찾는다(설계 10.3절 `--check`). 호스트 CLI에는 목록 조회만 부른다.
 pub(super) fn check(deps: &Deps, manifest_sha: &str, hosts: &[HostId]) -> Check {
-    let mut missing = Vec::new();
+    let (mut missing, mut python) = (Vec::new(), Vec::new());
     let state = fullops_store::read_deps_state().yes();
     for &host in hosts {
         // 폐쇄망에서는 호스트 CLI를 부르지 않는다(호스트 CLI가 실행될 때 네트워크를 쓸 수 있다)
@@ -749,12 +982,20 @@ pub(super) fn check(deps: &Deps, manifest_sha: &str, hosts: &[HostId]) -> Check 
         } else {
             hosts::host_plugins(host).yes()
         };
-        // 목록을 읽지 못했으면 모른다(빠졌다고 하지 않는다)
+        python.extend(
+            installed
+                .iter()
+                .flatten()
+                .filter(|(id, _)| id.split('@').next() == Some("fullops-squad"))
+                .map(|(id, _)| format!("{host}: {id}")),
+        );
+        // 목록을 읽지 못했으면 모른다(빠졌다고 하지 않는다). 꺼진 플러그인은 없는 것으로 본다
         let has = |id: &str| {
             installed.as_ref().is_none_or(|list| {
                 let name = id.split('@').next().unwrap_or(id);
-                list.iter()
-                    .any(|have| have == id || (host_commands(host).local_package && have == name))
+                list.iter().filter(|(_, on)| *on).any(|(have, _)| {
+                    have == id || (host_commands(host).local_package && have == name)
+                })
             })
         };
         let own = format!("{}@{}", deps.own.plugin, deps.own.marketplace);
@@ -806,7 +1047,11 @@ pub(super) fn check(deps: &Deps, manifest_sha: &str, hosts: &[HostId]) -> Check 
             )
         })
         .collect();
-    Check { missing, optional }
+    Check {
+        missing,
+        optional,
+        python,
+    }
 }
 
 /// grok의 hook 등록 파일이 가리키는 실행본. 파일이 없거나 읽지 못하면 `None`.
@@ -868,21 +1113,26 @@ fn old_bins(bin_dir: &Path) -> Vec<(i64, PathBuf)> {
 
 fn prune(ctx: &Ctx) -> Result<u8, CliError> {
     let home = fullops_home()?;
-    let current: Option<String> = fullops_store::read_json::<Value>(&home.join("install.json"))
+    let record: Value = fullops_store::read_json(&home.join("install.json"))
         .yes()
         .flatten()
-        .and_then(|v| v["version"].as_str().map(str::to_string));
+        .unwrap_or(Value::Null);
+    let current = record["version"].as_str();
+    // 되돌린(--rollback) 뒤에는 기록의 source가 다른 버전 폴더에 있을 수 있다. 플러그인 루트를 잃지 않게 남긴다
+    let source = record["source"].as_str().map(PathBuf::from);
     let mut doomed: Vec<PathBuf> = old_bins(&home.join("bin"))
         .into_iter()
         .map(|(_, p)| p)
         .collect();
-    doomed.push(home.join("skill-backups"));
     for version in std::fs::read_dir(home.join("package"))
         .into_iter()
         .flatten()
         .flatten()
     {
-        if Some(version.file_name().to_string_lossy().as_ref()) != current.as_deref() {
+        let holds_source = source
+            .as_ref()
+            .is_some_and(|s| s.starts_with(version.path()));
+        if Some(version.file_name().to_string_lossy().as_ref()) != current && !holds_source {
             doomed.push(version.path());
             continue;
         }
@@ -968,12 +1218,25 @@ fn remove_hooks(ctx: &Ctx) -> Result<u8, CliError> {
 pub fn run(ctx: &Ctx, parser: lexopt::Parser) -> Result<u8, CliError> {
     let args = parse_args(parser)?;
     // 지우거나 되돌리는 인자는 --dry-run·--check를 보지 않으므로 함께 주면 거절한다
-    if (args.remove_hooks || args.prune || args.rollback) && (args.dry_run || args.check) {
+    if (args.remove_hooks || args.prune || args.rollback || args.restore_skills || args.retire.on)
+        && (args.dry_run || args.check)
+    {
         return Err(CliError::Usage(
-            "--prune·--rollback·--remove-hooks는 --dry-run·--check와 함께 쓰지 않습니다(미리 보기가 없습니다).".into(),
+            "--prune·--rollback·--remove-hooks·--restore-skills·--retire-python은 --dry-run·--check와 함께 쓰지 않습니다(--restore-skills·--retire-python은 --apply가 없으면 계획만 냅니다).".into(),
         ));
     }
-    if args.remove_hooks {
+    let retire_only =
+        args.retire.restore.is_some() || !args.retire.repos.is_empty() || args.retire.remove_meter;
+    if (retire_only && !args.retire.on) || (args.apply && !args.retire.on && !args.restore_skills) {
+        return Err(CliError::Usage(
+            "--apply는 --restore-skills·--retire-python과, --repos·--restore·--remove-meter는 --retire-python과 함께 씁니다.".into(),
+        ));
+    }
+    if args.retire.on {
+        super::retire::run(ctx, &args.retire, args.apply)
+    } else if args.restore_skills {
+        restore_skills(ctx, args.apply)
+    } else if args.remove_hooks {
         remove_hooks(ctx)
     } else if args.prune {
         prune(ctx)

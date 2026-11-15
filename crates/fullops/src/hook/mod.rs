@@ -217,6 +217,15 @@ fn emit(text: &str) {
 /// 내부 기한(밀리초). 이벤트를 알기 전에는 가장 긴 값이다. `--event`가 있으면 stdin을 읽기 전에 그 이벤트의 값으로 낮춘다.
 static DEADLINE_MS: AtomicU64 = AtomicU64::new(12_000);
 
+/// S-04를 싣는 SessionStart의 내부 기한. 등록 타임아웃(`deps::HOOK_TIMEOUTS`의 SessionStart 10초)보다 짧아야 한다.
+const SELF_INSTALL_DEADLINE_MS: u64 = 9_000;
+const _: () = {
+    let (event, seconds) = fullops_core::deps::HOOK_TIMEOUTS[0];
+    assert!(
+        event.len() == "SessionStart".len() && SELF_INSTALL_DEADLINE_MS < seconds as u64 * 1000
+    );
+};
+
 fn deadline_ms(event: EventKind) -> u64 {
     match event {
         EventKind::SessionStart | EventKind::PreToolUse => 4_000,
@@ -277,7 +286,7 @@ fn watch(pass: &'static str, started: Instant) {
 }
 
 /// `a.b.c` 꼴의 버전. 읽지 못하면 `None`이다.
-fn version(text: &str) -> Option<(u64, u64, u64)> {
+pub(crate) fn version(text: &str) -> Option<(u64, u64, u64)> {
     let core = text.trim().split(['-', '+']).next()?;
     let mut parts = core.split('.').map(|p| p.parse::<u64>().ok());
     Some((parts.next()??, parts.next()??, parts.next()??))
@@ -291,7 +300,7 @@ fn plugin_root(args: &HookArgs) -> Option<PathBuf> {
         .or_else(crate::cli::plugin_root_of_exe)
 }
 
-/// S-04의 조건: 고정 위치 실행본이 없거나 플러그인 루트의 `VERSION`이 `install.json`의 `version`보다 높다.
+/// S-04의 조건: 고정 위치 실행본이 없거나, 플러그인 루트에 이 OS의 실행본이 있고 그 `VERSION`이 `install.json`의 `version`보다 높다.
 fn self_install(args: &HookArgs, root: Option<&Path>) -> bool {
     let (false, Some(root), Some(fixed)) = (args.in_place, root, fullops_store::fixed_bin()) else {
         return false;
@@ -304,6 +313,10 @@ fn self_install(args: &HookArgs, root: Option<&Path>) -> bool {
     };
     if !fixed.exists() {
         return true;
+    }
+    // 이 OS의 실행본이 없는 배포본으로는 올릴 것이 없다(있으면 실행 중인 자신을 세션마다 다시 깐다)
+    if crate::cmd::platform_binary(root).is_none() {
+        return false;
     }
     let record = fullops_store::fullops_home().and_then(|home| {
         fullops_store::read_json::<Value>(&home.join("install.json"))
@@ -416,6 +429,10 @@ fn handle(args: &HookArgs, started: Instant) -> Result<(), &'static str> {
 
     let root = plugin_root(args);
     let scene = scene(args, &repo, input.event, root.as_deref());
+    // S-04는 배포본·실행본을 복사하고 해시를 잰다. 등록 타임아웃(SessionStart 10초) 안에서 기한을 늘린다
+    if scene.self_install {
+        DEADLINE_MS.store(SELF_INSTALL_DEADLINE_MS, Ordering::Relaxed);
+    }
     let mut facts = facts_real::RealFacts::new(repo, host, &input, root);
     let Outcome {
         verdict,
