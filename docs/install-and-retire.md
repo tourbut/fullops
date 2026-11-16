@@ -96,7 +96,7 @@ Windows에서 npx를 거치지 않을 때는 `<폴더>\bin\fullops.exe install`�
 
 ### 1.5 Orca 패널 플러그인(fullops-panel) 배포·설치·갱신·제거
 
-패널: `dev/panel/orca-plugin.json` = id `fullops-panel`, version `2.0.0`, `execution: "trusted-worker"`, 권한 `workspace:read`, `engines.orca >= 1.4.256` [확인]. hook·CLI와 따로 배포한다(`panel/README.md`, design.md 14절). `fullops install`은 Orca를 건드리지 않는다.
+패널: `dev/panel/orca-plugin.json` = id `fullops-panel`, version `2.0.2`, `execution: "trusted-worker"`, 권한 `workspace:read`, `engines.orca >= 1.4.256` [확인]. hook·CLI와 따로 배포한다(`panel/README.md`, design.md 14절). `fullops install`은 Orca를 건드리지 않는다.
 
 **걸림돌** [확인: Orca 1.4.256 설치 폴더의 CLI 코드. `out/shared/plugins/installation/plugin-git-install-input.js`의 pageRef, `plugin-install-source-info.js`의 `path: null`, `out/shared/plugins/catalog/plugin-marketplace.js:60-80`]: `orca plugin install <owner/repo>`나 tree URL로 하는 직접 설치에는 하위 경로가 없다. 저장소 루트의 `orca-plugin.json`을 쓴다. `…/tree/main/panel`은 ref `main/panel`로 읽힌다. 하위 폴더는 카탈로그 v2의 `source.path`로만 지정한다. 그래서 `orca plugin install tourbut/fullops`로는 패널이 설치되지 않는다 [추정: 설치 본체는 압축 번들이라 읽지 못했고, CLI·공유 코드에서 미루어 봤다].
 
