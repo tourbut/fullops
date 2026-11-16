@@ -1838,7 +1838,8 @@ fn doctor_reports_python_leftovers_and_other_homes() {
     assert_eq!(python.matches("fullops-deps.json").count(), 2, "{python}");
     let homes = row("다른 홈");
     // 지금 환경의 홈(프로필 p1, ~/.codex)은 빼고, ~/.claude와 Orca Codex 홈을 그 환경 변수로 안내한다
-    assert!(!homes.contains("p1"), "{homes}");
+    // 임시 폴더 이름에 `p1`이 끼일 수 있어(macOS `/var/folders/q2/p1…`) 프로필 경로 조각으로 본다
+    assert!(!homes.contains("claude-profiles"), "{homes}");
     assert!(
         homes.contains("`CLAUDE_CONFIG_DIR`") && homes.contains("--hosts claude"),
         "{homes}"
