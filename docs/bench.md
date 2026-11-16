@@ -160,3 +160,36 @@ export FULLOPS_PY_BASELINE="<py-baseline 사본의 루트>"
 | cli_status | 종료 코드 1 | 14.7ms | 17.1ms | 41.7ms | - | 0 | 0 | 0 | - | - | - | - | - | - |
 
 표를 읽는 법: `p50`·`p95`·`최대`는 `rs`(새 판)의 값이다. `목표 p95`는 2.2절의 값이고 `-`는 목표가 없는 입력이다. `git`·`orca`·`쓰기`는 그 호출 한 번에 `fullops`가 띄운 git 프로세스 수, Orca 호출 수, 바뀐 상태 파일 수다. `py`로 시작하는 열은 1.24.0이다. `py 본 것`이 `deny`인 두 입력은 PreToolUse가 거부해 PostToolUse가 돌지 않았다(프로세스 1개).
+
+### 4.3 macOS 측정(2026-11-16)
+
+`tourbut/dev`의 `ac1fe92`(2.0.1)를 실제 Mac에서, 다른 빌드가 돌지 않는 상태에서 잰 값이다. 1.24.0 기준선은 이 Mac에 없어 `py` 열은 비어 있다.
+
+- 명령: `cargo run --release -p xtask -- bench`(기본 횟수, `FULLOPS_PY_BASELINE` 없음). `--py-runs 0`은 `--py-runs에 횟수가 필요합니다`로 거절된다. 기준선 변수가 없으면 횟수와 상관없이 py 측정을 건너뛰므로 인자를 빼면 된다.
+- PC: Apple M2(논리 코어 8개), RAM 8GB, macOS 27.2.1(26B131). 도구: git 2.54.0(Apple Git-157), rustc 1.100.0.
+- 같은 때 프로세스 바닥값(60회, p50/p95): `/usr/bin/true` 2.0/2.4ms, `git --version` 12.1/12.8ms, `fullops --version` 4.4/4.8ms.
+
+| 입력 | 본 것 | p50 | p95 | 최대 | 목표 p95 | git | orca | 쓰기 |
+|---|---|---|---|---|---|---|---|---|
+| inactive | pass | 2.1ms | 2.2ms | 2.6ms | 15ms | 0 | 0 | 0 |
+| pre_bash | pass | 2.2ms | 2.6ms | 3.3ms | 30ms | 0 | 0 | 1 |
+| pre_edit | pass | 2.3ms | 2.5ms | 3.1ms | 30ms | 0 | 0 | 1 |
+| pre_inbox_edit | pass | 2.3ms | 2.5ms | 2.6ms | 80ms | 0 | 0 | 0 |
+| pre_worker_start | deny | 2.3ms | 2.5ms | 3.6ms | 80ms | 0 | 0 | 1 |
+| pre_git_commit | pass | 11.6ms | 12.8ms | 14.7ms | 80ms | 1 | 0 | 0 |
+| stop_lead_clean | pass | 14.3ms | 15.4ms | 16.4ms | 150ms | 1 | 0 | 1 |
+| stop_lead_pending10 | block | 190.4ms | 209.7ms | 257.7ms | - | 21 | 0 | 2 |
+| stop_lead_ready | block | 18.4ms | 20.3ms | 23.3ms | - | 1 | 0 | 2 |
+| stop_lead_open_run | block | 15.4ms | 17.4ms | 26.0ms | - | 1 | 0 | 2 |
+| stop_worker | block | 46.1ms | 56.4ms | 64.5ms | - | 4 | 1 | 3 |
+| session_start_lead | context | 10.2ms | 16.6ms | 20.1ms | 250ms | 0 | 0 | 1 |
+| session_start_worker | context | 8.9ms | 11.8ms | 15.6ms | 250ms | 0 | 0 | 1 |
+| cli_rules | 종료 코드 0 | 9.1ms | 12.3ms | 23.8ms | - | 0 | 0 | 0 |
+| cli_status | 종료 코드 0 | 116.4ms | 150.2ms | 288.1ms | - | 0 | 0 | 2 |
+
+읽을 것:
+- 목표가 있는 입력은 모두 목표 안이다. `inactive`도 p95 2.2ms로 목표 15ms 안이다. Windows에서 목표를 넘은 것은 그 PC의 프로세스 바닥값(20~22ms) 때문이었다는 4.1절의 판단과 맞다.
+- 판정, git 수, Orca 수, 쓰기 수는 4.1절(Windows)과 모두 같다. 경로가 같고 시간만 다르다.
+- hook 내부 기한(SessionStart·PreToolUse 4,000ms, UserPromptSubmit 1,500ms, Stop 12,000ms)과 견주면 가장 느린 Stop(`stop_lead_pending10`, 최대 258ms)도 기한의 2% 남짓이다.
+- 기한 때문에 흔들리는지: `hook` 시험 묶음을 5회, `bundle_f`의 `n2_`를 3회 돌렸다. 한가할 때와 `cargo build --release`를 다른 target 폴더에서 처음부터 반복해 돌리는 부하 속에서 모두 통과했다(부하 때 `hook` 묶음 24~33초, 한가할 때 16~19초). GitHub Windows 러너에서 번갈아 실패한 `turns_are_counted_without_bodies`와 `owned_scenarios_pass`도 이 Mac에서는 실패하지 않았다.
+- 같은 때 이 Mac의 툴체인은 release 빌드의 디버그 정보 제거(`strip`)에서 `rust-objcopy`가 `libLLVM.dylib`를 찾지 못한다는 경고를 냈다. 빌드는 끝나고 실행본은 그대로 돈다. 측정값에는 영향이 없다고 본다. 오래된 rustup(1.27.0)으로 툴체인을 올린 이 Mac의 사정이다.
