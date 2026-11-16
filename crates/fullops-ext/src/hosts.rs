@@ -52,6 +52,16 @@ fn host_json(host: HostId, args: &[&str]) -> Known<Value> {
     }
 }
 
+/// grok에 `source`(로컬 경로)에서 설치한 플러그인이 있는가. grok은 같은 출처를 다시 설치할 때도 신뢰를 요구한다.
+pub fn grok_installed_from(source: &str) -> bool {
+    match host_json(HostId::Grok, host_commands(HostId::Grok).plugin_list) {
+        Known::Yes(json) => json
+            .as_array()
+            .is_some_and(|items| items.iter().any(|i| i["source"].as_str() == Some(source))),
+        Known::Unknown(_) => false,
+    }
+}
+
 /// PATH에 그 호스트의 실행 파일이 있는가.
 pub fn host_available(host: HostId) -> bool {
     find_program(host_commands(host).program).is_some()
