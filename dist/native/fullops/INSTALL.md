@@ -66,7 +66,7 @@ fullops install --retire-python --restore <시각> [--apply]
 |---|---|
 | Claude Code | 떠 있는 세션은 `/reload-plugins`를 하거나 새 세션을 연다 |
 | Codex | 세션에서 `/hooks`로 fullops hook을 한 번 신뢰한다. 신뢰하기 전에는 hook이 돌지 않는다. hook 등록 문자열이 바뀐 갱신 뒤에도 다시 신뢰한다 |
-| grok | hook과 worker는 원본 레포의 폴더 신뢰가 필요하다(`/hooks-trust`). fullops 플러그인을 신뢰해야 Context7 MCP가 켜진다. grok에서는 세션 시작 안내가 모델에게 닿지 않으므로 세션을 시작하면 `fullops status`를 먼저 실행한다(`AGENTS.md`의 관리 블록이 같은 내용을 적는다) |
+| grok | 첫 설치는 grok이 플러그인 신뢰를 물으며 멈춘다(`grok: 실패`). 안내된 `grok plugin install <~/.fullops/package/<버전>/grok> --trust`를 직접 실행한 뒤 `fullops install --hosts grok`을 다시 실행하면 hook 등록 파일과 남은 단계를 마친다(같은 출처는 다시 설치하지 않는다). hook과 worker는 원본 레포의 폴더 신뢰가 필요하다(`/hooks-trust`). fullops 플러그인을 신뢰해야 Context7 MCP가 켜진다. grok에서는 세션 시작 안내가 모델에게 닿지 않으므로 세션을 시작하면 `fullops status`를 먼저 실행한다(`AGENTS.md`의 관리 블록이 같은 내용을 적는다) |
 | agy | agy를 다시 시작해야 플러그인이 보인다. agy의 hook은 CLI에서만 돈다(IDE와 데스크톱 앱에서는 돌지 않는다) |
 
 그다음 `fullops doctor`로 실행본, 바깥 도구, 호스트, 의존, hook 등록을 확인한다.
