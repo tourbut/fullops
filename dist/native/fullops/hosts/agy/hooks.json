@@ -1,0 +1,90 @@
+{
+  "fullops": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "\"bin/fullops\" hook agy --event PreToolUse --in-place",
+            "timeout": 8,
+            "type": "command"
+          }
+        ],
+        "matcher": "run_command"
+      },
+      {
+        "hooks": [
+          {
+            "command": "\"bin/fullops\" hook agy --event PreToolUse --in-place",
+            "timeout": 8,
+            "type": "command"
+          }
+        ],
+        "matcher": "write_file"
+      },
+      {
+        "hooks": [
+          {
+            "command": "\"bin/fullops\" hook agy --event PreToolUse --in-place",
+            "timeout": 8,
+            "type": "command"
+          }
+        ],
+        "matcher": "edit_file"
+      },
+      {
+        "hooks": [
+          {
+            "command": "\"bin/fullops\" hook agy --event PreToolUse --in-place",
+            "timeout": 8,
+            "type": "command"
+          }
+        ],
+        "matcher": "invoke_subagent"
+      },
+      {
+        "hooks": [
+          {
+            "command": "\"bin/fullops\" hook agy --event PreToolUse --in-place",
+            "timeout": 8,
+            "type": "command"
+          }
+        ],
+        "matcher": "write_to_file"
+      },
+      {
+        "hooks": [
+          {
+            "command": "\"bin/fullops\" hook agy --event PreToolUse --in-place",
+            "timeout": 8,
+            "type": "command"
+          }
+        ],
+        "matcher": "replace_file_content"
+      },
+      {
+        "hooks": [
+          {
+            "command": "\"bin/fullops\" hook agy --event PreToolUse --in-place",
+            "timeout": 8,
+            "type": "command"
+          }
+        ],
+        "matcher": "multi_replace_file_content"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "\"bin/fullops\" hook agy --event SessionStart --in-place",
+        "timeout": 10,
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "\"bin/fullops\" hook agy --event Stop --in-place",
+        "timeout": 20,
+        "type": "command"
+      }
+    ]
+  }
+}
