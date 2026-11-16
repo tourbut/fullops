@@ -411,7 +411,7 @@ Apple M2, macOS 27.2.1, Node 22.22.2(npm 10.9.7)에서 main의 2.0.0 배포본(`
 - **브라우저로 받은 경우(지원하지 않는 길).** 같은 arm64 바이너리에 Safari처럼 `com.apple.quarantine`을 붙이고 실행하면, 프로세스가 끝나지 않고 Gatekeeper의 확인을 기다린다(화면에 대화상자가 뜬다). 예상대로다.
 - **권고: 지금은 공증이 필요 없다.** 지원하는 설치 길(npx·git)은 격리 속성을 붙이지 않는다. 바이너리를 브라우저나 릴리스 자산 내려받기로 직접 나눠 주는 길을 열 때에는, 그 전에 Developer ID 서명과 공증(notarization)을 붙인다. 이 작업에는 Apple Developer Program 가입이 필요하다. 릴리스 빌드에서 링크 뒤에 바이너리를 고치는 단계(strip 등)를 더하면 arm64의 ad-hoc 서명이 깨지므로, 그럴 때는 `codesign -s - -f`로 다시 서명한다.
 - **설치 길에서 따로 찾은 것.**
-  - `tourbut/fullops`는 비공개 저장소다. git 자격 증명이 없으면 npx가 오류 문구 없이 종료 코드 128로 끝난다. npm 로그에만 `could not read Username for 'https://github.com': terminal prompts disabled`가 남는다. macOS의 osxkeychain 자격 증명은 `$HOME/Library/Keychains`에 묶여 있어 `HOME`을 임시 폴더로 바꾸면 쓸 수 없다. 그래서 이 확인에서는 받기만 실제 홈으로 하고(`npm_config_cache=<임시>/.npm`), 런처와 바이너리는 `HOME=<임시>`로 직접 실행했다.
+  - (2026-11-16에 저장소를 공개로 바꿔 해소됐다. 공개 뒤 Windows에서 자격 증명 없이 `npx --yes github:tourbut/fullops install --dry-run`이 2.0.1을 받는 것을 확인했다.) 확인 당시 `tourbut/fullops`는 비공개 저장소였다. git 자격 증명이 없으면 npx가 오류 문구 없이 종료 코드 128로 끝난다. npm 로그에만 `could not read Username for 'https://github.com': terminal prompts disabled`가 남는다. macOS의 osxkeychain 자격 증명은 `$HOME/Library/Keychains`에 묶여 있어 `HOME`을 임시 폴더로 바꾸면 쓸 수 없다. 그래서 이 확인에서는 받기만 실제 홈으로 하고(`npm_config_cache=<임시>/.npm`), 런처와 바이너리는 `HOME=<임시>`로 직접 실행했다.
   - 런처는 `--version`을 받지 않는다(`모르는 명령입니다: --version. install, update, check, help 가운데 고릅니다`, 종료 코드 1).
 
 ---
