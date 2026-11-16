@@ -399,7 +399,20 @@ P4 `--retire-python`의 안전장치:
 | D8 (새) | 옛 판 정리 시점, `fullops-meter` 처분, 옛 판 원본 저장소 | 모든 레포·워크트리 전환 + 2주 뒤 따로 승인(design.md 13.4). `fullops-meter`와 옛 판 원본 레포(`Fullops-Squad-plugin`)는 당분간 남긴다. `fullops-meter`를 남기므로 Claude Code 마켓플레이스 `fullops-squad`도 남는다 | 3절 2단계, 4절 P4 |
 | D9 (새) | 설계와 코드의 어긋남 | 설계를 코드에 맞췄다. (1) 출처 충돌의 종료 코드: 코드대로 그 호스트만 멈추고 install은 4로 끝난다(`deps.rs`의 `exit: 4`, 실패로 적혀 `CliError::External`). (2) 13.2 표의 되돌리기 칸: `--rollback`은 `py-backup/`·`state.json`·`archive.jsonl`을 남긴다. (3) `migrate`의 깨끗한 작업 트리 검사는 실행한 작업 트리만 본다 | design.md 10.3절 '구현 묶음이 정한 것', 13.2절 |
 | D10 (새) | 릴리스·태그·main 커밋·카탈로그 공개의 승인자와 순서 | 1.8절 순서. 각 단계를 사람이 승인한다 | 1.8절, `docs/build.md` '릴리스 워크플로' |
-| D11 (H3 관련) | SmartScreen·macOS 공증이 npx 캐시의 바이너리 실행을 막는지 | 첫 공개 전에 깨끗한 Windows·macOS에서 확인한다(이번에는 하지 않았다) | 남음 |
+| D11 (H3 관련) | SmartScreen·macOS 공증이 npx 캐시의 바이너리 실행을 막는지 | 첫 공개 전에 깨끗한 Windows·macOS에서 확인한다 | macOS는 확인했다(아래 'D11 macOS 확인'). Windows는 남음 |
+
+### D11 macOS 확인(2026-11-16)
+
+Apple M2, macOS 27.2.1, Node 22.22.2(npm 10.9.7)에서 main의 2.0.0 배포본(`npx --yes github:tourbut/fullops`)으로 확인했다. 실제 홈은 바꾸지 않았다. 로그는 그 Mac의 `~/fullops-mac-1.log`에 있다.
+
+- **실행이 막히지 않는다.** npx가 git으로 받은 바이너리에는 `com.apple.quarantine`이 붙지 않고 `com.apple.provenance`만 붙는다. 그래서 Gatekeeper가 실행을 묻지 않는다. `spctl -a -t execute`의 평가는 둘 다 `rejected`(`no usable signature`)지만, 이 평가는 격리 속성이 있을 때만 실행에 쓰인다. 런처의 `install --hosts all --dry-run`과 바이너리의 `--version`·`doctor`가 모두 종료 코드 0으로 끝났다.
+- **런처가 고른 바이너리.** arm64 Mac에서 `fullops-darwin-arm64`를 골랐다. `doctor`는 `orca 1.4.261`과 `~/Library/Application Support/orca/claude-profiles/…`의 Claude 프로필을 읽었다.
+- **서명 상태.** `fullops-darwin-arm64`는 `Signature=adhoc`, `flags=0x20002(adhoc,linker-signed)`다(링커가 붙인 ad-hoc 서명이고, Apple Silicon은 이것이 없으면 실행을 죽인다). `fullops-darwin-x64`는 `code object is not signed at all`이다. Intel Mac은 서명을 요구하지 않고, Rosetta에서도 `arch -x86_64 fullops-darwin-x64 --version`이 `fullops 2.0.0`을 냈다.
+- **브라우저로 받은 경우(지원하지 않는 길).** 같은 arm64 바이너리에 Safari처럼 `com.apple.quarantine`을 붙이고 실행하면, 프로세스가 끝나지 않고 Gatekeeper의 확인을 기다린다(화면에 대화상자가 뜬다). 예상대로다.
+- **권고: 지금은 공증이 필요 없다.** 지원하는 설치 길(npx·git)은 격리 속성을 붙이지 않는다. 바이너리를 브라우저나 릴리스 자산 내려받기로 직접 나눠 주는 길을 열 때에는, 그 전에 Developer ID 서명과 공증(notarization)을 붙인다. 이 작업에는 Apple Developer Program 가입이 필요하다. 릴리스 빌드에서 링크 뒤에 바이너리를 고치는 단계(strip 등)를 더하면 arm64의 ad-hoc 서명이 깨지므로, 그럴 때는 `codesign -s - -f`로 다시 서명한다.
+- **설치 길에서 따로 찾은 것.**
+  - `tourbut/fullops`는 비공개 저장소다. git 자격 증명이 없으면 npx가 오류 문구 없이 종료 코드 128로 끝난다. npm 로그에만 `could not read Username for 'https://github.com': terminal prompts disabled`가 남는다. macOS의 osxkeychain 자격 증명은 `$HOME/Library/Keychains`에 묶여 있어 `HOME`을 임시 폴더로 바꾸면 쓸 수 없다. 그래서 이 확인에서는 받기만 실제 홈으로 하고(`npm_config_cache=<임시>/.npm`), 런처와 바이너리는 `HOME=<임시>`로 직접 실행했다.
+  - 런처는 `--version`을 받지 않는다(`모르는 명령입니다: --version. install, update, check, help 가운데 고릅니다`, 종료 코드 1).
 
 ---
 
