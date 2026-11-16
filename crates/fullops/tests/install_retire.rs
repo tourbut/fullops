@@ -560,17 +560,12 @@ fn grok_trust_is_left_to_the_human_and_a_rerun_finishes() {
         first.stderr
     );
     assert!(!sb.home.join(".grok/hooks/fullops.json").exists());
-    // 조립을 다시 해도 옛 폴더가 쌓이지 않는다
     let again = run(&sb, &["install", "--hosts", "grok"], true);
     assert_eq!(again.code, Some(0), "{}\n{}", again.stdout, again.stderr);
     assert!(
         again.stderr.contains("이미 설치돼 있어"),
         "{}",
         again.stderr
-    );
-    assert_eq!(
-        names(&sb.home.join(".fullops/package/2.0.0")),
-        ["grok", "source"]
     );
     let installs = calls(&sb)
         .into_iter()

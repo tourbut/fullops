@@ -256,10 +256,7 @@ fn assemble(root: &Path, host: HostId, target: &Path) -> io::Result<()> {
         .try_for_each(|(from, to)| copy_tree(&root.join(from), &staging.join(to)))
         .and_then(|()| {
             let old = parent.join(format!("{host}.old-{}", fullops_store::now()));
-            swap_in(&staging, target, &old)?;
-            // 호스트는 설치할 때 패키지를 복사해 가므로 바꿔 넣은 옛 폴더는 남길 이유가 없다
-            let _ = std::fs::remove_dir_all(&old);
-            Ok(())
+            swap_in(&staging, target, &old)
         });
     if built.is_err() {
         let _ = std::fs::remove_dir_all(&staging);
