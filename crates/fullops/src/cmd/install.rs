@@ -678,9 +678,24 @@ impl Runner<'_> {
                 {
                     return;
                 }
+                let grok_self = host == HostId::Grok && step.kind == StepKind::SelfInstall;
+                if grok_self
+                    && step
+                        .argv
+                        .last()
+                        .is_some_and(|p| hosts::grok_installed_from(p))
+                {
+                    self.ctx.note(msg::GROK_ALREADY_INSTALLED);
+                    self.run_mut(host).self_installed = true;
+                    return;
+                }
                 let out = hosts::run_step(step, INSTALL_TIMEOUT);
                 if !out.ok() {
-                    self.fail(host, &step.what, &tail3(&out.stderr_text()));
+                    let mut detail = tail3(&out.stderr_text());
+                    if grok_self && detail.contains("--trust") {
+                        detail = format!("{detail}\n→ {}", msg::GROK_PLUGIN_TRUST);
+                    }
+                    self.fail(host, &step.what, &detail);
                     return;
                 }
                 if step.kind == StepKind::SelfInstall {

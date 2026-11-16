@@ -191,7 +191,10 @@ pub const BLOCK_END: &str = "<!-- fullops:end -->";
 pub const ENTRY_DOCS: [&str; 3] = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"];
 
 /// 내장 릴리스 노트 `(버전, 글)`. 오래된 것부터다. `upgrade`가 `applied_version` 이후의 것을 낸다.
-pub const RELEASES: &[(&str, &str)] = &[("2.0.0", include_str!("../assets/releases/2.0.0.md"))];
+pub const RELEASES: &[(&str, &str)] = &[
+    ("2.0.0", include_str!("../assets/releases/2.0.0.md")),
+    ("2.0.1", include_str!("../assets/releases/2.0.1.md")),
+];
 
 #[cfg(test)]
 mod tests {

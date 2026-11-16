@@ -172,7 +172,7 @@ $fx = "$out\dist\native\fullops\bin\fullops.exe"
 |---|---|---|---|
 | Claude Code | `claude plugin marketplace add tourbut/fullops` → `claude plugin install fullops@fullops` → `claude plugin update fullops@fullops --scope user`. 의존 ponytail·mattpocock-skills·pstack도 같은 꼴 | `/reload-plugins` 또는 새 세션 | 마켓플레이스 설치는 실환경 미확인(`--plugin-dir`로 hook 동작만 확인) |
 | Codex | `codex plugin marketplace add tourbut/fullops` → `codex plugin add fullops@fullops`. 의존 ponytail | 세션에서 `/hooks`로 fullops hook을 신뢰한다. 등록 문자열이 바뀐 갱신 뒤에도 다시 신뢰한다 | 실환경 미확인(Codex hook 전체) |
-| grok | `~/.fullops/package/2.0.0/grok` 조립 → `grok plugin install <그 경로>`(`--trust` 없음) → `~/.grok/hooks/fullops.json` 쓰기 | 원본 레포 폴더 신뢰(`/hooks-trust`), Context7을 쓰려면 플러그인 신뢰. 세션 시작 뒤 `fullops status` | 전역 hook 파일 방식은 실환경 미확인(점검은 레포 `.grok/hooks`로 했다) |
+| grok | `~/.fullops/package/2.0.0/grok` 조립 → `grok plugin install <그 경로>`(`--trust` 없음. 첫 설치는 grok이 신뢰를 물으며 멈추고, 사람이 `--trust`로 설치한 뒤 다시 실행하면 같은 출처는 건너뛴다) → `~/.grok/hooks/fullops.json` 쓰기 | 원본 레포 폴더 신뢰(`/hooks-trust`), Context7을 쓰려면 플러그인 신뢰. 세션 시작 뒤 `fullops status` | 전역 hook 파일 방식은 실환경 미확인(점검은 레포 `.grok/hooks`로 했다) |
 | agy | `~/.fullops/package/2.0.0/agy` 조립 → `agy plugin install <그 경로>` | agy 다시 시작. hook은 CLI에서만 돈다. **agy 하위 명령에 `--help`를 붙이지 않는다**(`agy plugin uninstall --help`가 실제로 제거를 실행했다 [확인: `dev/docs/contracts/agy.md:30`]) | `fullops install`을 거친 설치는 실환경 미확인(점검은 레포 `.agents/hooks.json`으로 했다) |
 | Orca 패널 | (fullops install이 하지 않는다) | 1.5절 | 실환경 미확인 |
 

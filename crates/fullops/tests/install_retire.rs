@@ -522,3 +522,55 @@ fn prune_keeps_skill_backups() {
     assert_eq!(run(&sb, &["install", "--prune"], false).code, Some(0));
     assert!(backup.is_file());
 }
+
+/// grok은 플러그인 신뢰를 사람에게 맡긴다. 신뢰가 필요해 멈추면 할 일을 알리고,
+/// 사람이 `--trust`로 설치한 뒤 다시 실행하면 같은 출처를 또 설치하지 않고 남은 단계를 마친다.
+#[test]
+fn grok_trust_is_left_to_the_human_and_a_rerun_finishes() {
+    let sb = Sandbox::empty();
+    sb.install_fakes(&HOSTS);
+    let pkg = package(&sb, "npx-cache", "2.0.0", "2.0.0");
+    sb.write(
+        &pkg.join("hosts/grok/.mcp.json"),
+        "{}
+",
+    );
+    let target = [".fullops", "package", "2.0.0", "grok"]
+        .iter()
+        .fold(sb.home.clone(), |p, c| p.join(c));
+    let target = target.to_string_lossy();
+    sb.host_rule(json!({"when": ["grok", "plugin", "marketplace", "list"], "stdout": []}));
+    sb.host_rule(json!({"when": ["grok", "plugin", "list"], "times": 1, "stdout": []}));
+    sb.host_rule(json!({"when": ["grok", "plugin", "list"], "stdout": [{"name": "fullops", "source": target}]}));
+    sb.host_rule(json!({"when": ["grok", "plugin", "install", &*target], "times": 1, "exit": 1,
+        "stderr": format!("To proceed, re-run with --trust:\n  grok plugin install {target} --trust\n")}));
+
+    let first = run(&sb, &["install", "--hosts", "grok"], true);
+    assert_eq!(
+        first.code,
+        Some(4),
+        "{}
+{:?}",
+        first.stdout,
+        calls(&sb)
+    );
+    assert!(
+        first.stderr.contains("`fullops install --hosts grok`"),
+        "{}",
+        first.stderr
+    );
+    assert!(!sb.home.join(".grok/hooks/fullops.json").exists());
+    let again = run(&sb, &["install", "--hosts", "grok"], true);
+    assert_eq!(again.code, Some(0), "{}\n{}", again.stdout, again.stderr);
+    assert!(
+        again.stderr.contains("이미 설치돼 있어"),
+        "{}",
+        again.stderr
+    );
+    let installs = calls(&sb)
+        .into_iter()
+        .filter(|c| c.starts_with("grok plugin install") && c.contains(&*target))
+        .count();
+    assert_eq!(installs, 1, "{:?}", calls(&sb));
+    assert!(calls(&sb).iter().all(|c| !c.contains("--trust")));
+}

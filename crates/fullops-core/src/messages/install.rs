@@ -18,6 +18,13 @@ pub const PSTACK: &str = "pstack의 '사람을 기다리지 않는다'·'다른 
 /// 고정 위치 실행본 없이 grok의 hook 등록 파일을 쓰려 할 때.
 pub const HOOK_NEEDS_RUNTIME: &str = "고정 위치 실행본이 없어 grok의 hook 등록 파일을 쓰지 않았다. `fullops install --only runtime`을 먼저 실행한다.";
 
+/// grok이 플러그인 신뢰(`--trust`)를 요구하며 설치를 멈췄을 때. 신뢰는 사람이 한다.
+pub const GROK_PLUGIN_TRUST: &str = "grok은 hook을 돌리는 플러그인을 사람이 신뢰해야 설치한다(fullops는 `--trust`를 붙이지 않는다). 위의 `--trust` 명령을 직접 실행한 뒤 `fullops install --hosts grok`을 다시 실행하면 남은 단계(hook 등록 파일, 의존 플러그인)를 마친다.";
+
+/// 같은 출처로 이미 신뢰해 설치한 grok 플러그인을 다시 설치하지 않을 때.
+pub const GROK_ALREADY_INSTALLED: &str =
+    "[grok] 같은 출처의 fullops 플러그인이 이미 설치돼 있어 다시 설치하지 않는다.";
+
 /// 설치 뒤에 사람이 할 일(설계 10.3절). 신뢰는 사람이 한다.
 pub fn after_install(host: HostId) -> Option<&'static str> {
     match host {

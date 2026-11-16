@@ -1750,7 +1750,7 @@ fn init_mode_and_upgrade() {
     // upgrade: 적용 버전이 낮으면 릴리스 노트와 필수 적용을 내고, 통과한 --verify만 버전을 올린다
     let path = squad.join("fullops.toml");
     let lowered = std::fs::read_to_string(&path).unwrap().replace(
-        "applied_version = \"2.0.0\"",
+        &format!("applied_version = \"{}\"", env!("CARGO_PKG_VERSION")),
         "applied_version = \"1.24.0\"",
     );
     sb.write(&path, &lowered);
@@ -1838,7 +1838,8 @@ fn doctor_reports_python_leftovers_and_other_homes() {
     assert_eq!(python.matches("fullops-deps.json").count(), 2, "{python}");
     let homes = row("다른 홈");
     // 지금 환경의 홈(프로필 p1, ~/.codex)은 빼고, ~/.claude와 Orca Codex 홈을 그 환경 변수로 안내한다
-    assert!(!homes.contains("p1"), "{homes}");
+    // 임시 폴더 이름에 `p1`이 끼일 수 있어(macOS `/var/folders/q2/p1…`) 프로필 경로 조각으로 본다
+    assert!(!homes.contains("claude-profiles"), "{homes}");
     assert!(
         homes.contains("`CLAUDE_CONFIG_DIR`") && homes.contains("--hosts claude"),
         "{homes}"
