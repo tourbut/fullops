@@ -105,6 +105,12 @@ test('하위 명령을 fullops install의 인자로 바꿔 넘기고 패널 안�
   const check = pkg.run(['check', '--hosts', 'all']);
   assert.deepEqual(check.calls, [['install', '--check', '--hosts', 'all']]);
   assert.doesNotMatch(check.out, /orca plugin/);
+  // 가짜 바이너리는 node라서 --version을 받으면 기록 전에 node 버전을 찍는다. 그것이 --version이 넘어간 증거다
+  for (const v of ['version', '--version', '-V']) {
+    const shown = pkg.run([v]);
+    assert.equal(shown.status, 0, shown.out);
+    assert.ok(shown.out.includes(process.version), `${v}: ${shown.out}`);
+  }
 });
 
 test('바이너리의 종료 코드를 그대로 돌려주고 실패하면 레포 단계로 가지 않는다', () => {

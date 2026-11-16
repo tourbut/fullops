@@ -28,7 +28,7 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
         "S-05" | "P-01" => args.join("\n"),
         "T-00" => format!("정책 오류라 이 호출을 받지 않는다: {}", a(0)),
         // 인자를 준 T-01은 맡지 않는다: 뼈대 시험(messages/mod.rs)이 그 꼴로 기본 조립을 본다
-        "T-01" if args.is_empty() => "날것 `orca orchestration worker-start`는 선행 조건 검사와 상태 기록을 거치지 않는다.".into(),
+        "T-01" if args.is_empty() => "날것 `orca orchestration worker-start`·`dispatch`는 선행 조건 검사와 상태 기록을 거치지 않는다.".into(),
         "T-02" => "터미널 주입(`dispatch --inject`, 지시서 경로를 실은 `terminal send`)으로 배정하지 않는다.".into(),
         "T-03" => format!("`terminal send`의 글이 {}자다. 20자를 넘는 지시는 터미널에 직접 넣지 않는다.", a(0)),
         "T-04" => format!("날것 `task-create`를 받지 않는다: {}.", a(0)),

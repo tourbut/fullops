@@ -38,8 +38,12 @@ orca plugin validate panel --json
 orca plugin check panel --json
 orca plugin dev load panel --json                    # approval_required와 지문이 나온다
 orca plugin dev request panel status.read --json     # worker의 답을 본다(미정-M4의 확인)
-orca plugin shot panel --panel status --theme dark --out panel-dark.png --json
+orca plugin shot local.fullops-panel --panel status --theme dark --out panel-dark.png --json
 ```
+
+- `shot`은 폴더 경로를 받지 않고 플러그인 키를 받는다(`Pass a plugin key such as acme.dusk`). 개발 폴더로 올린 패널의 키는 `local.fullops-panel`이다.
+- 이 패널은 HTML 패널이라 `shot`이 페이지가 뜨자마자 찍는다. 처음 연 패널이나 방금 바뀐 `status.json`은 worker의 답이 그려지기 전일 수 있으니, 5초(폴링 간격) 넘게 기다렸다가 한 번 더 찍는다.
+- Orca 창이 화면에 보이면 `--theme`이 먹지 않고 지금 테마로 찍힌다(`themeApplied: false`). 밝은 테마는 Orca 창을 숨기거나 내린 뒤 찍는다.
 
 ## 설치
 
@@ -57,7 +61,10 @@ orca plugin install tourbut.fullops-panel --approve <지문> --json
 - 제거: `orca plugin uninstall tourbut.fullops-panel`(승인 필요 없음). 카탈로그까지 지우려면 `orca plugin catalog list --json`에서 그 카탈로그를 찾아 `orca plugin catalog rm <id|이름>`.
 - 카탈로그 항목은 릴리스 워크플로가 `cargo xtask orca-catalog`로 만든다(`docs/build.md` '릴리스 워크플로'). 손으로 고치지 않는다.
 
+## 확인한 것
+
+- worker가 `node:fs`로 Git 공용 디렉터리를 읽는다(미정-M4). 2026-11-16 macOS의 Orca 1.4.261에서 개발 폴더로 올려 확인했다. 워크트리 `dev-mac`의 공용 디렉터리에 시험용 `status.json`을 두자 `dev request … status.read`가 `state: "ok"`와 그 내용을 돌려주었고, 같은 레포의 워크트리 둘(`main`, `dev-mac`)이 한 건으로 모였다. 패널은 정상 상태, 레포가 없는 상태, 깨진 JSON(`status.json을 읽지 못했다`와 파서 오류)을 그렸다.
+
 ## 확인하지 못한 것
 
-- worker가 `node:fs`로 Git 공용 디렉터리를 읽을 수 있는가(미정-M4). Orca 1.4.256의 코드로는 worker가 실행 인자 없이 `fork`된 Node 프로세스이고 권한 모델을 켜지 않으므로 읽을 수 있다고 본다. 실제로 돌려 보지는 않았다. 읽지 못하면 설계대로 `fullops status --json`을 띄우는 쪽으로 바꾼다.
 - `workspace.readContext`의 `displayName`이 `workspace.list`의 `name`과 같은 값인가. 다르면 초점 레포를 찾지 못해 첫 레포를 보여 준다.

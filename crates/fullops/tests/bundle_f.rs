@@ -2031,3 +2031,38 @@ fn migrate_finalize_edge_cases() {
         assert!(!record.exists() && !git.join("fullops-search").exists());
     }
 }
+
+/// grok의 `trusted_folders.toml`이 TOML로 읽히지 않으면(옛 판이 같은 폴더를 두 번 적은 경우) doctor가 "신뢰 없음"이 아니라 그 원인을 알린다.
+#[test]
+fn doctor_names_a_broken_grok_trust_file() {
+    let sb = fullops_testkit::Sandbox::empty();
+    sb.install_fakes(&["grok"]);
+    let repo = sb.path("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    sb.git_ok(&repo, &["init", "-q"]);
+    sb.git_ok(&repo, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    // grok 행은 활성 레포에서만 나온다
+    let init = sb.cli(&repo, &["init", "--roles", "dev", "--local-only"]);
+    assert_eq!(init.code, Some(0), "{}", init.stderr);
+    let grok_home = sb.root.join("grok-home");
+    sb.write(
+        &grok_home.join("trusted_folders.toml"),
+        "[folders.\"/w/a\"]\ntrusted = true\n\n[folders.'/w/a']\ntrusted = true\n",
+    );
+    let run = sb.fullops(
+        &repo,
+        &["doctor"],
+        &[
+            ("PATH", "../bin"),
+            ("FULLOPS_OFFLINE", "0"),
+            ("GROK_HOME", &grok_home.to_string_lossy()),
+        ],
+        b"",
+    );
+    assert!(
+        run.stdout.contains("TOML로 읽지 못한다") && !run.stdout.contains("폴더 신뢰가 필요하다"),
+        "{}{}",
+        run.stdout,
+        run.stderr
+    );
+}
