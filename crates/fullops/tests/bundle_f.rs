@@ -1750,7 +1750,7 @@ fn init_mode_and_upgrade() {
     // upgrade: 적용 버전이 낮으면 릴리스 노트와 필수 적용을 내고, 통과한 --verify만 버전을 올린다
     let path = squad.join("fullops.toml");
     let lowered = std::fs::read_to_string(&path).unwrap().replace(
-        "applied_version = \"2.0.0\"",
+        &format!("applied_version = \"{}\"", env!("CARGO_PKG_VERSION")),
         "applied_version = \"1.24.0\"",
     );
     sb.write(&path, &lowered);
