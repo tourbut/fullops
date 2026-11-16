@@ -367,12 +367,18 @@ fn grok_home() -> Option<PathBuf> {
 }
 
 /// `trusted_folders.toml`에서 `trusted = true`인 폴더. 읽기만 한다.
-fn grok_trusted() -> Vec<String> {
-    let text = grok_home()
-        .and_then(|home| std::fs::read_to_string(home.join("trusted_folders.toml")).ok())
+/// 파일이 TOML로 읽히지 않으면 그 오류를 돌려준다(grok도 그때는 신뢰를 저장하지 못한다).
+fn grok_trusted() -> Result<Vec<String>, String> {
+    let file = grok_home().map(|home| home.join("trusted_folders.toml"));
+    let text = file
+        .as_ref()
+        .and_then(|f| std::fs::read_to_string(f).ok())
         .unwrap_or_default();
-    let table: toml::Table = toml::from_str(&text).unwrap_or_default();
-    table
+    let table: toml::Table = toml::from_str(&text).map_err(|e| {
+        let at = file.as_ref().map_or(String::new(), |f| f.display().to_string());
+        format!("{at}을 TOML로 읽지 못한다({}). grok도 폴더 신뢰를 저장하지 못한다. 중복 항목을 지우는 등 파일을 고친다.", e.message())
+    })?;
+    Ok(table
         .get("folders")
         .and_then(|f| f.as_table())
         .map(|folders| {
@@ -382,21 +388,25 @@ fn grok_trusted() -> Vec<String> {
                 .map(|(path, _)| path.clone())
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
 fn grok_rows(report: &mut Report, ctx: &Ctx) {
     // 폴더 신뢰: 워크트리는 원본 체크아웃 경로로 본다
     if let Ok(repo) = ctx.repo() {
         let origin = repo.common_dir.parent().unwrap_or(&repo.root).to_path_buf();
-        let trusted = grok_trusted();
-        let covered = origin
-            .ancestors()
-            .any(|dir| trusted.iter().any(|t| same_path(t, &dir.to_string_lossy())));
-        let notes = if covered {
-            Vec::new()
-        } else {
-            vec!["grok worker는 폴더 신뢰가 필요하다. 사용자가 grok에서 승인한다.".to_string()]
+        let notes = match grok_trusted() {
+            Err(broken) => vec![broken],
+            Ok(trusted)
+                if origin
+                    .ancestors()
+                    .any(|dir| trusted.iter().any(|t| same_path(t, &dir.to_string_lossy()))) =>
+            {
+                Vec::new()
+            }
+            Ok(_) => {
+                vec!["grok worker는 폴더 신뢰가 필요하다. 사용자가 grok에서 승인한다.".to_string()]
+            }
         };
         report.item("grok 폴더 신뢰", origin.display().to_string(), notes);
     }

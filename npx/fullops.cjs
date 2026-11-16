@@ -13,11 +13,12 @@ const HOSTS = ['claude', 'codex', 'grok', 'agy'];
 const PACKAGE = path.join(__dirname, '..', 'dist', 'native', 'fullops');
 const USAGE = `fullops 설치 실행기
 
-npx --yes github:tourbut/fullops <install|update|check|help> [--hosts claude,codex,grok,agy|all] [--dry-run] [--repo <경로>]
+npx --yes github:tourbut/fullops <install|update|check|version|help> [--hosts claude,codex,grok,agy|all] [--dry-run] [--repo <경로>]
 
   install    fullops install을 실행한다(실행본, 호스트 플러그인, 의존 플러그인·스킬)
   update     install과 같다. 새 판의 갱신은 다시 설치하는 것이다
   check      fullops install --check. 설치하지 않고 빠진 것만 낸다(빠진 것이 있으면 종료 코드 2)
+  version    이 배포본의 실행본 버전(--version도 받는다)
   --hosts    고를 호스트. claude-code는 claude로 받는다. 주지 않으면 PATH에 있는 호스트 모두
   --dry-run  부를 명령과 쓸 경로만 낸다. 아무것도 바꾸지 않는다
   --repo     설치 뒤 그 레포가 활성 레포면 fullops upgrade를 부른다. 아직 켜지 않은 레포와 Python판 레포는 안내만 한다
@@ -47,8 +48,9 @@ function parseArgs(argv) {
   const first = args.shift();
   const options = { command: first ?? 'help', hosts: null, dryRun: false, repo: null };
   if (['--help', '-h'].includes(options.command)) options.command = 'help';
-  if (!['help', 'install', 'update', 'check'].includes(options.command))
-    throw new Stop(`모르는 명령입니다: ${options.command}. install, update, check, help 가운데 고릅니다`, 1);
+  if (['--version', '-V'].includes(options.command)) options.command = 'version';
+  if (!['help', 'install', 'update', 'check', 'version'].includes(options.command))
+    throw new Stop(`모르는 명령입니다: ${options.command}. install, update, check, version, help 가운데 고릅니다`, 1);
   while (args.length) {
     const flag = args.shift();
     if (flag === '--dry-run') options.dryRun = true;
@@ -146,6 +148,7 @@ function main(argv) {
     return 0;
   }
   const file = verifiedBinary();
+  if (options.command === 'version') return run(file, ['--version']);
   const args = ['install'];
   if (options.command === 'check') args.push('--check');
   if (options.hosts) args.push('--hosts', options.hosts);
