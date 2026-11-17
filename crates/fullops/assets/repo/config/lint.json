@@ -17,9 +17,11 @@
     "**/*.lock",
     "**/package-lock.json",
     "**/pnpm-lock.yaml",
-    ".fullops-squad/handovers/**",
-    ".fullops-squad/contexts/**",
-    ".fullops-squad/docs/evaluations/**"
+    ".fullops/inbox/**",
+    ".fullops/tasks/**",
+    ".fullops/archive/**",
+    ".fullops/guide/roles/**",
+    ".fullops/docs/evaluations/**"
   ],
   "rules": [
     {

@@ -13,11 +13,11 @@
   "toolName": "write",
   "tool_name": "write",
   "toolInput": {
-    "file_path": "/home/dev/repo/.fullops-squad/handovers/to_dev.md",
+    "file_path": "/home/dev/repo/.fullops/inbox/to_dev.md",
     "content": "# PAY-12 — 결제 재시도 버튼\n"
   },
   "tool_input": {
-    "file_path": "/home/dev/repo/.fullops-squad/handovers/to_dev.md",
+    "file_path": "/home/dev/repo/.fullops/inbox/to_dev.md",
     "content": "# PAY-12 — 결제 재시도 버튼\n"
   },
   "toolUseId": "call_00000000000000000000000001",

@@ -26,7 +26,7 @@ fn bare_repo(dir: &Path) -> Repo {
         git_dir: dir.join("git"),
         common_dir: dir.join("git"),
     };
-    std::fs::create_dir_all(repo.squad()).unwrap();
+    std::fs::create_dir_all(repo.dir()).unwrap();
     std::fs::create_dir_all(&repo.git_dir).unwrap();
     std::fs::write(repo.config_path(), Setup::default().config_toml()).unwrap();
     repo

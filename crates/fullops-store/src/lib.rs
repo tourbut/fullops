@@ -17,7 +17,7 @@ pub use files::{
 };
 pub use fullops_core::model::{DepsState, Derived, HostInstall, path_text, same_path};
 pub use lock::{CLI_WAIT, HOOK_WAIT, LockGuard, StoreError};
-pub use repo::{Repo, discover, head};
+pub use repo::{Repo, discover, head, legacy_marker, legacy_root};
 pub use search::{update_index, write_explore_result};
 pub use session::{create_session, read_session, update_session};
 pub use state::{quarantine_state, read_state, update_state};

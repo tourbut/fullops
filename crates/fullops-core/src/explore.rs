@@ -195,15 +195,7 @@ pub struct RefusedPath {
 pub const PARSER: &str = "map-v2";
 /// 한 파일에서 읽는 양(바이트).
 pub const MAX_BLOB: usize = 65_536;
-/// 필수 문서(고정 여섯).
-pub const REQUIRED_DOCS: [&str; 6] = [
-    ".fullops-squad/FULLOPS.md",
-    ".fullops-squad/project.md",
-    ".fullops-squad/rules/common/README.md",
-    ".fullops-squad/rules/common/coding-style.md",
-    ".fullops-squad/rules/common/security.md",
-    ".fullops-squad/rules/common/testing.md",
-];
+pub use crate::layout::REQUIRED_DOCS;
 // 2.1.0에서 패킷을 뗐다. 옛 인박스에 남은 패킷 블록이 지문과 과제 글에 섞이지 않게 표식만 남긴다
 const BLOCK_START: &str = "<!-- fullops-packet:start -->";
 const BLOCK_END: &str = "<!-- fullops-packet:end -->";
@@ -276,7 +268,7 @@ pub fn refuse(rule: &'static str, args: &[String], key: &TaskKey, role: &RoleId)
 
 /// 지시서 파일의 레포 상대 경로.
 pub fn instruction_path(role: &RoleId) -> String {
-    format!(".fullops-squad/handovers/to_{role}.md")
+    crate::layout::inbox(role)
 }
 
 /// front matter 뒤의 글. 값의 문법이 틀려도 닫는 `---`까지를 뗀다(지문이 front matter에 기대지 않게 한다).
@@ -749,7 +741,7 @@ pub fn triage(
         return (Decision::Keep, None);
     }
     // 지시문이 있는 것이 정상인 문서
-    let trusted = path.starts_with(".fullops-squad/")
+    let trusted = crate::layout::inside(path).is_some()
         || ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md"].contains(&path);
     if signal.injection > 0.7 && !trusted {
         return match whole && signal.evidence < 0.5 {
@@ -863,7 +855,7 @@ mod tests {
             ".gitignore",
             "docs/secretary.md",
             "src/pay/retry.rs",
-            ".fullops-squad/project.md",
+            ".fullops/guide/project.md",
             "keys/id_rsa_notes.md",
         ] {
             assert!(sendable_path(path), "{path}");
@@ -991,7 +983,7 @@ mod tests {
                 s(0.5, 0.4, 0.9, 0.8),
                 true,
                 false,
-                ".fullops-squad/rules/a.md",
+                ".fullops/guide/rules/a.md",
                 conflict,
             ),
             (s(0.5, 0.4, 0.0, 0.8), true, false, "README.md", keep),

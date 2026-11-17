@@ -7,7 +7,7 @@ roles = {}
 
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}], "size": {"severity": "WARNING", "max_code_lines": 300, "max_doc_lines": 500, "max_diff_added": 5}}'
 
 [[step]]

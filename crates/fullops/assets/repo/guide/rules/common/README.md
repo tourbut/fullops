@@ -4,7 +4,7 @@
 
 ## 적용
 
-현재 Git 레포 루트에 `.fullops-squad/fullops.toml`이 있을 때만 적용한다. 작업자와 검토자는 이 문서와 아래 세 규칙을 읽고, `project.md`에 연결된 프로젝트 정본을 확인한다. 같은 과제에서 같은 버전의 문서를 이미 확인했다면 중복 복사하지 않고 근거를 재사용한다.
+현재 Git 레포 루트에 `.fullops/fullops.toml`이 있을 때만 적용한다. 작업자와 검토자는 이 문서와 아래 세 규칙을 읽고, `project.md`에 연결된 프로젝트 정본을 확인한다. 같은 과제에서 같은 버전의 문서를 이미 확인했다면 중복 복사하지 않고 근거를 재사용한다.
 
 - [코딩 스타일](coding-style.md): 단순한 설계, UI 토큰·공용 컴포넌트, 책임과 상태 변경 경계, 오류 처리.
 - [테스트](testing.md): 변경 동작의 검증, 재현과 실행 근거, 프로젝트별 기준.
@@ -20,7 +20,7 @@
 
 ## 작업 파일 위치
 
-레포 작업에 쓰는 도구·검증 로그·임시 산출물은 레포 안 `.fullops-squad/local/`에 둔다. `.fullops-squad/.gitignore`가 이 폴더를 제외한다. 여러 워크트리가 함께 쓰는 도구(휴대용 Node·make 등)는 기본 체크아웃(`git rev-parse --git-common-dir`의 상위 폴더)의 `.fullops-squad/local/`에 둔다. 레포 밖(`%LOCALAPPDATA%`·`%TEMP%`·홈 디렉터리)에는 레포 전용 파일을 만들지 않는다. 호스트가 주는 세션 scratchpad는 그 세션에서만 쓰는 임시 파일에 쓴다. 예외가 필요하면 사용자 승인을 받은 뒤 경로·용도·정리 시점을 `project.md`에 기록한다. 과제 판정 증거는 [테스트](testing.md)의 `qa-reports` 규칙을 따른다.
+레포 작업에 쓰는 도구·검증 로그·임시 산출물은 레포 안 `.fullops/local/`에 둔다. `.fullops/.gitignore`가 이 폴더를 제외한다. 여러 워크트리가 함께 쓰는 도구(휴대용 Node·make 등)는 기본 체크아웃(`git rev-parse --git-common-dir`의 상위 폴더)의 `.fullops/local/`에 둔다. 레포 밖(`%LOCALAPPDATA%`·`%TEMP%`·홈 디렉터리)에는 레포 전용 파일을 만들지 않는다. 호스트가 주는 세션 scratchpad는 그 세션에서만 쓰는 임시 파일에 쓴다. 예외가 필요하면 사용자 승인을 받은 뒤 경로·용도·정리 시점을 `project.md`에 기록한다. 과제 판정 증거는 [테스트](testing.md)의 `qa-reports` 규칙을 따른다.
 
 ## 전달과 검토
 

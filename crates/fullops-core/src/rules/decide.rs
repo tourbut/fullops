@@ -3,14 +3,16 @@
 use super::call::{self, NO_SESSION, Scene};
 use super::{Effect, Finding, Outcome, RULES, Strength};
 use crate::facts::Facts;
+use crate::layout;
 use crate::messages::{self, hook};
 use crate::model::{
     Actor, EventKind, HookInput, Intent, Known, RoleKind, RuleTrace, Seat, ToolKind, Verdict,
     sha256_hex,
 };
 
-pub(super) const HANDOVERS: &str = ".fullops-squad/handovers/";
-pub(super) const QA_REPORTS: &str = ".fullops-squad/docs/evaluations/qa-reports/";
+/// 인박스 폴더와 과제 폴더(QA 증거가 그 아래에 있다). 이 아래를 고치는 호출이 T-05·T-06·T-10의 후보다.
+pub(super) const INBOX: &str = layout::RECORDS[1];
+pub(super) const TASKS: &str = layout::RECORDS[2];
 
 /// 이벤트 하나를 판정한다. `scene`은 `Facts`에 없는 호출 문맥이다(레포 루트, Orca 실행 파일 이름 등).
 pub fn decide_in(scene: &Scene, input: &HookInput, facts: &mut dyn Facts) -> Outcome {
@@ -94,7 +96,7 @@ fn candidate(input: &HookInput, facts: &mut dyn Facts) -> bool {
     let paths = call::target_paths(input, facts);
     if paths
         .iter()
-        .any(|p| p.starts_with(HANDOVERS) || p.starts_with(QA_REPORTS))
+        .any(|p| p.starts_with(INBOX) || p.starts_with(TASKS))
     {
         return true;
     }

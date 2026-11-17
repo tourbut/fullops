@@ -2,7 +2,7 @@
   "toolCall": {
     "name": "write_to_file",
     "args": {
-      "TargetFile": "/home/dev/repo/.fullops-squad/handovers/to_dev.md",
+      "TargetFile": "/home/dev/repo/.fullops/inbox/to_dev.md",
       "CodeContent": "# PAY-12 — 결제 재시도 버튼\n"
     }
   },

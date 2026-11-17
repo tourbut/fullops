@@ -6,6 +6,7 @@ use crate::assets;
 use fullops_core::config::{PolicyError, mode_changed};
 use fullops_core::derive::landing_of;
 use fullops_core::facts::{ActorInput, CommitScope, Facts, resolve_actor};
+use fullops_core::layout;
 use fullops_core::model::{
     Actor, Caps, ChangeSet, Config, Derived, DispatchId, EventKind, HeadRef, HookInput, HostId,
     Inbox, Known, Landing, Need, Plan, ReviewEvidence, RoleId, Route, RunId, Session, SessionId,
@@ -18,7 +19,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const QA_REPORTS: &str = ".fullops-squad/docs/evaluations/qa-reports";
 /// 대기 프로세스의 heartbeat를 살아 있다고 보는 시간(초).
 const WAITER_FRESH: i64 = 90;
 /// S-06이 읽는 스킬 파일의 한도.
@@ -180,7 +180,7 @@ impl RealFacts {
     }
 
     fn lint_excludes(&self) -> globset::GlobSet {
-        let path = self.repo.squad().join("lint").join("lint.json");
+        let path = self.repo.root.join(layout::lint_json());
         let text = fullops_store::read_text(&path).yes().flatten();
         fullops_core::lint_excludes(text.as_deref(), assets::LINT_JSON)
     }
@@ -421,10 +421,11 @@ impl Facts for RealFacts {
         Known::Yes(need)
     }
     fn review_evidence(&mut self, head: &Sha) -> Known<ReviewEvidence> {
-        // reviews/<KEY>/<head 12자>/의 accepted.json과 waiver.json
+        // tasks/<KEY>/reviews/<head 12자>/의 accepted.json과 waiver.json
         let mut found: Vec<(i64, Sha, ReviewEvidence)> = Vec::new();
         let dirs = |dir: PathBuf| std::fs::read_dir(dir).into_iter().flatten().flatten();
-        for dir in dirs(self.repo.squad().join("reviews")).flat_map(|key| dirs(key.path())) {
+        let tasks = dirs(self.repo.root.join(layout::tasks_dir()));
+        for dir in tasks.flat_map(|key| dirs(key.path().join("reviews"))) {
             // 유효한 수락 기록만 센다: 두 해시가 지금의 result.json·lint.json과 같다
             if let Some(a) = crate::cmd::accepted(&dir.path()) {
                 found.push((a.at, a.head, ReviewEvidence::Accepted));
@@ -469,7 +470,7 @@ impl Facts for RealFacts {
         Known::Yes(landing)
     }
     fn qa_commit_candidates(&mut self, scope: &CommitScope) -> Known<Vec<String>> {
-        let entries = know!(self.git(|g| g.status(Some(QA_REPORTS))));
+        let entries = know!(self.git(|g| g.status(Some(layout::tasks_dir()))));
         Known::Yes(
             entries
                 .into_iter()

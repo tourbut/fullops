@@ -440,7 +440,7 @@ mod tests {
                 "docs/old.md",
                 "docs/conflict.md",
                 "./docs/prompt.md",
-                ".fullops-squad/FULLOPS.md",
+                ".fullops/guide/FULLOPS.md",
                 "docs/broken.md",
                 "docs/leak.md",
                 ".env",
@@ -470,7 +470,7 @@ mod tests {
                     Some("contradicts task")
                 ),
                 ("docs/prompt.md", Decision::Caution, Some("instructions")),
-                (".fullops-squad/FULLOPS.md", Decision::Keep, None),
+                (".fullops/guide/FULLOPS.md", Decision::Keep, None),
                 ("docs/broken.md", Decision::Keep, None),
                 ("docs/leak.md", Decision::Keep, None),
                 ("docs/empty.md", Decision::Keep, None),
@@ -505,7 +505,7 @@ mod tests {
         assert!(
             result
                 .required_paths
-                .contains(&".fullops-squad/handovers/to_dev.md".to_string())
+                .contains(&".fullops/inbox/to_dev.md".to_string())
         );
         let asked = judge.asked.borrow();
         assert_eq!(asked.len(), 5);

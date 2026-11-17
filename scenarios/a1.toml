@@ -32,7 +32,7 @@ expect = { verdict = "pass", flow = "continues" }
 [[step]]
 act = "writes_file"
 who = "plain"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 content = "# 직접 만든 인박스\n"
 expect = { verdict = "pass", flow = "continues" }
 

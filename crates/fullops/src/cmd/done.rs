@@ -5,6 +5,7 @@ use crate::assets::HANDOVER_TEMPLATE;
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use crate::hook::changes::{self, GitGate};
 use fullops_core::flow::refusal;
+use fullops_core::layout;
 use fullops_core::messages;
 use fullops_core::model::{
     Completion, Config, Dispatch, Extra, Followup, HeadRef, Known, LintResult, MessageId, Reported,
@@ -239,11 +240,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             return Err(CliError::Refused(refused));
         }
         // R-05: 알림
-        let report = repo
-            .squad()
-            .join("docs/evaluations/qa-reports")
-            .join(format!("{key}-test"))
-            .join("report.md");
+        let report = repo.root.join(layout::qa_report(&key));
         if let Some(text) = fullops_store::read_text(&report).yes().flatten() {
             if matches!(config.test_level, TestLevel::Minimal | TestLevel::Lite)
                 && text.lines().count() > 40
@@ -259,11 +256,8 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         }
         // R-06
         if let Some(inbox) = &inbox {
-            let from = format!(".fullops-squad/handovers/to_{role}.md");
-            let to = format!(
-                ".fullops-squad/handovers/logs/{key}.{role}.r{}.md",
-                inbox.round
-            );
+            let from = layout::inbox(&role);
+            let to = layout::handover_log(&key, &role, inbox.round);
             let mut message = format!("fullops: 완료 기록 {key} ({role})");
             if let Some(why) = &no_checks {
                 message.push_str(&format!("\n\nlint 생략: {why}"));
@@ -400,7 +394,7 @@ fn written_inboxes(repo: &Repo, config: &Config, role: &RoleId) -> String {
                 .flatten()
                 .is_some_and(|inbox| inbox.from == role.as_str())
         })
-        .map(|other| format!(".fullops-squad/handovers/to_{other}.md"))
+        .map(layout::inbox)
         .collect();
     if paths.is_empty() {
         "없음".into()

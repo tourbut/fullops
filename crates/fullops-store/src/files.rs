@@ -147,7 +147,7 @@ pub fn read_route(repo: &Repo, key: &TaskKey) -> Known<Option<Route>> {
     read_json(&repo.route_path(key))
 }
 
-/// `routes/<KEY>.json`을 쓴다. 커밋하지 않는다.
+/// `tasks/<KEY>/route.json`을 쓴다. 커밋하지 않는다.
 pub fn write_route(repo: &Repo, route: &Route) -> io::Result<()> {
     write_json(&repo.route_path(&route.key), route)
 }

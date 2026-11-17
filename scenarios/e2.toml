@@ -4,26 +4,26 @@ origin = "설계 12.2절 E2"
 [[step]]
 act = "writes_file"
 who = "dev"
-path = ".fullops-squad/handovers/A-1.md"
+path = ".fullops/inbox/A-1.md"
 content = "# A-1 지시서\n"
 expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops task new" }
 
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1 — A-1 구현\n\n## 완료 보고\n"
 
 [[step]]
 act = "deletes_file"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops done" }
 
 [[step]]
 act = "writes_file"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 content = "---\nid: handover-dev\ntitle: B-2\nstatus: draft\nkey: B-2\nrole: dev\ngoal: B-2 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# B-2 — B-2 구현\n\n## 완료 보고\n"
 expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops plan add" }
 
@@ -31,14 +31,14 @@ expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops 
 act = "writes_file"
 df = "DF-30"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 content = "# front matter 없는 글\n"
 expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops plan add" }
 
 [[step]]
 act = "edits_file"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 old = "## 완료 보고"
 new = "## 완료 보고\n- 재시도 버튼을 넣었다"
 expect = { verdict = "pass", flow = "continues" }
@@ -46,25 +46,25 @@ expect = { verdict = "pass", flow = "continues" }
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/handovers/OLD-1.md"
+path = ".fullops/inbox/OLD-1.md"
 content = "# 옛 지시서\n"
 
 [[step]]
 act = "deletes_file"
 who = "dev"
-path = ".fullops-squad/handovers/OLD-1.md"
+path = ".fullops/inbox/OLD-1.md"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "writes_file"
 who = "dev"
-path = ".fullops-squad/handovers/_TEMPLATE.md"
+path = ".fullops/templates/handover.md"
 content = "# 템플릿\n"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "writes_file"
 who = "dev"
-path = ".fullops-squad/handovers/logs/A-1.dev.r0.md"
+path = ".fullops/tasks/A-1/dev.r0.md"
 content = "# 기록\n"
 expect = { verdict = "pass", flow = "continues" }

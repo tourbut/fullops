@@ -12,7 +12,7 @@ words!(DecidedBy { Jev = "jev", Fallback = "fallback", Manual = "manual" });
 words!(LintStatus { Passed = "passed", Failed = "failed", Timeout = "timeout", Unrunnable = "unrunnable", Skipped = "skipped" });
 words!(Severity { Error = "ERROR", Warning = "WARNING" });
 
-/// `routes/<KEY>.json`(설계 6.1.4절).
+/// `tasks/<KEY>/route.json`(설계 6.1.4절).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Route {
     pub v: u32,
@@ -141,7 +141,7 @@ pub struct LintFinding {
     pub suggestion: String,
 }
 
-/// `reviews/<KEY>/<head 12자>/accepted.json`(설계 8.9절).
+/// `tasks/<KEY>/reviews/<head 12자>/accepted.json`(설계 8.9절).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Accepted {
     pub v: u32,
@@ -155,7 +155,7 @@ pub struct Accepted {
     pub at: i64,
 }
 
-/// `reviews/<KEY>/<head 12자>/waiver.json`(설계 8.9절). 면제는 수락이 아니다.
+/// `tasks/<KEY>/reviews/<head 12자>/waiver.json`(설계 8.9절). 면제는 수락이 아니다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Waiver {
     pub v: u32,

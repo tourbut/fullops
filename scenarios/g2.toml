@@ -29,7 +29,7 @@ expect = { verdict = "pass", flow = "continues" }
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/handovers/logs/A-1.dev.r0.md"
+path = ".fullops/tasks/A-1/dev.r0.md"
 content = "---\ntitle: dev 완료 기록\nstatus: draft\nupdated: 2026-11-14\nowner: dev\nsummary: 지시서와 완료 보고를 보존한다.\n---\n# 완료 기록\n"
 
 [[step]]

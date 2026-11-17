@@ -20,7 +20,7 @@ content = "print(1)\n"
 [[step]]
 act = "edits_file"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 old = "## 완료 보고\n"
 new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
 
@@ -53,7 +53,7 @@ content = "print(2)\n"
 [[step]]
 act = "edits_file"
 who = "art"
-path = ".fullops-squad/handovers/to_art.md"
+path = ".fullops/inbox/to_art.md"
 old = "## 완료 보고\n"
 new = "## 완료 보고\n\n브랜치 fullops/art. 구현과 확인을 마쳤다.\n"
 
@@ -92,7 +92,7 @@ args = ["merge", "-q", "main"]
 [[step]]
 act = "edits_file"
 who = "qa"
-path = ".fullops-squad/handovers/to_qa.md"
+path = ".fullops/inbox/to_qa.md"
 old = "## 완료 보고\n"
 new = "## 완료 보고\n\n브랜치 fullops/qa. 구현과 확인을 마쳤다.\n"
 

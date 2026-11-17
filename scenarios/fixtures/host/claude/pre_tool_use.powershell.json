@@ -7,7 +7,7 @@
   "hook_event_name": "PreToolUse",
   "tool_name": "PowerShell",
   "tool_input": {
-    "command": "& orca.exe terminal send --terminal term_00000000-0000-4000-8000-000000000002 --text \"handovers/to_dev.md 를 읽고 진행해 주세요\" --enter",
+    "command": "& orca.exe terminal send --terminal term_00000000-0000-4000-8000-000000000002 --text \"inbox/to_dev.md 를 읽고 진행해 주세요\" --enter",
     "description": "Send text"
   },
   "tool_use_id": "toolu_01EXAMPLE0000000000000000"

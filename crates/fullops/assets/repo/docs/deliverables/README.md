@@ -1,6 +1,6 @@
 # 산출물 인덱스
 
-아래 경로는 `.fullops-squad/` 기준 기본 매핑이다. 기존 원천이 있으면 실제 경로로 바꾼다.
+아래 경로는 `.fullops/` 기준 기본 매핑이다. 기존 원천이 있으면 실제 경로로 바꾼다.
 원천 문서는 필요할 때 작성한다. 생성 전 링크를 완료 산출물로 보고하지 않는다.
 
 | ID | 단계 | 산출물 | 원천 | 상태 |
@@ -23,7 +23,7 @@
 **front matter는 손으로 쓰지 않고 `fullops doc stamp`로만 쓴다.** 필드 순서와 목록 표기가 고정되고, `updated`는 오늘 날짜, 과제 키는 `tasks`에 추가된다.
 
 ```text
-fullops doc stamp --path <.fullops-squad 기준 문서 경로> --task <과제 키> [--status draft|review|approved]
+fullops doc stamp --path <.fullops 기준 문서 경로> --task <과제 키> [--status draft|review|approved]
   처음 쓸 때: --owner <역할> --summary "<한 줄 요약>"
 fullops doc check [--id <Dnn>] [--strict]
 ```
@@ -47,5 +47,5 @@ summary: 한 줄 요약
 필수 필드는 `id`·`title`·`status`·`updated`·`owner`·`summary`다. 산출물 라우팅이 `title`·`summary`를 읽는다. 개정이력은 본문에 기록한다.
 산출물 `DNN_<slug>.md`는 원천 절 링크와 상태를 조립하는 인덱스다. 원문 수정은 원천에서 한다.
 목업 승인이 필요한 프로젝트는 구현 전에 승인 근거를 확인한다. 미승인·미확정 내용은 그대로 표시한다.
-요구사항 → 화면/API/CRUD → 모듈 → QA 결과의 추적성을 확인한다. 테스트 결과는 `docs/evaluations/qa-reports/`에 기록한다.
+요구사항 → 화면/API/CRUD → 모듈 → QA 결과의 추적성을 확인한다. 테스트 결과는 `tasks/<과제 키>/qa/report.md`에 기록한다.
 테이블 정의는 실제 스키마에서 생성한다. 생성 도구가 없으면 미구현으로 표시하며 가짜 검증 결과를 쓰지 않는다.

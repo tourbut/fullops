@@ -4,6 +4,7 @@
 use super::install;
 use crate::cli::{self, CliError, Ctx, EXIT_OK};
 use fullops_core::deps::ALL_HOSTS;
+use fullops_core::layout;
 use fullops_core::model::{HostId, Known, Parallel, TraceLine, same_path};
 use fullops_ext::{Git, GitCli, hosts};
 use serde_json::{Value, json};
@@ -271,7 +272,7 @@ fn python_row(
     mut found: Vec<String>,
     others: &[(&'static str, HostId, PathBuf)],
 ) {
-    let runtime = fullops_store::home().map(|h| h.join(".fullops-squad").join("runtime"));
+    let runtime = fullops_store::home().map(|h| h.join(layout::LEGACY_DIR).join("runtime"));
     found.extend(
         runtime
             .filter(|r| r.exists())
@@ -448,14 +449,46 @@ fn agy_row(report: &mut Report, active: bool) {
 
 fn repo_rows(report: &mut Report, ctx: &Ctx) {
     let Ok(repo) = ctx.repo() else {
-        report.item(
-            "레포",
-            "활성 레포가 아니다(설치 항목만 봤다)".into(),
-            Vec::new(),
-        );
+        // 옛 자리 레포는 비활성이다. 옮기라고 알린다(설계 13.6절)
+        match fullops_store::legacy_root(&ctx.start) {
+            Some(root) => report.item(
+                "레포",
+                format!("{}: 옛 자리(`.fullops-squad/`)", root.display()),
+                vec![fullops_core::messages::LEGACY_REPO.to_string()],
+            ),
+            None => report.item(
+                "레포",
+                "활성 레포가 아니다(설치 항목만 봤다)".into(),
+                Vec::new(),
+            ),
+        }
         return;
     };
     let mut notes = Vec::new();
+    // 무시 목록에 있으면서 추적되는 파일: 한 번 커밋된 캡처·임시 파일이 계속 따라다닌다
+    let ignored = super::init::git(
+        &repo.root,
+        &[
+            "ls-files",
+            "-c",
+            "-i",
+            "--exclude-standard",
+            "-z",
+            "--",
+            layout::DIR,
+        ],
+    )
+    .unwrap_or_default();
+    let ignored: Vec<&str> = ignored.split('\0').filter(|p| !p.is_empty()).collect();
+    if !ignored.is_empty() {
+        let shown: Vec<&str> = ignored.iter().take(5).copied().collect();
+        notes.push(format!(
+            "`.fullops/` 아래에 무시 목록에 있으면서 추적되는 파일이 {}개 있다: {}{}. `git rm --cached <경로>`로 추적을 풀고 커밋한다.",
+            ignored.len(),
+            shown.join(", "),
+            if ignored.len() > shown.len() { " …" } else { "" }
+        ));
+    }
     match ctx.config() {
         Ok(config) => {
             let parallel = config.parallel;

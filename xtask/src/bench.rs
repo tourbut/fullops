@@ -354,7 +354,7 @@ pub fn run_bench(runs: usize, py_runs: usize, check: bool) -> Result<(), String>
             powershell: false,
         })
     };
-    let inbox = lead.join(".fullops-squad/handovers/to_dev.md");
+    let inbox = lead.join(".fullops/inbox/to_dev.md");
     let code = dev.join("src/app.py");
     let stop = Event::Stop { reason: None };
 

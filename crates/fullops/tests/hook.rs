@@ -283,7 +283,7 @@ fn sample_inputs_follow_the_output_table() {
     let same_shape =
         |out: &Value, path: &str| assert_eq!(shape(out), shape(&expected(path)), "{path}: {out}");
     let pass = json!({});
-    let inbox = ".fullops-squad/handovers/to_dev.md";
+    let inbox = ".fullops/inbox/to_dev.md";
     let live = orca_shapes::worker(
         "run_1",
         "ctx_2a3b4c5d6e7f",
@@ -533,7 +533,7 @@ fn sample_inputs_follow_the_output_table() {
     // agy CLI의 실제 도구(write_file·edit_file)도 같은 경로 규칙에 걸린다(2026-11-15 실환경 점검에서 통과하던 것).
     // 수정은 바뀐 뒤 글을 알아야 판정하므로 과제명 파일을 먼저 둔다(내용 `hello`가 fixture의 Target이다)
     h.sb.write(
-        &h.sb.path("dev").join(".fullops-squad/handovers/A-1.md"),
+        &h.sb.path("dev").join(".fullops/inbox/A-1.md"),
         "hello
 ",
     );
@@ -543,7 +543,7 @@ fn sample_inputs_follow_the_output_table() {
     ] {
         let out = h.sample("agy", name, "dev", |input| {
             input["toolCall"]["args"][field] =
-                json!(h.sb.path("dev").join(".fullops-squad/handovers/A-1.md"));
+                json!(h.sb.path("dev").join(".fullops/inbox/A-1.md"));
         });
         assert_eq!(out["decision"], "deny", "{name}");
         assert!(reason(&out).starts_with("FullOps[T-05]: "), "{name}");
@@ -831,7 +831,7 @@ fn lead_stop_rules_follow_state() {
     );
     assert!(reason(&out).contains("fullops task new"));
     let plan = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n| C-3 | 정리 | dev | 보류(다음 분기) | 사용자 지시 |\n| D-4 | 배정됨 | dev | 대기 | 사용자 지시 |\n";
-    h.sb.write(&h.sb.path("lead").join(".fullops-squad/PLANS.md"), plan);
+    h.sb.write(&h.sb.path("lead").join(".fullops/PLANS.md"), plan);
     // K2: 이미 배정된 키의 행은 준비된 행이 아니다
     h.set_state(json!({"v": 1,
         "runs": [run_of("run_2", "lead", Some("term_lead"))],
@@ -1007,11 +1007,7 @@ fn worker_stop_rules_follow_state() {
         Some(SettledHow::Done)
     );
     // 통과 뒤의 기록 전용 커밋은 통과 기록을 무효로 만들지 않고, 코드 커밋은 만든다
-    h.commit(
-        "dev",
-        ".fullops-squad/handovers/logs/A-1.dev.r0.md",
-        "# 기록\n",
-    );
+    h.commit("dev", ".fullops/tasks/A-1/dev.r0.md", "# 기록\n");
     assert_eq!(h.stop("dev", "parent", &parent), json!({}));
     h.commit("dev", "src/sub.py", "print(2)\n");
     assert!(reason(&h.stop("dev", "parent", &parent)).starts_with("FullOps[X-01]: "));
@@ -1160,7 +1156,7 @@ fn turns_are_counted_without_bodies() {
     }
     assert!(text.lines().all(|l| l.len() <= 200) && !text.contains("결제"));
     // 병렬 방침 off에서 거부된 호출은 세지 않는다
-    let config = h.sb.path("lead").join(".fullops-squad/fullops.toml");
+    let config = h.sb.path("lead").join(".fullops/fullops.toml");
     let off = std::fs::read_to_string(&config)
         .unwrap()
         .replace("parallel = \"on\"", "parallel = \"off\"");
@@ -1255,7 +1251,7 @@ fn hook_survives_bad_input_and_contention() {
             .starts_with("FullOps[T-01]")
     );
     // 정책 오류에서도 모르는 도구는 통과다. 아는 도구는 거부한다
-    h.sb.write(&lead.join(".fullops-squad/fullops.toml"), "schema = = 2");
+    h.sb.write(&lead.join(".fullops/fullops.toml"), "schema = = 2");
     assert_eq!(
         h.claude("lead", "s2", "PreToolUse", unknown, &[]),
         json!({})
@@ -1632,7 +1628,7 @@ fn path_rules_see_the_real_path() {
         let more = json!({"tool_name": "Write", "tool_input": {"file_path": path, "content": "# A-1 — x\n"}});
         h.claude("lead", "s", "PreToolUse", more, &[])
     };
-    let inbox = lead.join(".fullops-squad/handovers");
+    let inbox = lead.join(".fullops/inbox");
     std::fs::create_dir_all(&inbox).unwrap();
     let plain = write(&inbox.join("A-1.md").to_string_lossy());
     assert!(reason(&plain).starts_with("FullOps[T-05]"), "{plain}");
@@ -1642,7 +1638,7 @@ fn path_rules_see_the_real_path() {
     let linked = write(&link.join("A-1.md").to_string_lossy());
     // 문구의 경로는 실제 자리다
     assert!(
-        reason(&linked).starts_with("FullOps[T-05]: `.fullops-squad/handovers/A-1.md`"),
+        reason(&linked).starts_with("FullOps[T-05]: `.fullops/inbox/A-1.md`"),
         "{linked}"
     );
     // 링크 안의 다른 폴더는 그대로 통과한다
@@ -1658,18 +1654,14 @@ fn path_rules_see_the_real_path() {
         .unwrap();
 
     if cfg!(windows) {
-        let upper = format!(r"{}\.FULLOPS-SQUAD\Handovers\A-1.md", lead.display());
+        let upper = format!(r"{}\.FULLOPS\Inbox\A-1.md", lead.display());
         assert!(
             reason(&write(&upper)).starts_with("FullOps[T-05]"),
             "{upper}"
         );
         // 아직 없는 폴더도 이름만으로 같은 자리다(T-10의 차수 폴더)
-        let qa = lead.join(".fullops-squad/docs/evaluations/qa-reports");
-        std::fs::create_dir_all(qa.join("A-1")).unwrap();
-        let round = format!(
-            r"{}\.fullops-squad\DOCS\Evaluations\QA-Reports\A-1-R2\report.md",
-            lead.display()
-        );
+        std::fs::create_dir_all(lead.join(".fullops/tasks/A-1")).unwrap();
+        let round = format!(r"{}\.FULLOPS\Tasks\A-1-R2\qa\report.md", lead.display());
         assert!(
             reason(&write(&round)).starts_with("FullOps[T-10]"),
             "{round}"
@@ -1682,7 +1674,7 @@ fn path_rules_see_the_real_path() {
 fn commit_gate_sees_the_whole_repo_from_a_subfolder() {
     let h = Hooks::new(&Setup::default());
     let dev = h.sb.path("dev");
-    let qa = dev.join(".fullops-squad/docs/evaluations/qa-reports/A-1-test");
+    let qa = dev.join(".fullops/tasks/A-1/qa/");
     h.commit("dev", "src/lib.rs", "fn a() {}\n");
     h.sb.write(&qa.join("report.md"), "# A-1 test report\n");
     h.sb.write(&qa.join("shot.png"), "PNG");
@@ -1698,11 +1690,7 @@ fn commit_gate_sees_the_whole_repo_from_a_subfolder() {
         (&src, "Bash", "git -C .. add . && git commit -m qa"),
         (&src, "Bash", "git stage -A && git commit -m qa"),
         (&src, "PowerShell", "git add -A; git commit -m qa"),
-        (
-            &dev,
-            "Bash",
-            "D=.fullops-squad; git add $D && git commit -m qa",
-        ),
+        (&dev, "Bash", "D=.fullops; git add $D && git commit -m qa"),
     ] {
         let out = run(cwd, tool, command);
         assert!(

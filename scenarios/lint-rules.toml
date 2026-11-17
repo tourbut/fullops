@@ -8,7 +8,7 @@ roles = {}
 # 기준 시점의 규칙. rules를 적으면 내장 템플릿의 규칙을 대신한다
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '''
 {
   "schema_version": 1,
@@ -123,7 +123,7 @@ expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 �
 # 컴파일하지 못하는 규칙은 실행 불가 한 건이고 통과를 막는다. 다른 규칙은 그대로 돈다
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '''
 {
   "schema_version": 1,

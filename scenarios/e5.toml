@@ -1,4 +1,4 @@
-name = "설계 역할은 코드 파일을 고치지 못하고 .fullops-squad 아래는 고칠 수 있다"
+name = "설계 역할은 코드 파일을 고치지 못하고 .fullops 아래는 고칠 수 있다"
 origin = "설계 12.2절 E5"
 
 [setup]
@@ -14,7 +14,7 @@ expect = { verdict = "deny", rule = "T-07", flow = "stopped", escape = "구현 �
 [[step]]
 act = "writes_file"
 who = "architecture"
-path = ".fullops-squad/docs/design/pay.md"
+path = ".fullops/docs/design/pay.md"
 content = "# 결제 설계\n"
 expect = { verdict = "pass", flow = "continues" }
 

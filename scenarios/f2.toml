@@ -4,40 +4,40 @@ origin = "설계 12.2절 F2"
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/report.md"
+path = ".fullops/tasks/A-1/qa/report.md"
 content = "# A-1 테스트 보고서\n"
 
 [[step]]
 act = "writes_file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/A-1-FIX-test/report.md"
+path = ".fullops/tasks/A-1-FIX/qa/report.md"
 content = "# 재검\n"
 expect = { verdict = "deny", rule = "T-10", flow = "stopped", escape = "fullops task reopen" }
 
 [[step]]
 act = "writes_file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/A-1-r2-1-review/report.md"
+path = ".fullops/tasks/A-1-r2-1/qa/report.md"
 content = "# 재검\n"
 expect = { verdict = "deny", rule = "T-10", flow = "stopped" }
 
 [[step]]
 act = "writes_file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/report.md"
+path = ".fullops/tasks/A-1/qa/report.md"
 content = "# A-1 테스트 보고서\n\n## 재검\n"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "writes_file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/B-2-test/report.md"
+path = ".fullops/tasks/B-2/qa/report.md"
 content = "# B-2\n"
 expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "writes_file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/C-3-FIX-test/report.md"
+path = ".fullops/tasks/C-3-FIX/qa/report.md"
 content = "# 기존 폴더가 없는 차수 이름\n"
 expect = { verdict = "pass", flow = "continues" }

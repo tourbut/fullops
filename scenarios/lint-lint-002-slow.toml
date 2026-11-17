@@ -17,7 +17,7 @@ sleep_ms = 121000
 
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '{"schema_version": 1, "commands": [{"name": "slow", "run": ["fullops-slow-tool"]}]}'
 
 [[step]]
@@ -40,4 +40,4 @@ act = "commits"
 act = "runs_fullops"
 raw = true
 args = ["lint", "--from", "base"]
-expect = { verdict = "pass", exit = 0, escape = "WARNING LINT-002 .fullops-squad/lint/lint.json 명령 slow이 12" }
+expect = { verdict = "pass", exit = 0, escape = "WARNING LINT-002 .fullops/config/lint.json 명령 slow이 12" }

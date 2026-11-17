@@ -8,7 +8,7 @@ roles = {}
 # 기준 시점: 통과하는 명령 하나를 등록해 깨끗한 실행의 경고가 0이 되게 한다
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
 
 [[step]]
