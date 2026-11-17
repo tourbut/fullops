@@ -13,7 +13,7 @@ fullops는 호스트 hook과 명령이 한 실행 파일(`fullops`)인 플러그
 
 길은 셋이고 결과가 같다. 어느 길이든 끝에 `fullops install`이 돈다.
 
-1. npx(Node 20.18.1 이상): `npx --yes github:tourbut/fullops install`. 작은 실행기가 이 PC에 맞는 바이너리를 고르고 `SHA256SUMS`로 검증한 뒤 `fullops install`에 넘긴다. 갱신은 `install` 대신 `update`(다시 설치와 같다), 확인은 `check`(`fullops install --check`)를 준다. `--hosts`, `--dry-run`도 그대로 넘긴다. `--repo <경로>`를 주면 설치 뒤 그 레포가 fullops를 켠 레포(`.fullops-squad/fullops.toml`이 있다)일 때만 `fullops upgrade`를 부른다. 아직 켜지 않은 레포면 `fullops init`(setup-fullops 스킬)을, Python판 레포면 전환 미리 보기를 안내만 하고 레포를 건드리지 않으며 설치의 성공(종료 코드 0)을 그대로 둔다. 안내하는 명령은 고정 위치 실행본의 전체 경로로 적는다. 첫 패널 릴리스(`orca-catalog.json`) 뒤의 판이면 끝에 Orca 패널 설치 명령을 안내한다. 옛 설치기의 추가 Codex 홈 인자는 없다(아래 '다른 홈').
+1. npx(Node 20.18.1 이상): `npx --yes github:tourbut/fullops install`. 작은 실행기가 이 PC에 맞는 바이너리를 고르고 `SHA256SUMS`로 검증한 뒤 `fullops install`에 넘긴다. 갱신은 `install` 대신 `update`(다시 설치와 같다), 확인은 `check`(`fullops install --check`)를 준다. `--hosts`, `--dry-run`도 그대로 넘긴다. `--repo <경로>`를 주면 설치 뒤 그 레포가 fullops를 켠 레포(`.fullops/fullops.toml`이 있다)일 때만 `fullops upgrade`를 부른다. 아직 켜지 않은 레포면 `fullops init`(setup-fullops 스킬)을, Python판 레포면 전환 미리 보기를 안내만 하고 레포를 건드리지 않으며 설치의 성공(종료 코드 0)을 그대로 둔다. 안내하는 명령은 고정 위치 실행본의 전체 경로로 적는다. 첫 패널 릴리스(`orca-catalog.json`) 뒤의 판이면 끝에 Orca 패널 설치 명령을 안내한다. 옛 설치기의 추가 Codex 홈 인자는 없다(아래 '다른 홈').
 2. Claude Code나 Codex의 마켓플레이스로 fullops를 설치한 뒤 `fullops install`을 한 번 실행한다.
    - Claude Code: `claude plugin marketplace add tourbut/fullops` 뒤 `claude plugin install fullops@fullops`. 그다음 Claude Code 세션에서 `fullops install`을 실행한다.
    - Codex: `codex plugin marketplace add tourbut/fullops` 뒤 `codex plugin add fullops@fullops`. 그다음 `<플러그인 폴더>/bin/fullops install`을 실행한다.
@@ -99,7 +99,7 @@ orca plugin install tourbut.fullops-panel    # 코드를 실행하는 플러그�
 
 ## 레포에 적용
 
-설치만으로는 아무 레포에서도 동작하지 않는다. 레포마다 `setup-fullops` 스킬로 켠다(`fullops init`). Python판(`fullops-squad` 1.24.0)을 쓰던 레포는 `fullops migrate --from-python`으로 넘어온다. 두 플러그인은 이름과 활성 표식이 달라 한 PC에 함께 있어도 서로 간섭하지 않는다.
+설치만으로는 아무 레포에서도 동작하지 않는다. 레포마다 `setup-fullops` 스킬로 켠다(`fullops init`). Python판(`fullops-squad` 1.24.0)을 쓰던 레포는 `fullops migrate --from-python`으로 넘어온다. 2.0.x에서 쓰던 레포(레포 폴더가 `.fullops-squad/`다)는 `fullops migrate --layout`으로 레포 폴더를 `.fullops/`로 옮긴다(그 전에는 hook과 명령이 돌지 않고 옮기라는 안내만 나온다). 두 플러그인은 이름과 활성 표식이 달라 한 PC에 함께 있어도 서로 간섭하지 않는다.
 
 ## 갱신과 디렉터리판
 

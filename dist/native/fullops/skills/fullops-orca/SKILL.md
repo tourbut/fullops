@@ -13,9 +13,9 @@ lead(coor 모드의 coordinator, dev 모드의 주 담당)가 요청을 받아 �
 
 ## bootstrap
 
-역할 워크트리는 Orca로 만든다. 역할 브랜치는 `fullops/<역할>`이고 `fullops init`이 원격에 만들어 둔다. 그 브랜치를 체크아웃한 워크트리가 없으면 배정이 거절된다. 역할과 모델 후보는 `.fullops-squad/orca-agents.md`에 있다. grok worker는 원본 레포의 폴더 신뢰가 필요하고 사용자가 grok에서 승인한다.
+역할 워크트리는 Orca로 만든다. 역할 브랜치는 `fullops/<역할>`이고 `fullops init`이 원격에 만들어 둔다. 그 브랜치를 체크아웃한 워크트리가 없으면 배정이 거절된다. 역할과 모델 후보는 `.fullops/guide/orca-agents.md`에 있다. grok worker는 원본 레포의 폴더 신뢰가 필요하고 사용자가 grok에서 승인한다.
 
-역할 워크트리의 환경 파일(`.fullops-squad/.env*`)은 `fullops dispatch`와 `fullops task recover`가 주 체크아웃에서 연결한다. 배정 전에 그 워크트리에서 직접 쓸 일이 있거나 연결이 빠졌으면 그 워크트리에서 `fullops env link`를 실행한다. 추적 파일과 이미 있는 파일은 건드리지 않는다.
+역할 워크트리의 환경 파일(`.fullops/.env*`)은 `fullops dispatch`와 `fullops task recover`가 주 체크아웃에서 연결한다. 배정 전에 그 워크트리에서 직접 쓸 일이 있거나 연결이 빠졌으면 그 워크트리에서 `fullops env link`를 실행한다. 추적 파일과 이미 있는 파일은 건드리지 않는다.
 
 ## route: 요청을 받을 때
 
@@ -27,7 +27,7 @@ fullops route <KEY> (--request-file <경로> | --request "<글>")
 
 1. 과제 키를 정하고 `fullops route`로 분류한다. 결과는 `direct`(역할 worker에게 바로), `design`·`product`(설계 역할이 먼저), `unresolved` 가운데 하나다. 분류는 추천이다. 요청 글은 4,000자 이하로 요약한다.
 2. 분류가 틀렸으면 `--force --class <값> --role <역할> --reason "<근거>"`로 바꾼다. `unresolved`는 배정할 수 없다.
-3. 모델은 `orca-agents.md`의 모델 후보에서 고르고 `--agent --model --effort`를 셋 다 준다. 분류 없이 모델만 기록하려면 `fullops route <KEY> --tuple-only --role <역할|reviewer> --agent … --model … --effort …`다.
+3. 모델은 `.fullops/guide/orca-agents.md`의 모델 후보에서 고르고 `--agent --model --effort`를 셋 다 준다. 분류 없이 모델만 기록하려면 `fullops route <KEY> --tuple-only --role <역할|reviewer> --agent … --model … --effort …`다.
 4. 분류만 하고 턴을 끝내면 종료가 막힌다. 배정하거나, 지금 할 수 없으면 `PLANS.md`에 대기 행으로 적는다(`fullops plan add`).
 5. 지시서 작성은 `fullops-work`를 따른다. `design`·`product` 과제의 다른 역할 지시서는 설계 역할이 쓴다.
 
@@ -115,7 +115,7 @@ fullops merge <KEY> [--completion <메시지 ID>] [--accept-missing-lint "<사�
 
 ## 설계 완료 뒤
 
-설계 역할의 완료 보고(`[설계] <KEY> | … | 지시서: <경로>`)를 받으면 `fullops merge <KEY>`로 통합한다. 병합으로 lead 체크아웃에 들어온 지시서(`handovers/to_<역할>.md`)마다 그 역할의 모델을 골라 배정한다:
+설계 역할의 완료 보고(`[설계] <KEY> | … | 지시서: <경로>`)를 받으면 `fullops merge <KEY>`로 통합한다. 병합으로 lead 체크아웃에 들어온 지시서(`.fullops/inbox/to_<역할>.md`)마다 그 역할의 모델을 골라 배정한다:
 
 ```
 fullops dispatch <KEY> --role <역할> --agent <CLI> --model <모델> --effort <effort>
@@ -129,7 +129,7 @@ fullops dispatch <KEY> --role <역할> --agent <CLI> --model <모델> --effort <
 
 ## 병렬 진행
 
-방침은 `fullops.toml`의 `parallel`이다(`fullops-work`의 "병렬 진행" 표, 정본은 `.fullops-squad/rules/delegation.md`).
+방침은 `fullops.toml`의 `parallel`이다(`fullops-work`의 "병렬 진행" 표, 정본은 `.fullops/guide/rules/delegation.md`).
 
 - 서로 다른 워크트리가 필요한 독립 과제는 역할 단위로 배정한다. 방침이 `on`·`ultra`면 담당 역할이 서로 다른 준비된 행은 한 턴에 함께 배정한다.
 - 같은 종류의 일을 동시에 여럿 돌리려면 역할(워크트리)을 늘린다(예: `dev1`, `dev2`). 역할당 인박스는 하나이고 과제 이름으로 된 지시서 파일은 만들지 않는다.

@@ -5,11 +5,11 @@ description: FullOps setup이 완료된 레포에서 기획·설계·구현·이
 
 # 개발 산출물
 
-활성 레포(`.fullops-squad/fullops.toml`이 있는 레포)에서만 쓴다. 표식이 없으면 문서를 만들지 않고 `setup-fullops`를 안내한다.
+활성 레포(`.fullops/fullops.toml`이 있는 레포)에서만 쓴다. 표식이 없으면 문서를 만들지 않고 `setup-fullops`를 안내한다.
 
 명령 표기: 이 문서의 `fullops`는 Claude Code 세션에서 그대로 실행된다. Codex·grok·agy 세션에서는 고정 위치 실행본을 전체 경로로 부른다: `~/.fullops/bin/fullops`(Windows는 `%USERPROFILE%\.fullops\bin\fullops.exe`).
 
-`.fullops-squad/FULLOPS.md`를 읽는다. 산출물 D01~D13과 원천 문서의 대응은 `.fullops-squad/docs/deliverables/README.md`의 인덱스 표가 정본이다. 문서를 쓰거나 검토할 때는 `.fullops-squad/docs/agents/document-writing.md`의 front matter와 작성 원칙을 따른다.
+`.fullops/guide/FULLOPS.md`를 읽는다. 산출물 D01~D13과 원천 문서의 대응은 `.fullops/docs/deliverables/README.md`의 인덱스 표가 정본이다. 문서를 쓰거나 검토할 때는 `.fullops/guide/agents/document-writing.md`의 front matter와 작성 원칙을 따른다.
 
 1. 요청한 단계나 D01~D13 가운데 대상을 정한다. 지정이 없으면 현재 작업에 영향을 받는 문서만 고른다.
 2. 기존 원천 문서·코드·검증 결과를 읽는다. 입력이 부족한 절은 미확정으로 표시하고 필요한 입력을 적는다.
