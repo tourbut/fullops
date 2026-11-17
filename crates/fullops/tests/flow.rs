@@ -122,10 +122,20 @@ fn dispatch_records_state_and_sends_the_spec() {
         &d.sb.path("lead").join(".fullops-squad/.env"),
         "TOKEN_FOR_TEST=1\n",
     );
+    // worker의 첫 프롬프트 hook이 상태 기록보다 먼저 돌아 세션 파일에만 묶였다
+    let worker = fullops_store::discover(&d.sb.path("dev")).unwrap().unwrap();
+    let session = json!({"v": 1, "sid": "w1", "host": "claude", "started_at": 1, "last_seen": 1, "terminal": "term_1",
+        "mode_at_start": ["coor", null, null], "anchor": null, "turn": 1, "prompt_fp": null,
+        "dispatch": {"id": "ctx_1", "task": "task_1", "bound_by": "preamble"}, "routed": [], "blocks": {}, "noticed": []});
+    d.sb.write(
+        &worker.local().join("sessions/w1.json"),
+        &session.to_string(),
+    );
     steps(&mut d, DISPATCH);
     let sb = &d.sb;
     let st = state(sb);
     let dispatch = &st["dispatches"][0];
+    assert_eq!(dispatch["bound_session"], "w1");
     assert_eq!(st["dispatches"].as_array().map(Vec::len), Some(1));
     for (name, value) in [
         ("id", "ctx_1"),

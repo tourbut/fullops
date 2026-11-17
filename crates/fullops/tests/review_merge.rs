@@ -1572,6 +1572,23 @@ fn review_needs_a_known_implementer() {
     result["implementer_session"] = json!(null);
     fullops_store::write_json(&path, &result).unwrap();
     expect(&w.cli(&["review", "check", "A-1"]), 2, &["FullOps[RV-04]"]);
+    // 리뷰어가 세션 칸을 비우면 그 snapshot에 배정된 리뷰 worker의 세션을 쓴다
+    result["reviewer_session"] = json!(null);
+    fullops_store::write_json(&path, &result).unwrap();
+    w.edit(|state| {
+        let mut review = state.dispatches[0].clone();
+        review.id = DispatchId::new("ctx_review").unwrap();
+        review.purpose = Purpose::Review;
+        review.worktree = state.snapshots[0].path.clone();
+        review.bound_session = SessionId::new("sid-rev").ok();
+        state.dispatches.push(review);
+    });
+    expect(&w.cli(&["review", "check", "A-1"]), 0, &["accepted.json"]);
+    let accepted_path = w.review_dir("A-1", &sha).join("accepted.json");
+    let accepted: Value =
+        serde_json::from_str(&std::fs::read_to_string(&accepted_path).unwrap()).unwrap();
+    assert_eq!(accepted["reviewer_session"], json!("sid-rev"));
+    std::fs::remove_file(&accepted_path).unwrap();
     result["reviewer_session"] = json!("sid-reviewer");
     fullops_store::write_json(&path, &result).unwrap();
     expect(&w.cli(&["review", "check", "A-1"]), 0, &["accepted.json"]);
