@@ -34,17 +34,6 @@ const REQUIRED: &[RequiredApply] = &[
     },
     RequiredApply {
         since: "2.0.0",
-        id: "explore-history-ignore",
-        check: |root| {
-            let ignore = read(root, ".fullops-squad/.gitignore");
-            assets::GITIGNORE_LINES
-                .iter()
-                .all(|line| ignore.lines().any(|l| l.trim() == *line))
-        },
-        hint: "`.fullops-squad/.gitignore`에 `docs/evaluations/jev/history/` 줄을 더한다.",
-    },
-    RequiredApply {
-        since: "2.0.0",
         id: "delegation-rule",
         check: |root| {
             let text = read(root, ".fullops-squad/rules/delegation.md");

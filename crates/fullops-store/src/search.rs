@@ -1,30 +1,16 @@
-//! 탐색 색인과 탐색 결과·패킷 파일(설계 6.1.5·6.3·6.5절). 묶음 J가 맡는다.
-//! `read_packet`·`read_packet_outcomes`는 뼈대의 완성본이다.
+//! 탐색 색인과 탐색 결과 파일(설계 6.1.5·6.3·6.5절). 묶음 J가 맡는다.
 
-use crate::files::{now, read_json, read_text, write_json};
+use crate::files::{now, read_json, write_json};
 use crate::repo::Repo;
 use fullops_core::explore::{IndexEntry, PARSER, Scope, SearchIndex, index_entry};
-use fullops_core::model::{
-    EXPLORE_V, Known, Packet, PacketOutcomes, TaskKey, TreeEntry, parse_packet,
-    parse_packet_outcomes, sha256_hex,
-};
+use fullops_core::model::{EXPLORE_V, Known, TreeEntry, sha256_hex};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-/// 이 체크아웃의 `<KEY>-packet.json`. 없거나 JSON이 아니거나 `v != 1`이면 `Yes(None)`이다(없는 것으로 본다).
-pub fn read_packet(repo: &Repo, key: &TaskKey) -> Known<Option<Packet>> {
-    read_text(&repo.packet_path(key)).map(|text| parse_packet(text?.as_bytes()))
-}
-
-/// 이 체크아웃의 `<KEY>-packet-outcomes.json`. 없거나 `v != 1`이면 `Yes(None)`이다.
-pub fn read_packet_outcomes(repo: &Repo, key: &TaskKey) -> Known<Option<PacketOutcomes>> {
-    read_text(&repo.packet_outcomes_path(key)).map(|text| parse_packet_outcomes(text?.as_bytes()))
-}
-
-/// 탐색 결과·패킷을 `docs/evaluations/jev/<file_name>`에 쓰고 그 경로를 돌려준다.
+/// 탐색 결과를 `<git-common-dir>/fullops/explore/<file_name>`에 쓰고 그 경로를 돌려준다.
 /// `keep_history`면 있던 파일을 `history/<이름>.<있던 파일의 created_at, 없으면 지금>.json`으로 옮긴다
 /// (같은 이름이 있으면 끝에 `-<n>`). 덮어쓰는 모든 경우(`--force`, 읽히지 않는 옛 파일)에 참으로 부른다.
 pub fn write_explore_result<T: Serialize>(

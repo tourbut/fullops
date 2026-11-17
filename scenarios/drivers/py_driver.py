@@ -27,7 +27,7 @@ stdout에 JSON 하나를 낸다. 시나리오는 {"name", "steps": [{"act", "ver
 - worker_reports: 위의 넷 뒤에 worker가 `orca orchestration send --type worker_done`을 보내고 lead가 받는다.
 - lead_waits: `orca_wait.py --run …`(가짜 Orca는 기다리지 않으므로 확인 주기를 0.001분으로 준다).
 - lead_merges: `integration.py status`로 SHA를 찾고 `review.py need`, 기본 브랜치 병합, push, 역할 워크트리 동기화, PLANS.md 기록.
-- runs_fullops: 1.24.0의 스킬이 같은 일에 시키던 스크립트로 옮긴다. `lint` → `lint.py`, `context` → `jev_context.py`(오프라인), `packet build` → `jev_packet.py`,
+- runs_fullops: 1.24.0의 스킬이 같은 일에 시키던 스크립트로 옮긴다. `lint` → `lint.py`, `context` → `jev_context.py`(오프라인),
   `hold` → `integration.py hold`(통합 대기 기록의 메시지를 찾아), 사용자가 답한 뒤의 `review waive` → `review.py waive --decided-by user`.
   `decision add`·`answer`는 1.24.0에서 대화로 묻던 일이라 "n/a"다(답했다는 사실만 기억한다). 그 밖은 1.24.0에 대응이 없다. 판정 "n/a"로 적는다.
   단 `raw`인 `fullops migrate …`는 FULLOPS_FAKES 폴더의 새 판 실행본으로 실제로 돌린다(판정은 그대로 "n/a").
@@ -68,8 +68,7 @@ SHELL = {'claude': 'Bash', 'codex': 'Bash', 'grok': 'run_terminal_command'}
 SUBAGENT = {'claude': ('Agent', 'prompt'), 'codex': ('spawn_agent', 'message'), 'grok': ('spawn_subagent', 'prompt')}
 CONFIG, CONFIG_JSON = '.fullops-squad/fullops.toml', '.fullops-squad/fullops.json'
 OPERATING = ('mode', 'primary_role', 'primary_branch', 'test_level')  # 1.24.0의 fullops.json에도 있는 운영 값
-PACKET_FLAGS = {'--role': '--role', '--seed': '--seeds', '--update-doc': '--update-docs', '--required': '--required',
-                '--decisions': '--decisions'}  # fullops packet build → jev_packet.py
+
 
 
 def quote(arg):
@@ -647,17 +646,6 @@ class Driver:
             level = ['--level', option('--level')] if '--level' in args else []
             return self.cli(act, who, ['python3', self.script('lint.py'), '--repo', repo, '--from', option('--from') or self.base(),
                                        *level], env=env)[0]
-        if args[:2] == ['packet', 'build'] and len(args) > 2:
-            grouped, rest = {}, []
-            words = iter(args[3:])
-            for word in words:
-                if word in PACKET_FLAGS:
-                    grouped.setdefault(PACKET_FLAGS[word], []).append(next(words))
-                else:
-                    rest.append(word)
-            converted = [w for flag, values in grouped.items() for w in (flag, *values)]
-            return self.cli(act, who, ['python3', self.script('jev_packet.py'), '--repo', repo, '--key', args[2],
-                                       *converted, *rest], env=env)[0]
         if args[:1] == ['context'] and len(args) > 1:  # 인자 모양이 같다(--role, --paths, --required, --force)
             return self.cli(act, who, ['python3', self.script('jev_context.py'), '--repo', repo, '--key', args[1], *args[2:]],
                             env=env)[0]

@@ -131,17 +131,6 @@ act = "runs_fullops"
 args = ["context", "PAY-12", "--role", "dev", "--paths", "docs/pay.md"]
 expect = { verdict = "pass", exit = 0, flow = "continues" }
 
-[[step]]
-act = "runs_fullops"
-args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox"]
-expect = { verdict = "pass", exit = 0, flow = "continues" }
-
-# 같은 입력. --write-inbox는 블록을 다시 쓴다
-[[step]]
-act = "runs_fullops"
-args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox"]
-expect = { verdict = "pass", exit = 0, flow = "continues" }
-
 # 원문 파일 하나를 고친다
 [[step]]
 act = "file"
@@ -154,11 +143,6 @@ content = '''
 재시도는 세 번까지다.
 '''
 
-[[step]]
-act = "runs_fullops"
-args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox"]
-expect = { verdict = "deny", rule = "J-04", flow = "stopped", escape = "--force" }
-
 # 후보 문서가 바뀌었다(options.sources)
 [[step]]
 act = "runs_fullops"
@@ -167,23 +151,7 @@ expect = { verdict = "deny", rule = "J-04", flow = "stopped", escape = "--force"
 
 [[step]]
 act = "runs_fullops"
-args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox", "--force"]
-expect = { verdict = "pass", exit = 0, flow = "continues" }
-
-[[step]]
-act = "runs_fullops"
 args = ["context", "PAY-12", "--role", "dev", "--paths", "docs/pay.md", "--force", "--required", "docs/pay.md"]
-expect = { verdict = "pass", exit = 0, flow = "continues" }
-
-# context를 다시 만들었다(options.producer_sha256)
-[[step]]
-act = "runs_fullops"
-args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox"]
-expect = { verdict = "deny", rule = "J-04", flow = "stopped", escape = "--force" }
-
-[[step]]
-act = "runs_fullops"
-args = ["packet", "build", "PAY-12", "--role", "dev", "--seed", "src/pay/retry.rs", "--write-inbox", "--force"]
 expect = { verdict = "pass", exit = 0, flow = "continues" }
 
 [[step]]

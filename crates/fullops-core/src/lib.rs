@@ -18,7 +18,6 @@ pub mod shell;
 
 pub use config::{PolicyError, PolicyKind, is_code};
 pub use derive::{ready, stage_of};
-pub use explore::check_packet;
 pub use facts::{Facts, resolve_actor};
 pub use flow::{check_dispatch, check_task_new, metrics, orca_effort, record_message};
 pub use frontmatter::{FmValue, FrontMatter, FrontMatterError, parse_front_matter};

@@ -33,17 +33,15 @@ dev 모드의 주 담당은 기술 계획·구현·검증을 직접 한다. 직�
    - 검증은 `rules/common/testing.md`의 테스트 레벨을 따르고 레벨 밖의 검사·캡처를 더하지 않는다.
    - "신중히 생각해" 같은 사고 지시를 넣지 않는다. 난이도는 모델과 effort 선택으로 조절한다.
 4. UI 작업은 `fullops-frontend`, 코드 기반 모션그래픽 영상은 `fullops-motion`으로 정한 내용을 인박스에 연결한다. 영상 지시서에는 본문에 `템플릿: #<번호> <이름>` 한 줄을 적는다.
-5. 배정은 `fullops-orca`의 dispatch를 따른다. 인박스와 탐색 결과는 `fullops dispatch`의 준비 커밋으로 worker의 워크트리에 전달된다.
+5. 배정은 `fullops-orca`의 dispatch를 따른다. 인박스는 `fullops dispatch`의 준비 커밋으로 worker의 워크트리에 전달된다.
 
 ### 먼저 읽을 문서 찾기(선택)
 
-`task new` 뒤, 배정 전에 쓴다. 셋 다 추천이고 건너뛰어도 배정이 막히지 않는다.
+`task new` 뒤, 배정 전에 쓴다. 둘 다 추천이고 건너뛰어도 배정이 막히지 않는다. 결과 파일은 커밋되지 않는 Git 공용 디렉터리(`<git-common-dir>/fullops/explore/`)에 생기고 모든 워크트리가 함께 본다. 고른 경로는 지시서의 "먼저 읽을 문서"에 적어 worker에게 전한다.
 
 1. `fullops find <KEY> --role <역할>`로 코드 후보를, `fullops find <KEY> --role <역할> --scope documents`로 문서 후보를 찾는다.
 2. `fullops context <KEY> --role <역할> --paths <경로>... [--required <경로>]...`로 후보 문서를 분류한다. 후보는 20개 이하로 좁혀 준다.
-3. 넓거나 낯선 변경, 여러 모듈에 걸친 변경이면 `fullops packet build <KEY> --role <역할> [--seed <경로>]... [--required <경로>]... [--update-doc <Dnn>]... --write-inbox`로 탐색 패킷을 만든다. 패킷을 만든 뒤 지시서 본문이나 전달 항목의 원문을 고쳤으면 `--force`로 다시 만든다(낡은 패킷은 배정에서 거절된다).
-4. 같은 입력이면 호출 없이 이전 결과를 다시 쓴다. 입력이 달라졌으면 `--force`로 갱신한다(이전 결과는 `history/`에 남는다). Jev 키가 없거나 `FULLOPS_OFFLINE=1`이면 로컬 검색 후보를 돌려준다. 이때 의미 탐색을 했다고 보고하지 않는다.
-5. 패킷이 있는 과제의 worker는 끝내기 전에 `docs/evaluations/jev/<KEY>-packet-outcomes.json`에 전달 항목마다 처리 결과와 이유를 적고 커밋한다. `fullops packet check <KEY> --role <역할> --completion`으로 미리 확인할 수 있다. 패킷이 없는 과제는 이 기록을 만들지 않는다.
+3. 같은 입력이면 호출 없이 이전 결과를 다시 쓴다. 입력이 달라졌으면 `--force`로 갱신한다(이전 결과는 `history/`에 남는다). Jev 키가 없거나 `FULLOPS_OFFLINE=1`이면 로컬 검색 후보를 돌려준다. 이때 의미 탐색을 했다고 보고하지 않는다.
 
 ## 작업과 완료
 

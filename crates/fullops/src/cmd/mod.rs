@@ -18,7 +18,6 @@ mod lint;
 mod merge;
 mod migrate;
 mod mode;
-pub mod packet;
 mod plan;
 mod retire;
 mod review;
@@ -71,11 +70,6 @@ pub static COMMANDS: &[Command] = &[
     command("route", "분류와 tuple 기록", route::run),
     command("find", "지시서에 맞는 코드·문서 후보 찾기(추천)", find::run),
     command("context", "후보 문서 분류(추천)", context::run),
-    command(
-        "packet",
-        "탐색 패킷 만들기(build)와 검사(check)",
-        packet::run,
-    ),
     command(
         "task",
         "인박스 생성(new), 재오픈(reopen), 끊긴 worker 복구(recover)",

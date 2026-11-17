@@ -7,10 +7,9 @@ use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::lint_rules::config_sha256;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
-    Accepted, Completion, Config, HeadRef, Known, LintResult, Need, NeedAction, PacketCheck,
-    Purpose, Refusal, RoleId, RoleKind, RunOwner, Sha, Snapshot, SnapshotHold, SnapshotState,
-    State, TaskKey, Waiver, WorkOutcome, parse_packet, parse_packet_outcomes, path_text, same_path,
-    sha256_hex,
+    Accepted, Completion, Config, HeadRef, LintResult, Need, NeedAction, Purpose, Refusal, RoleId,
+    RoleKind, RunOwner, Sha, Snapshot, SnapshotHold, SnapshotState, State, TaskKey, Waiver,
+    WorkOutcome, path_text, same_path, sha256_hex,
 };
 use fullops_core::review::{
     ReviewResult, RuleFile, Targets, check_lint, check_result, result_skeleton, review_need,
@@ -27,9 +26,8 @@ const CONFIG: &str = ".fullops-squad/fullops.toml";
 const LINT_JSON: &str = ".fullops-squad/lint/lint.json";
 const RULE_JSON: &str = ".fullops-squad/review/rule.json";
 /// `review check`의 실패 항목 번호(설계 8.9절)에 붙인 ID.
-const ITEMS: [&str; 11] = [
+const ITEMS: [&str; 10] = [
     "RV-00", "RV-01", "RV-02", "RV-03", "RV-04", "RV-05", "RV-06", "RV-07", "RV-08", "RV-09",
-    "RV-10",
 ];
 
 fn read<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
@@ -482,70 +480,6 @@ fn snapshot(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     Ok(EXIT_OK)
 }
 
-/// 10번: 패킷 조건이 참이면 리뷰 head 커밋의 패킷·처리 기록·지시서로 `check_packet`을 부른다.
-fn packet_failures(repo: &Repo, git: &GitCli, key: &TaskKey, subject: &Subject) -> Vec<Refusal> {
-    let files = blobs(
-        git,
-        &subject.head,
-        &[
-            rel(repo, repo.packet_path(key)),
-            rel(repo, repo.packet_outcomes_path(key)),
-        ],
-    );
-    let packet = files[0].as_deref().and_then(parse_packet);
-    let outcomes = files[1].as_deref().and_then(parse_packet_outcomes);
-    // 읽지 못한 기록을 '없음'으로 내리면 패킷 검사를 건너뛴다
-    let (Known::Yes(route), false, false) = (
-        fullops_store::read_route(repo, key),
-        files[0].is_some() && packet.is_none(),
-        files[1].is_some() && outcomes.is_none(),
-    ) else {
-        return vec![Refusal {
-            rule: "packet",
-            reason: format!(
-                "`routes/{key}.json`이나 리뷰 head의 `{key}-packet.json`, 패킷 처리 기록을 읽을 수 없다."
-            ),
-            escape: "기록 파일의 JSON을 고쳐 커밋한 뒤 다시 리뷰한다".into(),
-            exit: 2,
-        }];
-    };
-    if packet.is_none() && !route.as_ref().is_some_and(|r| r.requires_packet) {
-        return Vec::new();
-    }
-    let role = packet
-        .as_ref()
-        .map(|p| p.role.clone())
-        .or_else(|| subject.completion.as_ref()?.role.clone())
-        .or_else(|| route.as_ref()?.role.clone());
-    let Some(role) = role else {
-        return Vec::new();
-    };
-    let round = packet.as_ref().map_or(0, |p| p.round);
-    // 완료 기록 커밋 뒤에는 지시서가 logs로 옮겨져 있다
-    let instruction = blobs(
-        git,
-        &subject.head,
-        &[
-            rel(repo, repo.inbox_path(&role)),
-            rel(repo, repo.handover_log_path(key, &role, round)),
-        ],
-    )
-    .iter()
-    .find_map(text);
-    fullops_core::check_packet(
-        PacketCheck::Completion,
-        route.as_ref(),
-        packet.as_ref(),
-        outcomes.as_ref(),
-        instruction.as_deref(),
-        key,
-        &role,
-        round,
-        &mut |older| git.is_ancestor(older, subject.head.as_str()),
-        &mut |_| Known::Unknown("review"),
-    )
-}
-
 fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     let parsed = Parsed::new(args, &["sha"], &[])?;
     let key = task_key(parsed.key.clone())?;
@@ -673,7 +607,6 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
             }
         }
     }
-    failed.extend(packet_failures(repo, &git, &key, &subject));
     if !failed.is_empty() {
         return Err(CliError::Refused(failed));
     }

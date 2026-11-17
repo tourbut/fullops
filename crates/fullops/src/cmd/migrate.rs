@@ -811,7 +811,7 @@ fn import_state(
     Ok(())
 }
 
-/// 보고서에만 내는 확인(13.2절 3·5번): lint 정규식 규칙, `requires_packet`이 켜진 옛 route 기록, `PLANS.md` 문법.
+/// 보고서에만 내는 확인(13.2절 3·5번): lint 정규식 규칙, `PLANS.md` 문법.
 /// `--dry-run` 보고서에도 같은 줄이 나온다. 돌려주는 것은 읽은 `PLANS.md`다.
 fn inspect(squad: &Path, report: &mut Vec<String>) -> Plan {
     let lint: Value = fullops_store::read_json(&squad.join("lint/lint.json"))
@@ -825,24 +825,6 @@ fn inspect(squad: &Path, report: &mut Vec<String>) -> Plan {
                 rule["code"].as_str().unwrap_or("?")
             ));
         }
-    }
-    let packets: Vec<String> = json_files(&squad.join("docs/evaluations/jev"))
-        .into_iter()
-        .filter(|(_, v)| v["requires_packet"] == true)
-        .filter_map(|(p, _)| {
-            Some(
-                p.file_name()?
-                    .to_str()?
-                    .strip_suffix("-route.json")?
-                    .to_string(),
-            )
-        })
-        .collect();
-    if !packets.is_empty() {
-        report.push(format!(
-            "requires_packet이 켜진 옛 route 기록: {}. 같은 키를 다시 분류하면 그 값이 옮겨진다.",
-            packets.join(", ")
-        ));
     }
     let text = std::fs::read_to_string(squad.join("PLANS.md")).unwrap_or_default();
     let plan = fullops_core::parse_plan(&text, assets::PLANS_MD);

@@ -1,34 +1,21 @@
 //! `fullops done`: 완료 기록 보존, 검사, push, 보낼 본문 출력(설계 8.7절). 보내지는 않는다: 전송은 preamble의 `worker_done`이다.
 
-use super::dispatch::{packet_findings, usage, value};
+use super::dispatch::{usage, value};
 use crate::assets::HANDOVER_TEMPLATE;
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use crate::hook::changes::{self, GitGate};
 use fullops_core::flow::refusal;
 use fullops_core::messages;
 use fullops_core::model::{
-    Completion, Config, Dispatch, Extra, Followup, HeadRef, Known, LintResult, MessageId,
-    PacketCheck, Reported, RoleId, RoleKind, Seat, ShaSource, State, TaskKey, TestLevel,
-    WorkOutcome, path_text, same_path,
+    Completion, Config, Dispatch, Extra, Followup, HeadRef, Known, LintResult, MessageId, Reported,
+    RoleId, RoleKind, Seat, ShaSource, State, TaskKey, TestLevel, WorkOutcome, path_text,
+    same_path,
 };
 use fullops_ext::{Git, GitCli};
 use fullops_store::Repo;
 use lexopt::prelude::*;
 use serde_json::json;
 use std::time::Duration;
-
-/// 기록 경로(설계 6.6절 5번). `changed()`와 lint 통과 인정이 항상 뺀다.
-pub(super) fn is_record_path(path: &str) -> bool {
-    [
-        ".fullops-squad/handovers/",
-        ".fullops-squad/docs/evaluations/",
-        ".fullops-squad/routes/",
-        ".fullops-squad/reviews/",
-    ]
-    .iter()
-    .any(|dir| path.starts_with(dir))
-        || path == ".fullops-squad/PLANS.md"
-}
 
 /// `## 완료 보고` 절의 줄들.
 fn report_lines(text: &str) -> Vec<&str> {
@@ -129,7 +116,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         .is_some_and(|r| r.kind == RoleKind::Design);
 
     // 이 과제의 키: 묶인 dispatch → 자기 인박스 → 이미 남긴 완료 기록 커밋
-    // 읽지 못한 인박스를 '없음'으로 내리면 R-04·R-10·R-06을 건너뛴다. 실패 보고만 그대로 보낸다
+    // 읽지 못한 인박스를 '없음'으로 내리면 R-04·R-06을 건너뛴다. 실패 보고만 그대로 보낸다
     let inbox = match fullops_store::read_inbox(repo, &role) {
         Known::Yes(inbox) => inbox,
         Known::Unknown(_) if failed.is_some() => None,
@@ -226,15 +213,6 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
                         "R-04",
                         &[],
                         "인박스의 `## 완료 보고`에 브랜치·SHA·검증 결과를 적고 커밋한다",
-                        2,
-                    ));
-                }
-                // R-10
-                if let Some(found) = packet_findings(repo, PacketCheck::Completion, &key, &role) {
-                    refused.push(refusal(
-                        "R-10",
-                        &[&found],
-                        &format!("`{key}-packet-outcomes.json`에 전달 항목마다 처리 결과와 이유를 적고 커밋"),
                         2,
                     ));
                 }

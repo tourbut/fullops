@@ -883,8 +883,6 @@ pub struct SpecInput<'a> {
     pub base: &'a str,
     pub test_level: TestLevel,
     pub parallel: Parallel,
-    /// 패킷 조건이 참일 때 패킷 파일의 레포 상대 경로.
-    pub packet: Option<&'a str>,
     /// 설계 역할 배정의 요청 파일 경로.
     pub request: Option<&'a str>,
     pub review: Option<ReviewSpec<'a>>,
@@ -916,9 +914,6 @@ pub fn spec(input: &SpecInput) -> String {
     field("Base", input.base);
     field("Test level", input.test_level.as_str());
     field("Parallel", input.parallel.as_str());
-    if let Some(packet) = input.packet {
-        field("Packet", packet);
-    }
     if let Some(request) = input.request {
         field("Request", request);
     }
