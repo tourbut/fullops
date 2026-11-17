@@ -3,7 +3,7 @@
   "execution": "trusted-worker",
   "id": "fullops-panel",
   "name": "fullops",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "fullops가 쓰는 status.json을 읽어 과제, 통합 대기, 결정, 지표를 보여 주는 읽기 전용 패널이다.",
   "engines": { "orca": ">=1.4.256" },
   "pluginApi": 1,

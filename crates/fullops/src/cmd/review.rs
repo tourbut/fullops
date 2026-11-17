@@ -4,6 +4,7 @@
 use super::hold::{commit, is_record, known, load_state, refused, task_key, value};
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use fullops_core::layout;
 use fullops_core::lint_rules::config_sha256;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
@@ -22,9 +23,6 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const CONFIG: &str = ".fullops-squad/fullops.toml";
-const LINT_JSON: &str = ".fullops-squad/lint/lint.json";
-const RULE_JSON: &str = ".fullops-squad/review/rule.json";
 /// `review check`의 실패 항목 번호(설계 8.9절)에 붙인 ID.
 const ITEMS: [&str; 10] = [
     "RV-00", "RV-01", "RV-02", "RV-03", "RV-04", "RV-05", "RV-06", "RV-07", "RV-08", "RV-09",
@@ -60,7 +58,11 @@ fn text(bytes: &Option<Vec<u8>>) -> Option<String> {
 /// 필요 판정(설계 8.9절). 정책과 lint 제외는 merge-base 시점의 것이다. 둘째 값은 그 시점 설정을 읽지 못해 기본값을 썼는가다.
 pub(super) fn need_for(git: &GitCli, base: &Sha, head: &Sha) -> Result<(Need, bool), CliError> {
     let mb = known(git.merge_base(base.as_str(), head.as_str()), "merge-base")?;
-    let at = blobs(git, &mb, &[CONFIG.to_string(), LINT_JSON.to_string()]);
+    let at = blobs(
+        git,
+        &mb,
+        &[layout::config_toml().into(), layout::lint_json().into()],
+    );
     let (config, lint) = (text(&at[0]), text(&at[1]));
     let baseline = fullops_store::baseline(config.as_deref());
     let exclude = fullops_core::lint_excludes(lint.as_deref(), assets::LINT_JSON);
@@ -158,7 +160,7 @@ fn subject(
 
 /// 리뷰 규칙 파일과 그 지문. 체크아웃마다 줄끝이 달라도 같은 지문이 되게 LF로 맞춘다. 파일이 없으면 빈 규칙이다.
 fn rules(repo: &Repo) -> (RuleFile, String) {
-    let bytes = std::fs::read(repo.root.join(RULE_JSON)).unwrap_or_default();
+    let bytes = std::fs::read(repo.root.join(layout::review_json())).unwrap_or_default();
     let text = String::from_utf8_lossy(&bytes).replace("\r\n", "\n");
     (
         serde_json::from_str(&text).unwrap_or_default(),
@@ -560,7 +562,7 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         }
     }
     if rules(repo).1 != targets.policy_sha256 {
-        fail(8, "review/rule.json이 snapshot을 만든 뒤 바뀌었습니다.");
+        fail(8, "config/review.json이 snapshot을 만든 뒤 바뀌었습니다.");
     }
     let lint_path = dir.join("lint.json");
     if !lint_path.exists()
@@ -587,7 +589,7 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
                     "lint가 리뷰 base부터 검사하지 않았습니다(lint.json의 merge_base가 리뷰 base나 그 조상이 아니다).",
                 );
             }
-            let at = blobs(&git, &targets.base, &[LINT_JSON.to_string()]);
+            let at = blobs(&git, &targets.base, &[layout::lint_json().into()]);
             if lint.config_sha256 != config_sha256(at[0].as_deref(), assets::LINT_JSON) {
                 fail(
                     9,
@@ -879,7 +881,7 @@ fn supersede(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     };
     let (old, new) = (prefix("old")?, prefix("new")?);
     let repo = ctx.repo()?;
-    let root = repo.squad().join("reviews").join(key.as_str());
+    let root = repo.root.join(layout::reviews_dir(&key));
     let (old_dir, new_dir) = (root.join(old), root.join(new));
     let no = |why: &str| refused("RV-00", "supersede", &[old, new, why]);
     let Some(targets) = read::<Targets>(&old_dir.join("targets.json")) else {

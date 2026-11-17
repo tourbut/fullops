@@ -3,6 +3,7 @@
 
 use crate::assets::PLANS_MD;
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use fullops_core::layout;
 use fullops_core::messages::{self, flow::METRICS_CAVEAT};
 use fullops_core::model::{
     BriefAt, Derived, Known, Landing, MessageId, Mode, Parallel, RoleId, RunOwner, Seat, Status,
@@ -107,13 +108,13 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     }
     if let Some(role) = &inbox_role {
         out.push(match fullops_store::read_inbox(repo, role) {
-            Known::Yes(Some(inbox)) => format!(
-                "인박스: .fullops-squad/handovers/to_{role}.md (과제 {})",
-                inbox.key
-            ),
+            Known::Yes(Some(inbox)) => {
+                format!("인박스: {} (과제 {})", layout::inbox(role), inbox.key)
+            }
             Known::Yes(None) => "인박스: 없음".into(),
             Known::Unknown(_) => format!(
-                "인박스: .fullops-squad/handovers/to_{role}.md의 front matter를 읽을 수 없다"
+                "인박스: {}의 front matter를 읽을 수 없다",
+                layout::inbox(role)
             ),
         });
     }

@@ -3,7 +3,7 @@ origin = "설계 12.2절 B5"
 
 [[step]]
 act = "file"
-path = ".fullops-squad/PLANS.md"
+path = ".fullops/PLANS.md"
 content = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n| A-1 | 결제 재시도 | dev | 대기 | 사용자 지시 |\n\n## 위임 범위\n\n"
 
 [[step]]

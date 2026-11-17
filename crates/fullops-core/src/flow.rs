@@ -420,7 +420,7 @@ pub fn check_task_new(req: &TaskNewRequest, facts: &mut dyn Facts) -> Vec<Refusa
         };
         out.push(refusal("H-03", &[role], &escape, 2));
     }
-    let first_log = format!(".fullops-squad/handovers/logs/{key}.{role}.r0.md");
+    let first_log = crate::layout::handover_log(key, role, 0);
     let logged = facts.path_exists(std::path::Path::new(&first_log)) == Known::Yes(true);
     if logged && !req.reopen {
         out.push(refusal("H-04", &[key, role], "`fullops task reopen`", 2));
@@ -868,7 +868,7 @@ pub fn orca_effort(tuple: &ModelTuple, parallel: Parallel, new_terminal: bool) -
 pub struct ReviewSpec<'a> {
     pub sha: &'a str,
     pub implementer: &'a str,
-    /// lead 체크아웃의 `reviews/<KEY>/<head 12자>` 절대 경로.
+    /// lead 체크아웃의 `tasks/<KEY>/reviews/<head 12자>` 절대 경로.
     pub folder: &'a str,
 }
 

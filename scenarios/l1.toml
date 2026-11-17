@@ -155,7 +155,7 @@ expect = { verdict = "pass", escape = '"action":"ask"' }
 # always 경로: 정책은 merge-base 시점의 fullops.toml이다
 [[step]]
 act = "file"
-path = ".fullops-squad/fullops.toml"
+path = ".fullops/fullops.toml"
 content = """
 schema = 2
 applied_version = "2.0.0"

@@ -21,7 +21,7 @@ lines = 400
 [[step]]
 act = "edits_file"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 old = "## 완료 보고\n"
 new = "## 완료 보고\n\n브랜치 fullops/dev. 구현과 확인을 마쳤다.\n"
 
@@ -88,7 +88,7 @@ lines = 401
 [[step]]
 act = "edits_file"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 old = "## 완료 보고\n"
 new = "## 완료 보고\n\n수정과 확인을 마쳤다.\n"
 

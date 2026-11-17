@@ -82,7 +82,7 @@ fn p2_results_live_in_the_shared_dir_and_stay_out_of_the_tree() {
     let lead = d.sb.path("lead");
     // 탐색 결과는 Git 공용 디렉터리에 있다. 커밋되는 폴더에는 생기지 않고 준비 커밋에도 들지 않는다
     for who in ["lead", "dev"] {
-        let old = d.sb.path(who).join(".fullops-squad/docs/evaluations/jev");
+        let old = d.sb.path(who).join(".fullops/docs/evaluations/jev");
         assert!(!old.exists(), "{}", old.display());
     }
     assert!(!d.sb.git_ok(&lead, &["ls-files"]).contains("PAY-12-"));
@@ -105,7 +105,7 @@ fn p2_results_live_in_the_shared_dir_and_stay_out_of_the_tree() {
     assert!(!find.to_string().contains("중복 클릭"));
     let context = read(&explore(&d).join("PAY-12-context.json"));
     assert_eq!(context["candidates"][0]["decision"], "keep");
-    assert!(strings(&context["required_paths"]).contains(&".fullops-squad/handovers/to_dev.md"));
+    assert!(strings(&context["required_paths"]).contains(&".fullops/inbox/to_dev.md"));
 }
 
 #[test]
@@ -473,7 +473,7 @@ fn p10_context_refuses_too_many_paths_and_follows_the_signals() {
             ("docs/old.md", "suggest_omit", Some("irrelevant")),
             ("docs/conflict.md", "conflict", Some("contradicts task")),
             ("docs/prompt.md", "caution", Some("instructions")),
-            (".fullops-squad/FULLOPS.md", "keep", None),
+            (".fullops/guide/FULLOPS.md", "keep", None),
         ]
     );
     assert_eq!(
@@ -568,7 +568,7 @@ fn outbound_repo() -> Sandbox {
         "rules/common/security.md",
         "rules/common/testing.md",
     ] {
-        let path = lead.join(".fullops-squad").join(doc);
+        let path = lead.join(".fullops").join(doc);
         sb.write(&path, &format!("# {doc}\n\n공통 기준 문서.\n"));
     }
     sb.write(
@@ -587,7 +587,7 @@ fn commit_all(sb: &Sandbox) {
 fn write_inbox(sb: &Sandbox) {
     let front = "---\nid: handover-dev\ntitle: PAY-12 — 결제 재시도\nstatus: draft\nkey: PAY-12\nrole: dev\ngoal: 결제 재시도\nround: 0\n---\n";
     sb.write(
-        &sb.path("lead").join(".fullops-squad/handovers/to_dev.md"),
+        &sb.path("lead").join(".fullops/inbox/to_dev.md"),
         &format!(
             "{front}# PAY-12 — 결제 재시도\n\n`retry`의 중복 클릭을 막는다.\n\n## 완료 보고\n\n"
         ),
@@ -786,7 +786,7 @@ fn r2_route_reads_request_files_only_inside_the_repo() {
         assert!(run.stderr.contains(why), "{file}: {}", run.stderr);
     }
     assert!(sb.curl_calls().is_empty());
-    assert!(!lead.join(".fullops-squad/routes/PAY-13.json").exists());
+    assert!(!lead.join(".fullops/tasks/PAY-13/route.json").exists());
 
     // 레포 안의 파일은 읽는다. 환경에 키가 없어도 --env-file의 키로 부른다
     let online = [("FULLOPS_OFFLINE", "0")];
@@ -797,7 +797,7 @@ fn r2_route_reads_request_files_only_inside_the_repo() {
     let body = sent(&sb);
     assert_eq!(sb.curl_calls().len(), 1);
     assert!(body.contains("Bearer file-key") && body.contains("중복 클릭을 막는다"));
-    let route = read(&lead.join(".fullops-squad/routes/PAY-13.json"));
+    let route = read(&lead.join(".fullops/tasks/PAY-13/route.json"));
     assert_eq!(route["request_file"], "docs/request.md");
     // --env-file이 없으면 키가 없어 부르지 않고 폴백으로 끝난다
     let args = ["route", "PAY-14", "--request-file", "docs/request.md"];
@@ -806,7 +806,7 @@ fn r2_route_reads_request_files_only_inside_the_repo() {
     assert_eq!(sb.curl_calls().len(), 1);
 }
 
-// R2-6: BOM으로 시작하는 `.fullops-squad/.env`의 키를 읽는다
+// R2-6: BOM으로 시작하는 `.fullops/.env`의 키를 읽는다
 #[test]
 fn r2_env_file_with_a_bom_still_gives_the_key() {
     let sb = outbound_repo();
@@ -814,7 +814,7 @@ fn r2_env_file_with_a_bom_still_gives_the_key() {
     commit_all(&sb);
     write_inbox(&sb);
     sb.write(
-        &lead.join(".fullops-squad/.env"),
+        &lead.join(".fullops/.env"),
         "\u{feff}TYPESAFE_API_KEY=bom-key\n",
     );
     let args = ["find", "PAY-12", "--role", "dev", "--json"];
@@ -875,7 +875,7 @@ fn r2_config_values_never_become_git_options() {
     ] {
         let sb = outbound_repo();
         let lead = sb.path("lead");
-        let toml = lead.join(".fullops-squad/fullops.toml");
+        let toml = lead.join(".fullops/fullops.toml");
         let text = std::fs::read_to_string(&toml).unwrap();
         assert!(text.contains(good), "{text}");
         std::fs::write(&toml, text.replace(good, evil)).unwrap();

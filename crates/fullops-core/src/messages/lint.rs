@@ -20,9 +20,15 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
         "DOC-001" => {
             "새 코드 파일에 무엇을 하는지 적은 헤더 설명(docstring·주석 1~3줄)이 없다.".into()
         }
-        // args: 문제, 문서 경로(.fullops-squad 기준), 산출물 ID
+        // args: 문제, 문서 경로(.fullops 기준), 산출물 ID
         "DOC-002" => format!("{} front matter: {}.", arg(2), arg(0)),
         "DOC-003" => format!("front matter: {}.", arg(0)),
+        "QA-001" => "커밋하는 QA 증거에 압축·영상·trace 파일이 있다.".into(),
+        // args: 경우(count|size), 값(장 수 또는 KB), 상한
+        "QA-002" if arg(0) == "count" => {
+            format!("QA 폴더의 이미지가 {}장이다(상한 {}장).", arg(1), arg(2))
+        }
+        "QA-002" => format!("QA 이미지가 {}KB다(상한 {}KB).", arg(1), arg(2)),
         "LINT-000" => "프로젝트 lint 명령이 등록되지 않았다.".into(),
         "LINT-001" => "이 브랜치의 lint 설정 변경은 적용하지 않았다.".into(),
         // args: 명령 이름, 걸린 초
@@ -57,7 +63,15 @@ pub fn suggestion(id: &str, args: &[String]) -> String {
         "SEC-001" => "환경변수·설정으로 옮긴다".into(),
         "DOC-001" => "파일 맨 위에 설명을 적는다".into(),
         "DOC-002" | "DOC-003" => format!("`fullops doc stamp --path {}`로 다시 쓴다", arg(1)),
-        "LINT-000" => "`.fullops-squad/lint/lint.json`의 `commands`에 기존 도구를 연결한다".into(),
+        "QA-001" => {
+            "판정에 쓴 장면만 이미지로 남기고 원본은 그 폴더의 `raw/`로 옮긴다(커밋되지 않는다)"
+                .into()
+        }
+        "QA-002" if arg(0) == "count" => {
+            "보고서의 판정 항목이 링크하는 이미지만 남기고 나머지는 `raw/`로 옮긴다".into()
+        }
+        "QA-002" => "필요한 영역만 잘라 내거나 해상도를 낮춘다".into(),
+        "LINT-000" => "`.fullops/config/lint.json`의 `commands`에 기존 도구를 연결한다".into(),
         "LINT-001" => "병합 뒤 적용되니 변경 이유를 검토한다".into(),
         "LINT-002" => "개발 중 필요 없으면 `level`이나 `paths`로 범위를 좁힌다".into(),
         _ => String::new(),

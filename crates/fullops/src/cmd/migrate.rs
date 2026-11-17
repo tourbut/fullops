@@ -1,11 +1,14 @@
-//! `fullops migrate`: Python판(1.24.0)에서 전환과 되돌리기(설계 13절).
+//! `fullops migrate`: Python판(1.24.0)에서 전환과 되돌리기, 옛 자리에서 새 자리로 옮기기(설계 13절).
 //! `--from-python`은 쓰기 전에 전제를 모두 보고, 되돌리기 기록을 먼저 쓴 뒤 새 표식 `fullops.toml` 쓰기와 `fullops.json` 이름 바꾸기를 마지막에 한다.
-//! 중간에 실패하면 쓴 것을 되돌린다(전부 되거나 전혀 안 되거나). 커밋은 하지 않는다.
+//! 중간에 실패하면 쓴 것을 되돌린다(전부 되거나 전혀 안 되거나). 전환은 옛 자리 `.fullops-squad/`에서 하고, 끝나면 전환을 커밋한 뒤
+//! 같은 실행에서 `--layout` 단계(`relocate`)로 `.fullops/` 자리로 옮긴다(13.6절).
 //! Python판의 상태 폴더는 읽기만 하고 `<git-common-dir>/fullops/py-backup/`에 사본을 둔다.
 
 use super::init::{self, NewConfig, NewRole};
+use super::relocate;
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use fullops_core::layout;
 use fullops_core::messages::install as msg;
 use fullops_core::model::{
     ArchiveLine, ArchivedTask, Completion, Decision, Known, Mode, Parallel, Plan, Refusal, RoleId,
@@ -20,6 +23,10 @@ const PY_MARKER: &str = ".fullops-squad/fullops.json";
 const PY_MARKER_MOVED: &str = ".fullops-squad/fullops.json.py-1.24.0";
 const TOML_MARKER: &str = ".fullops-squad/fullops.toml";
 const TOML_ROLLED_BACK: &str = ".fullops-squad/fullops.toml.rolled-back";
+/// 자리를 옮긴 뒤의 옛 표식(`--finalize`가 `git rm`을 안내한다).
+const PY_MARKER_AT_NEW: &str = ".fullops/fullops.json.py-1.24.0";
+/// 전환을 담는 커밋. 바로 뒤에 자리 옮김 커밋(`relocate::COMMIT`)이 온다.
+const SWITCH_COMMIT: &str = "fullops: Python판에서 전환";
 const PY_BLOCK: (&str, &str) = ("<!-- fullops-squad:start -->", "<!-- fullops-squad:end -->");
 const PY_STATE_DIRS: [&str; 5] = [
     "fullops-flow",
@@ -425,12 +432,9 @@ fn plan_changes(
         let Some(Some(before)) = read(&shown) else {
             continue;
         };
-        let template = assets::REPO_FILES
-            .iter()
-            .find(|(path, _)| *path == rel)
-            .filter(|_| assets::is_stock_1_24(rel, &before));
+        let template = assets::template_for(rel).filter(|_| assets::is_stock_1_24(rel, &before));
         match template {
-            Some((_, template)) => {
+            Some(template) => {
                 // setup이 찍은 front matter는 남긴다(lint의 DOC-003이 요구한다)
                 let lf = before.replace("\r\n", "\n");
                 let front = assets::split_front_matter(&lf).0;
@@ -453,19 +457,24 @@ fn plan_changes(
             }
         }
     }
-    // 없는 템플릿: 쓰지 않고 목록만 받는다
+    // 없는 템플릿 파일을 옛 자리에 더한다(자리 옮김 단계가 곧바로 새 자리로 옮긴다)
     let mut missing = init::Applied::default();
-    init::add_templates(root, true, &mut missing)?;
-    for shown in &missing.created {
-        let text = assets::REPO_FILES
-            .iter()
-            .find(|(rel, _)| shown.strip_prefix(".fullops-squad/") == Some(*rel))
-            .map_or("", |(_, text)| *text);
+    for rel in assets::LEGACY_FILES {
+        let shown = format!(".fullops-squad/{rel}");
+        let path = root.join(&shown);
+        if path.exists() {
+            continue;
+        }
+        if init::linked(root, &path) {
+            missing.refused.push(shown);
+            continue;
+        }
         changes.push(Change {
             rel: shown.clone(),
             before: None,
-            after: Some(text.to_string()),
+            after: Some(assets::template_for(rel).unwrap_or("").to_string()),
         });
+        missing.created.push(shown);
     }
     links.extend(missing.refused);
     // 새 판은 인박스 파일이 없는 것이 빈 인박스다. Python판이 남긴 빈 파일은 지운다
@@ -878,6 +887,13 @@ fn from_python(ctx: &Ctx, dry_run: bool) -> Result<u8, CliError> {
         }
     };
     let plan = inspect(&squad, &mut report);
+    // 전환 끝에 자리를 옮긴다. 그 단계가 거절할 것은 전환을 시작하기 전에 거절한다(13.6절)
+    if let Some(config) = built
+        .as_ref()
+        .and_then(|b| fullops_store::parse_config(&b.text).ok())
+    {
+        stops.extend(relocate::stops(&root, &config.base, true));
+    }
     // 쓰기 전에 쓸 것을 모두 계산하고 전제를 모두 본다
     let config = built.as_ref().map(|b| b.text.as_str());
     let changes = plan_changes(&root, &old, config, &mut stops, &mut report)?;
@@ -891,6 +907,10 @@ fn from_python(ctx: &Ctx, dry_run: bool) -> Result<u8, CliError> {
         ));
     };
     if dry_run {
+        report.push(format!(
+            "실제 실행은 전환을 커밋하고(`{SWITCH_COMMIT}`) 같은 실행에서 `.fullops/` 자리로 옮긴다(`{}`).",
+            relocate::COMMIT
+        ));
         ctx.print(
             &format!(
                 "{}\n\n만들 fullops.toml:\n{}",
@@ -945,12 +965,25 @@ fn from_python(ctx: &Ctx, dry_run: bool) -> Result<u8, CliError> {
         "지표는 전환 시점부터 다시 센다. 전환하는 PC마다 `fullops install`을 한 번 실행한다."
             .into(),
     );
+    // 8. 전환을 커밋하고 같은 실행에서 새 자리로 옮긴다. 여기서 멈추면 옛 자리의 2.x 레포로 남는다(`migrate --layout`이 잇는다)
+    let moved = init::git(&root, &["add", "-A"])
+        .and_then(|_| init::git(&root, &["commit", "--quiet", "-m", SWITCH_COMMIT]))
+        .and_then(|_| relocate::run_at(&root, false, true));
+    let (moved, layout) = match moved {
+        Ok(done) => done,
+        Err(e) => {
+            ctx.note(&human("전환했다. 보고서:", &report));
+            ctx.note("전환은 끝났지만 `.fullops/` 자리로 옮기지 못했다. 원인을 고치고 변경을 커밋한 뒤 `fullops migrate --layout`으로 잇는다. 그때까지 이 레포의 hook은 돌지 않는다.");
+            return Err(e);
+        }
+    };
     ctx.print(
         &format!(
-            "{}\n\n커밋하지 않았다. 변경과 보고서를 확인하고 커밋한다. 되돌리기는 `fullops migrate --rollback`이다.",
-            human("전환했다. 보고서:", &report)
+            "{}\n\n{moved}\n\n커밋 둘을 만들었다(`{SWITCH_COMMIT}`, `{}`). 변경과 보고서를 확인하고 push한다. 되돌리기는 자리 옮김 커밋을 `git revert`한 뒤 `fullops migrate --rollback`이다.",
+            human("전환했다. 보고서:", &report),
+            relocate::COMMIT
         ),
-        json!({ "dry_run": false, "report": report, "root": path_text(&root) }),
+        json!({ "dry_run": false, "report": report, "root": path_text(&root), "layout": layout }),
     );
     Ok(EXIT_OK)
 }
@@ -959,8 +992,18 @@ fn from_python(ctx: &Ctx, dry_run: bool) -> Result<u8, CliError> {
 fn rollback(ctx: &Ctx) -> Result<u8, CliError> {
     let root = init::git_root(&ctx.start)?;
     let squad = root.join(".fullops-squad");
-    let (_, common) = init::git_dirs(&root)
+    let (git_dir, common) = init::git_dirs(&root)
         .ok_or_else(|| CliError::Internal("Git 디렉터리를 찾지 못했습니다".into()))?;
+    // 되돌리기는 옛 자리에서만 한다: 기록의 경로가 `.fullops-squad/` 기준이다(13.3절)
+    if root.join(layout::config_toml()).exists() {
+        return Err(refuse(
+            &["`.fullops/` 자리로 옮긴 레포다. 되돌리기는 옛 자리에서만 한다".into()],
+            &format!(
+                "자리 옮김 커밋(`{}`)을 `git revert`하고 `.fullops/`에 남은 `.env*`·`local/`을 `.fullops-squad/`로 옮긴 뒤 `fullops migrate --rollback`",
+                relocate::COMMIT
+            ),
+        ));
+    }
     if !root.join(PY_MARKER_MOVED).exists() {
         // 중간에 멈춘 전환이나 되돌리기는 여기서 끝까지 되돌린다
         if interrupted(&root, &common) {
@@ -978,9 +1021,13 @@ fn rollback(ctx: &Ctx) -> Result<u8, CliError> {
             "전환한 레포의 루트에서 실행한다",
         ));
     }
-    let state = fullops_store::discover(&root)?
-        .and_then(|repo| fullops_store::read_state(&repo).yes())
-        .unwrap_or_default();
+    // 옛 자리의 레포는 `discover`가 찾지 않는다. 자리만 지어 `state.json`을 읽는다
+    let repo = fullops_store::Repo {
+        root: root.clone(),
+        git_dir,
+        common_dir: common.clone(),
+    };
+    let state = fullops_store::read_state(&repo).yes().unwrap_or_default();
     let mut stops = Vec::new();
     for entry in std::fs::read_dir(squad.join("handovers"))
         .into_iter()
@@ -1096,7 +1143,8 @@ fn finalize(ctx: &Ctx, apply: bool, early: bool) -> Result<u8, CliError> {
     let (_, common) = init::git_dirs(&root)
         .ok_or_else(|| CliError::Internal("Git 디렉터리를 찾지 못했습니다".into()))?;
     let mut stops = Vec::new();
-    if root.join(PY_MARKER).exists() || !root.join(TOML_MARKER).exists() {
+    let active = root.join(layout::config_toml()).exists() || root.join(TOML_MARKER).exists();
+    if root.join(PY_MARKER).exists() || !active {
         stops.push(
             "전환한 레포가 아니다(`fullops.toml`이 없거나 `fullops.json`이 남아 있다)".into(),
         );
@@ -1143,10 +1191,10 @@ fn finalize(ctx: &Ctx, apply: bool, early: bool) -> Result<u8, CliError> {
     let to = common
         .join("fullops/py-retired")
         .join(fullops_store::now().to_string());
-    let git_rm = root
-        .join(PY_MARKER_MOVED)
-        .exists()
-        .then(|| format!("git rm {PY_MARKER_MOVED}"));
+    let git_rm = [PY_MARKER_AT_NEW, PY_MARKER_MOVED]
+        .into_iter()
+        .find(|marker| root.join(marker).exists())
+        .map(|marker| format!("git rm {marker}"));
     if apply {
         // 하나가 실패해도 나머지를 옮기고, 무엇을 어디로 옮겼는지 남긴다
         let (mut moved, mut failed) = (Vec::new(), Vec::new());
@@ -1202,12 +1250,15 @@ fn finalize(ctx: &Ctx, apply: bool, early: bool) -> Result<u8, CliError> {
     Ok(EXIT_OK)
 }
 
+const USAGE: &str = "사용법: fullops migrate --layout [--dry-run] | fullops migrate --from-python [--dry-run] | fullops migrate --rollback | fullops migrate --finalize [--apply] [--early]";
+
 pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
     use lexopt::prelude::*;
     let (mut python, mut dry_run, mut back) = (false, false, false);
-    let (mut fin, mut apply, mut early) = (false, false, false);
+    let (mut fin, mut apply, mut early, mut place) = (false, false, false, false);
     while let Some(arg) = parser.next()? {
         match arg {
+            Long("layout") => place = true,
             Long("from-python") => python = true,
             Long("dry-run") => dry_run = true,
             Long("rollback") => back = true,
@@ -1218,14 +1269,21 @@ pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
         }
     }
     let plain = !(apply || early);
+    if place {
+        if python || back || fin || !plain {
+            return Err(CliError::Usage(USAGE.into()));
+        }
+        let root = init::git_root(&ctx.start)?;
+        let (human, fields) = relocate::run_at(&root, dry_run, false)?;
+        ctx.print(&human, fields);
+        return Ok(EXIT_OK);
+    }
     match (python, back, fin) {
         (true, false, false) if plain => from_python(ctx, dry_run),
         // 되돌리기에는 미리 보기가 없다. --dry-run을 함께 주면 실행하지 않고 사용법을 낸다
         (false, true, false) if !dry_run && plain => rollback(ctx),
         // 정리는 기본이 계획이다. --dry-run은 받지 않는다(실행은 --apply로만 한다)
         (false, false, true) if !dry_run => finalize(ctx, apply, early),
-        _ => Err(CliError::Usage(
-            "사용법: fullops migrate --from-python [--dry-run] | fullops migrate --rollback | fullops migrate --finalize [--apply] [--early]".into(),
-        )),
+        _ => Err(CliError::Usage(USAGE.into())),
     }
 }

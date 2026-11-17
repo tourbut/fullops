@@ -1,9 +1,9 @@
 //! Stop 규칙의 `check`(설계 7.5절). X-00부터 X-06까지 모두 평가하고 X-07은 그 가운데 걸린 것이 없을 때만 평가한다.
 
-use super::decide::HANDOVERS;
 use super::{Effect, Finding, call, hit, hit_case, known};
 use crate::derive::ready;
 use crate::facts::Facts;
+use crate::layout;
 use crate::model::{
     AckBy, Actor, DispatchId, HookInput, Known, Landing, MessageId, Plan, ReviewEvidence, RoleId,
     RunId, RunOwner, Sha, TaskKey, WorkOutcome, ack_by, orca_wakes,
@@ -31,11 +31,11 @@ pub(super) fn ready_rows(facts: &mut dyn Facts) -> Known<(Vec<TaskKey>, Plan)> {
     let plan = get!(facts.plan());
     let state = get!(facts.state());
     let archive = get!(facts.archive_keys());
-    let dir = call::root().join(HANDOVERS);
+    let root = call::root();
     let roles: BTreeSet<RoleId> = plan.rows.iter().filter_map(|r| r.role.clone()).collect();
     let busy: BTreeSet<RoleId> = roles
         .into_iter()
-        .filter(|role| facts.path_exists(&dir.join(format!("to_{role}.md"))) == Known::Yes(true))
+        .filter(|role| facts.path_exists(&root.join(layout::inbox(role))) == Known::Yes(true))
         .collect();
     let keys = ready(&plan, &state, &archive, &|role| busy.contains(role));
     Known::Yes((keys, plan))
@@ -172,12 +172,12 @@ pub(super) fn x04(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
         .filter_map(|role| facts.inbox(role).yes().flatten())
         .map(|inbox| inbox.key)
         .collect();
-    let logs = call::root().join(HANDOVERS).join("logs");
-    // shortcut: Facts에 폴더 훑기가 없어 `logs/<KEY>.<역할>.r0~r9.md`만 본다, 차수가 10을 넘는 과제가 생기면 Facts에 목록 조회를 더한다
+    let root = call::root();
+    // shortcut: Facts에 폴더 훑기가 없어 `tasks/<KEY>/<역할>.r0~r9.md`만 본다, 차수가 10을 넘는 과제가 생기면 Facts에 목록 조회를 더한다
     let mut logged = |key: &TaskKey| {
         roles.iter().any(|role| {
             (0..10).any(|round| {
-                facts.path_exists(&logs.join(format!("{key}.{role}.r{round}.md")))
+                facts.path_exists(&root.join(layout::handover_log(key, role, round)))
                     == Known::Yes(true)
             })
         })
@@ -385,14 +385,14 @@ pub(super) fn x07(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
                 continue;
             };
             // Facts는 역할 브랜치를 읽지 않는다: 그 키·역할을 맡았던 워크트리의 완료 기록을 본다
-            let log = format!("logs/{}.{}.r{}.md", inbox.key, inbox.role, inbox.round);
+            let log = layout::handover_log(&inbox.key, &inbox.role, inbox.round);
             let worktree = state
                 .dispatches
                 .iter()
                 .rev()
                 .find(|d| d.key == inbox.key && d.role == inbox.role && d.counts());
             let finished = worktree.is_some_and(|d| {
-                let path = std::path::Path::new(&d.worktree).join(HANDOVERS).join(&log);
+                let path = std::path::Path::new(&d.worktree).join(&log);
                 facts.path_exists(&path) == Known::Yes(true)
             });
             inboxes.push((inbox, role.kind, finished));

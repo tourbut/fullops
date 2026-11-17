@@ -5,6 +5,7 @@ use crate::assets::HANDOVER_TEMPLATE;
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::flow;
 use fullops_core::frontmatter::{FmValue, FrontMatter};
+use fullops_core::layout;
 use fullops_core::messages;
 use fullops_core::model::{
     Completion, Config, DEFAULT_BUDGET, Extra, HeadRef, Known, RoleId, RoleKind, RouteClass, Seat,
@@ -85,8 +86,8 @@ fn parse(mut args: lexopt::Parser) -> Result<Options, CliError> {
 
 /// 그 과제의 완료 기록 가운데 가장 큰 차수.
 fn last_round(ctx: &Ctx, key: &TaskKey, role: &RoleId) -> Option<u32> {
-    let logs = ctx.repo().ok()?.squad().join("handovers").join("logs");
-    let prefix = format!("{key}.{role}.r");
+    let logs = ctx.repo().ok()?.root.join(layout::task_dir(key));
+    let prefix = format!("{role}.r");
     std::fs::read_dir(logs)
         .ok()?
         .flatten()
@@ -140,10 +141,7 @@ fn unmerged_record(
     let (repo, config) = (ctx.repo().ok()?, ctx.config().ok()?);
     let inbox = fullops_store::read_inbox(repo, role).yes().flatten()?;
     let branch = format!("refs/heads/{}", config.roles.get(role)?.branch);
-    let log = format!(
-        ".fullops-squad/handovers/logs/{key}.{role}.r{}.md",
-        inbox.round
-    );
+    let log = layout::handover_log(key, role, inbox.round);
     let waiting = unlanded(state, key).next().is_some();
     (inbox.key == *key && waiting && git.rev_parse(&format!("{branch}:{log}")).yes().is_some())
         .then_some((branch, log))
@@ -160,7 +158,7 @@ fn adopt_record(
     log: &str,
 ) -> Result<(), CliError> {
     let repo = ctx.repo()?;
-    let inbox = format!(".fullops-squad/handovers/to_{role}.md");
+    let inbox = layout::inbox(role);
     // 커밋하지 않은 이전 인박스의 글(lead가 미리 적은 수정 지시)을 말없이 버리지 않는다
     if git.status(Some(&inbox)).yes().is_none_or(|e| !e.is_empty()) {
         return Err(super::dispatch::step_refusal(

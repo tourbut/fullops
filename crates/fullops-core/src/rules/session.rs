@@ -69,7 +69,8 @@ fn inbox_line(facts: &mut dyn Facts, actor: &Actor) -> Option<String> {
     let role = own_role(facts, actor)?;
     let inbox = facts.inbox(&role).yes().flatten()?;
     Some(format!(
-        "현재 인박스: `.fullops-squad/handovers/to_{role}.md` (과제 `{}`)",
+        "현재 인박스: `{}` (과제 `{}`)",
+        crate::layout::inbox(&role),
         inbox.key
     ))
 }

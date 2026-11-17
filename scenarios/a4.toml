@@ -12,7 +12,7 @@ expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "file"
-path = ".fullops-squad/fullops.toml"
+path = ".fullops/fullops.toml"
 content = "schema = 2\napplied_version = \"2.0.0\"\nmode = \"dev\"\nprimary_role = \"dev\"\nprimary_branch = \"release\"\nrouting = \"legacy\"\ntest_level = \"lite\"\nparallel = \"on\"\n\n[git]\nbase = \"main\"\nremote = \"origin\"\n\n[roles.dev]\nbranch = \"fullops/dev\"\nkind = \"worker\"\n"
 
 [[step]]

@@ -1,0 +1,120 @@
+name = "QA-002: 한 QA 폴더에 커밋하는 이미지의 장 수"
+origin = "8.11절 9번 QA-002"
+
+[setup]
+remote = false
+roles = {}
+
+# 기준 시점: 통과하는 명령 하나를 등록해 깨끗한 실행의 경고가 0이 되게 한다
+[[step]]
+act = "file"
+path = ".fullops/config/lint.json"
+content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
+
+[[step]]
+act = "commits"
+message = "기준"
+
+[[step]]
+act = "git"
+args = ["tag", "base"]
+
+# 검출: 한 qa/ 폴더의 이미지 13장(하위 폴더의 것도 센다). 한 장의 크기(1MB)는 crates/fullops/tests/layout.rs가 본다
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s01.jpg"
+content = "image 1"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s02.webp"
+content = "image 2"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s03.png"
+content = "image 3"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s04.jpg"
+content = "image 4"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s05.webp"
+content = "image 5"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s06.png"
+content = "image 6"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s07.jpg"
+content = "image 7"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s08.webp"
+content = "image 8"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s09.png"
+content = "image 9"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/s10.jpg"
+content = "image 10"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/shots/s11.webp"
+content = "image 11"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/shots/s12.png"
+content = "image 12"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/shots/s13.jpg"
+content = "image 13"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+df = "DF-35"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "WARNING QA-002 .fullops/tasks/PAY-1/qa/ QA 폴더의 이미지가 13장이다(상한 12장)." }
+
+# 비검출: 한 장을 raw/로 옮겨 12장이 되면 경고가 없다. 다른 과제의 QA 폴더는 따로 센다
+[[step]]
+act = "git"
+args = ["rm", "-q", ".fullops/tasks/PAY-1/qa/shots/s13.jpg"]
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-1/qa/raw/s13.jpg"
+content = "image 13"
+
+[[step]]
+act = "file"
+path = ".fullops/tasks/PAY-2/qa/s01.png"
+content = "image"
+
+[[step]]
+act = "commits"
+
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["lint", "--from", "base"]
+expect = { verdict = "pass", exit = 0, escape = "ERROR 0 / WARNING 0 / 실행 불가 0" }

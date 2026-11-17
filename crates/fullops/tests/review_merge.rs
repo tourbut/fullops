@@ -220,7 +220,7 @@ impl World {
             // 기준 시점에 lint.json이 없는 레포다: 내장 템플릿의 해시
             config_sha256: fullops_core::lint_rules::config_sha256(
                 None,
-                include_str!("../assets/repo/lint/lint.json"),
+                include_str!("../assets/repo/config/lint.json"),
             ),
             test_level: TestLevel::Lite,
             started_at: fullops_store::now(),
@@ -290,7 +290,7 @@ fn merge_fast_forwards_records_and_acks() {
         "{}| A-1 | 결제 재시도 | dev | 대기 | 사용자 지시 |\n| B-2 | 다음 일 | dev | 대기 | 사용자 지시 |\n",
         fullops_testkit::sandbox::PLANS.replace("\n\n## 위임 범위\n\n", "\n")
     );
-    w.commit("lead", ".fullops-squad/PLANS.md", &plans);
+    w.commit("lead", ".fullops/PLANS.md", &plans);
     w.git("lead", &["push", "-q", "origin", "main"]);
     w.git("dev", &["merge", "-q", "main"]);
     let sha = w.work("src/a.py", 3);
@@ -423,7 +423,7 @@ fn merge_requires_lead_and_lint_evidence() {
         ..narrow
     };
     fullops_store::write_json(&dev.lint_dir().join("pass.json"), &pass).unwrap();
-    let log = ".fullops-squad/handovers/logs/A-1.dev.r0.md";
+    let log = ".fullops/tasks/A-1/dev.r0.md";
     let recorded = w.commit(
         "dev",
         log,
@@ -469,7 +469,7 @@ fn merge_reverts_when_lint_fails_after_merge() {
     let mut w = World::new();
     // 기준 시점 설정에 실패하는 검사를 둔다(lint가 어느 쪽에서 실패하든 M-07은 같다)
     let lint = r#"{"schema_version":1,"commands":[{"name":"fail","run":["git","no-such-subcommand"]}],"exclude":[],"rules":[]}"#;
-    w.commit("lead", ".fullops-squad/lint/lint.json", lint);
+    w.commit("lead", ".fullops/config/lint.json", lint);
     w.git("lead", &["push", "-q", "origin", "main"]);
     w.git("dev", &["merge", "-q", "main"]);
     let sha = w.work("src/a.py", 3);
@@ -1158,7 +1158,7 @@ fn snapshot_cleanup_holds_when_unsure() {
     expect(&w.cli(&["review", "cleanup", "A-1"]), 1, &[]);
     // lint 결과가 없고, snapshot 뒤에 리뷰 규칙이 바뀌었다
     w.sb.write(
-        &w.lead().join(".fullops-squad/review/rule.json"),
+        &w.lead().join(".fullops/config/review.json"),
         r#"{"exclude":[],"rules":[]}"#,
     );
     expect(
@@ -1341,7 +1341,7 @@ fn merge_commit_runs_lint_with_uncommitted_review_files() {
         driver.step(step).unwrap();
     }
     let lead = driver.sb.path("lead");
-    let memo = ".fullops-squad/reviews/A-1/memo.json";
+    let memo = ".fullops/tasks/A-1/reviews/memo.json";
     driver.sb.write(&lead.join(memo), "{}\n");
     let merged = driver.step(merge).unwrap();
     assert_eq!(merged.exit, Some(0), "{}", merged.output);
@@ -1360,7 +1360,7 @@ const FAILING_LINT: &str = r#"{"schema_version":1,"commands":[{"name":"unit","ki
 
 /// 기본 브랜치의 lint 설정을 바꿔 push하고 worker 브랜치에 반영한다.
 fn base_lint(w: &World, text: &str) {
-    w.commit("lead", ".fullops-squad/lint/lint.json", text);
+    w.commit("lead", ".fullops/config/lint.json", text);
     w.git("lead", &["push", "-q", "origin", "main"]);
     w.git("dev", &["merge", "-q", "main"]);
 }

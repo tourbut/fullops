@@ -210,7 +210,7 @@ fn hook_passes_every_input_on_every_host() {
     assert!(bare.stderr.contains("사용법") && bare.stderr.contains("hook <claude|codex|grok|agy>"));
     // 깨진 설정에서도 hook은 죽지 않고 JSON 객체 하나를 낸다(정책 오류의 차단 X-00은 tests/hook.rs가 본다)
     sb.write(
-        &sb.path("lead").join(".fullops-squad/fullops.toml"),
+        &sb.path("lead").join(".fullops/fullops.toml"),
         "schema = = 2",
     );
     for host in HOSTS {
@@ -463,7 +463,7 @@ fn cli_follows_common_contract() {
         .config_toml()
         .replace("schema = 2", "schema = 1");
     for broken in ["schema = = 2", wrong_schema.as_str()] {
-        sb.write(&lead.join(".fullops-squad/fullops.toml"), broken);
+        sb.write(&lead.join(".fullops/fullops.toml"), broken);
         let run = sb.cli(&lead, &["dispatch", "PAY-12"]);
         assert_eq!(run.code, Some(2), "{}", run.stderr);
         assert!(run.stderr.contains("정책 오류") && run.stderr.contains("fullops doctor"));

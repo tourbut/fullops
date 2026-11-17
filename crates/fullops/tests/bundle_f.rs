@@ -1098,7 +1098,8 @@ fn n3_migrate_round_trip() {
     guard("n3", &scenario);
     let mut driver = Driver::new(&scenario.setup);
     let lead = driver.sb.path("lead");
-    let squad = lead.join(".fullops-squad");
+    // 전환은 옛 자리에서 하고 같은 실행에서 새 자리로 옮긴다. 되돌리기는 자리 옮김 커밋을 revert한 옛 자리에서 한다
+    let (squad, fresh) = (lead.join(".fullops-squad"), lead.join(".fullops"));
     let mut migrated = false;
     for (index, step) in scenario.steps.iter().enumerate() {
         if step.pending.is_some() {
@@ -1124,10 +1125,19 @@ fn n3_migrate_round_trip() {
         }
         if args == ["migrate", "--from-python"] && !migrated {
             migrated = true;
-            // 표식이 바뀌었다
-            assert!(!squad.join("fullops.json").exists());
-            assert!(squad.join("fullops.json.py-1.24.0").is_file());
-            let config = toml_of(&squad.join("fullops.toml"));
+            // 표식이 바뀌었고 레포 폴더가 새 자리로 갔다. 커밋 둘이 생겼고 작업 트리는 깨끗하다
+            assert!(!squad.exists(), "옛 자리가 남았다");
+            assert!(fresh.join("fullops.json.py-1.24.0").is_file());
+            assert_eq!(
+                driver.sb.git_ok(&lead, &["log", "--format=%s", "-2"]),
+                "fullops: .fullops 자리로 옮김\nfullops: Python판에서 전환"
+            );
+            assert_eq!(driver.sb.git_ok(&lead, &["status", "--porcelain"]), "");
+            let config = toml_of(&fresh.join("fullops.toml"));
+            assert_eq!(
+                config["applied_version"].as_str(),
+                Some(env!("CARGO_PKG_VERSION"))
+            );
             assert_eq!(config["schema"].as_integer(), Some(2));
             assert_eq!(config["mode"].as_str(), Some("coor"));
             assert_eq!(config["test_level"].as_str(), Some("lite"));
@@ -1153,6 +1163,8 @@ fn n3_migrate_round_trip() {
                 "병렬 방침(8.15절)에 맞게 고친다",
                 "열린 결정 1건, 보류 1건",
                 "선행 과제 A-1는 끝난 것으로 넣었다",
+                "`.fullops/` 자리로 옮겼다",
+                "git revert",
             ] {
                 assert!(
                     result.output.contains(line),
@@ -1161,7 +1173,8 @@ fn n3_migrate_round_trip() {
                 );
             }
             assert!(!result.output.contains("이 줄은 라우팅 기준이 아니다"));
-            let delegation = std::fs::read_to_string(squad.join("rules/delegation.md")).unwrap();
+            let delegation =
+                std::fs::read_to_string(fresh.join("guide/rules/delegation.md")).unwrap();
             assert!(delegation.contains("이 레포가 고쳐 쓴 규칙이다"));
             // 관리 블록 셋, 없던 .gitignore, 없는 템플릿, 빈 인박스 파일
             let agents = std::fs::read_to_string(lead.join("AGENTS.md")).unwrap();
@@ -1171,10 +1184,15 @@ fn n3_migrate_round_trip() {
                 let text = std::fs::read_to_string(lead.join(name)).unwrap();
                 assert!(text.contains("<!-- fullops:start -->"), "{name}");
             }
-            let ignore = std::fs::read_to_string(squad.join(".gitignore")).unwrap();
+            let ignore = std::fs::read_to_string(fresh.join(".gitignore")).unwrap();
             assert!(ignore.lines().any(|l| l == "local/") && !ignore.contains("jev"));
-            assert!(squad.join("FULLOPS.md").is_file() && squad.join("lint/lint.json").is_file());
-            assert!(!squad.join("handovers/to_dev.md").exists());
+            assert!(ignore.lines().any(|l| l == "**/raw/"));
+            assert!(
+                fresh.join("guide/FULLOPS.md").is_file()
+                    && fresh.join("config/lint.json").is_file()
+            );
+            assert!(fresh.join("templates/handover.md").is_file());
+            assert!(!fresh.join("inbox/to_dev.md").exists());
             // 상태: 열린 결정과 보류만 가져왔고, 선행 과제는 끝난 것으로 들어갔다
             let state = json(&lead.join(".git/fullops/state.json"));
             let decisions = state["decisions"].as_array().unwrap();
@@ -1197,6 +1215,7 @@ fn n3_migrate_round_trip() {
         }
     }
     assert!(migrated);
+    assert!(!fresh.exists(), "자리 옮김을 되돌린 뒤 새 자리가 남았다");
     // 되돌린 뒤: Python판 표식과 블록, 빈 인박스 파일이 돌아왔고 새 표식은 이름이 바뀌어 남았다
     assert!(squad.join("fullops.json").is_file() && !squad.join("fullops.json.py-1.24.0").exists());
     assert!(
@@ -1227,7 +1246,7 @@ fn r8_migrate_moves_subagent_level_to_parallel() {
         ("missing", "on"),
     ] {
         let (driver, results) = play(&format!("r8-{name}"));
-        let config = toml_of(&driver.sb.path("lead").join(".fullops-squad/fullops.toml"));
+        let config = toml_of(&driver.sb.path("lead").join(".fullops/fullops.toml"));
         assert_eq!(config["parallel"].as_str(), Some(parallel), "{name}");
         let report = &results.last().unwrap().output;
         let off_notice = report.contains("1.24.0에서는 하위 위임이 꺼져 있었다");
@@ -1261,6 +1280,23 @@ fn commit_all(sb: &fullops_testkit::Sandbox, repo: &Path, message: &str) {
 
 const PY_MARKER: &str = ".fullops-squad/fullops.json";
 const PY_MARKER_MOVED: &str = ".fullops-squad/fullops.json.py-1.24.0";
+/// 자리를 옮긴 뒤의 옛 표식.
+const PY_MARKER_AT_NEW: &str = ".fullops/fullops.json.py-1.24.0";
+
+/// 자리 옮김 커밋을 되돌려 옛 자리로 돌아간다. `migrate --rollback`은 옛 자리에서만 된다(설계 13.3절).
+fn revert_layout(sb: &fullops_testkit::Sandbox, repo: &Path) {
+    let sha = sb.git_ok(
+        repo,
+        &[
+            "log",
+            "--format=%H",
+            "-1",
+            "--grep",
+            "fullops: .fullops 자리로 옮김",
+        ],
+    );
+    sb.git_ok(repo, &["revert", "--no-edit", &sha]);
+}
 
 /// 전환은 전부 되거나 전혀 안 된다: 중간에 실패하면 쓴 것을 되돌려 두 판의 표식이 함께 남지 않고,
 /// 중간에 멈춘 전환은 `--rollback`과 다시 실행이 알아보고 끝낸다.
@@ -1268,7 +1304,8 @@ const PY_MARKER_MOVED: &str = ".fullops-squad/fullops.json.py-1.24.0";
 fn migrate_is_all_or_nothing() {
     let (driver, lead) = python_repo();
     let sb = &driver.sb;
-    let squad = lead.join(".fullops-squad");
+    let (squad, fresh) = (lead.join(".fullops-squad"), lead.join(".fullops"));
+    let pre = sb.git_ok(&lead, &["rev-parse", "HEAD"]);
     let agents = std::fs::read(lead.join("AGENTS.md")).unwrap();
     let untouched = |when: &str| {
         assert!(
@@ -1282,10 +1319,20 @@ fn migrate_is_all_or_nothing() {
             "{when}"
         );
     };
+    // 전환이 끝나면 새 자리다
     let switched = || {
-        !squad.join("fullops.json").exists()
-            && squad.join("fullops.json.py-1.24.0").is_file()
-            && squad.join("fullops.toml").is_file()
+        !squad.exists()
+            && fresh.join("fullops.json.py-1.24.0").is_file()
+            && fresh.join("fullops.toml").is_file()
+    };
+    // 7단계 직전에 프로세스가 죽은 상태: 새 표식과 바뀐 파일이 있는데 Python판 표식이 그대로이고 아무것도 커밋되지 않았다.
+    // 전환 커밋(자리 옮김 바로 앞 커밋)의 글을 전환 전 커밋 위에 풀어 놓고 옮긴 표식을 뺀다
+    let half_done = || {
+        let switch = sb.git_ok(&lead, &["rev-parse", "HEAD~1"]);
+        sb.git_ok(&lead, &["reset", "-q", "--hard", &pre]);
+        sb.git_ok(&lead, &["checkout", &switch, "--", "."]);
+        sb.git_ok(&lead, &["reset", "-q"]);
+        std::fs::remove_file(lead.join(PY_MARKER_MOVED)).unwrap();
     };
 
     // 쓰다가 실패할 것이 미리 보이면 시작하지 않는다: 읽기 전용 파일(Windows에서 편집기가 잡은 파일과 같다)
@@ -1331,9 +1378,8 @@ fn migrate_is_all_or_nothing() {
     assert_eq!(again.code, Some(0), "{}", again.stderr);
     assert!(switched());
 
-    // 7단계 직전에 프로세스가 죽은 상태를 만든다: 새 표식과 바뀐 파일이 있는데 Python판 표식이 그대로다
-    sb.git_ok(&lead, &["mv", PY_MARKER_MOVED, PY_MARKER]);
-    assert!(squad.join("fullops.json").is_file() && squad.join("fullops.toml").is_file());
+    half_done();
+    assert!(lead.join(PY_MARKER).is_file() && squad.join("fullops.toml").is_file());
     // --rollback이 알아보고 전환 전으로 되돌린다
     let back = sb.cli(&lead, &["migrate", "--rollback"]);
     assert_eq!(back.code, Some(0), "{}", back.stderr);
@@ -1346,7 +1392,7 @@ fn migrate_is_all_or_nothing() {
 
     // 같은 상태에서 다시 실행하면 먼저 되돌린 뒤 전환을 끝낸다
     assert_eq!(sb.cli(&lead, &["migrate", "--from-python"]).code, Some(0));
-    sb.git_ok(&lead, &["mv", PY_MARKER_MOVED, PY_MARKER]);
+    half_done();
     let resumed = sb.cli(&lead, &["migrate", "--from-python"]);
     assert_eq!(resumed.code, Some(0), "{}", resumed.stderr);
     assert!(
@@ -1390,16 +1436,14 @@ fn migrate_skips_symlinked_entry_doc() {
         "{}",
         run.stdout
     );
-    let status = sb.git_ok(&lead, &["status", "--porcelain"]);
-    assert!(
-        !status.lines().any(|l| l.ends_with(" AGENTS.md")),
-        "{status}"
-    );
+    // 전환과 자리 옮김의 두 커밋 어디에도 링크는 들어가지 않았다
+    let touched = sb.git_ok(&lead, &["diff", "--name-only", "HEAD~2", "HEAD"]);
+    assert!(!touched.lines().any(|l| l == "AGENTS.md"), "{touched}");
     // 링크 대상인 CLAUDE.md는 자기 차례에 블록이 바뀐다
     let claude = std::fs::read_to_string(lead.join("CLAUDE.md")).unwrap();
     assert!(claude.contains("<!-- fullops:start -->") && !claude.contains("fullops-squad:start"));
 
-    commit_all(sb, &lead, "전환");
+    revert_layout(sb, &lead);
     assert_eq!(sb.cli(&lead, &["migrate", "--rollback"]).code, Some(0));
     assert!(is_link());
     let claude = std::fs::read_to_string(lead.join("CLAUDE.md")).unwrap();
@@ -1415,7 +1459,7 @@ const TRIAGE_1_24: &str = "# Triage labels\n\n로컬 역할 분류는 `fullops.j
 fn migrate_replaces_stock_templates_and_reports_python_commands() {
     let (driver, lead) = python_repo();
     let sb = &driver.sb;
-    let squad = lead.join(".fullops-squad");
+    let (squad, fresh) = (lead.join(".fullops-squad"), lead.join(".fullops"));
     let front = "---\ntitle: Triage labels\nstatus: draft\nupdated: 2026-11-01\nowner: coordinator\nsummary: Triage labels\n---\n";
     let triage = squad.join("docs/agents/triage-labels.md");
     sb.write(&triage, &format!("{front}\n{TRIAGE_1_24}"));
@@ -1448,26 +1492,26 @@ fn migrate_replaces_stock_templates_and_reports_python_commands() {
         );
     }
     let template = std::fs::read_to_string(
-        repo_root().join("crates/fullops/assets/repo/docs/agents/triage-labels.md"),
+        repo_root().join("crates/fullops/assets/repo/guide/agents/triage-labels.md"),
     )
     .unwrap()
     .replace("\r\n", "\n");
+    // 바꾼 글은 새 자리에 있다
     assert_eq!(
-        std::fs::read_to_string(&triage).unwrap(),
+        std::fs::read_to_string(fresh.join("guide/agents/triage-labels.md")).unwrap(),
         format!("{front}\n{template}")
     );
     assert_eq!(
-        std::fs::read_to_string(squad.join("lint/README.md")).unwrap(),
+        std::fs::read_to_string(fresh.join("guide/lint.md")).unwrap(),
         edited
     );
-
+    // 전환은 .gitignore에 줄을 더하지 않고, 자리 옮김이 새 템플릿의 줄을 더한다
     assert_eq!(
-        std::fs::read_to_string(squad.join(".gitignore")).unwrap(),
-        "*.log",
-        "2.1.0부터 전환이 .gitignore에 더하는 줄이 없다"
+        std::fs::read_to_string(fresh.join(".gitignore")).unwrap(),
+        "*.log\n.env*\n!.env.example\nlocal/\n**/raw/\n"
     );
 
-    commit_all(sb, &lead, "전환");
+    revert_layout(sb, &lead);
     assert_eq!(sb.cli(&lead, &["migrate", "--rollback"]).code, Some(0));
     assert_eq!(
         std::fs::read_to_string(&triage).unwrap(),
@@ -1510,7 +1554,6 @@ fn migrate_again_after_rollback_follows_python_state() {
     let first = sb.cli(&lead, &["migrate", "--from-python"]);
     assert_eq!(first.code, Some(0), "{}", first.stderr);
     assert!(first.stdout.contains("PLANS.md 문법 오류"));
-    commit_all(sb, &lead, "전환");
 
     // Python판의 닫힌 결정 D002와 번호가 겹치지 않는다
     let added = sb.cli(
@@ -1523,6 +1566,11 @@ fn migrate_again_after_rollback_follows_python_state() {
     sb.write(&lead.join("CLAUDE.md"), &format!("{claude}\n## 우리 절\n"));
     commit_all(sb, &lead, "전환 뒤 작업");
 
+    // 새 자리에서는 되돌리지 않는다. 자리 옮김 커밋을 되돌린 옛 자리에서 한다
+    let refused = sb.cli(&lead, &["migrate", "--rollback"]);
+    assert_eq!(refused.code, Some(2), "{}", refused.stdout);
+    assert!(refused.stderr.contains("git revert"), "{}", refused.stderr);
+    revert_layout(sb, &lead);
     let back = sb.cli(&lead, &["migrate", "--rollback"]);
     assert_eq!(back.code, Some(0), "{}", back.stderr);
     // 전환이 쓴 그대로인 문서는 전환 전 바이트로 돌아오고, 사람이 고친 문서는 전환이 넣은 블록만 빠진다
@@ -1575,7 +1623,7 @@ fn init_refuses_python_repo_and_keeps_broken_block() {
         "{}",
         refused.stderr
     );
-    assert!(!lead.join(".fullops-squad/fullops.toml").exists());
+    assert!(!lead.join(".fullops/fullops.toml").exists());
     assert_eq!(driver.sb.git_ok(&lead, &["status", "--porcelain"]), "");
 
     let sb = fullops_testkit::Sandbox::empty();
@@ -1602,7 +1650,7 @@ fn init_refuses_python_repo_and_keeps_broken_block() {
         );
     }
     // upgrade의 필수 적용 검사도 깨진 블록을 통과로 보지 않는다
-    let path = repo.join(".fullops-squad/fullops.toml");
+    let path = repo.join(".fullops/fullops.toml");
     let lowered = std::fs::read_to_string(&path).unwrap().replace(
         &format!("applied_version = \"{}\"", env!("CARGO_PKG_VERSION")),
         "applied_version = \"1.24.0\"",
@@ -1630,7 +1678,7 @@ fn init_mode_and_upgrade() {
     );
     sb.git_ok(&repo, &["remote", "add", "origin", &origin_text]);
     sb.git_ok(&repo, &["push", "-q", "-u", "origin", "main"]);
-    let squad = repo.join(".fullops-squad");
+    let squad = repo.join(".fullops");
     let init = [
         "init",
         "--roles",
@@ -1659,25 +1707,29 @@ fn init_mode_and_upgrade() {
         Some("fullops/dev")
     );
     for file in [
-        "FULLOPS.md",
+        "fullops.toml",
         "PLANS.md",
-        "project.md",
-        "orca-agents.md",
         ".gitignore",
         ".env.example",
-        "handovers/_TEMPLATE.md",
-        "handovers/logs/.gitkeep",
-        "lint/lint.json",
-        "lint/README.md",
-        "review/rule.json",
-        "rules/delegation.md",
-        "rules/common/testing.md",
+        "config/lint.json",
+        "config/review.json",
+        "guide/FULLOPS.md",
+        "guide/project.md",
+        "guide/orca-agents.md",
+        "guide/lint.md",
+        "guide/rules/delegation.md",
+        "guide/rules/common/testing.md",
+        "guide/agents/document-writing.md",
+        "templates/handover.md",
+        "templates/review-report.md",
+        "templates/intent.md",
+        "inbox/.gitkeep",
+        "tasks/.gitkeep",
         "docs/deliverables/README.md",
-        "docs/agents/document-writing.md",
     ] {
         assert!(squad.join(file).is_file(), "{file}");
     }
-    let delegation = std::fs::read_to_string(squad.join("rules/delegation.md")).unwrap();
+    let delegation = std::fs::read_to_string(squad.join("guide/rules/delegation.md")).unwrap();
     assert!(delegation.contains("병렬 진행") && delegation.contains("--brief"));
     for name in ["AGENTS.md", "CLAUDE.md", "GEMINI.md"] {
         let text = std::fs::read_to_string(repo.join(name)).unwrap();
@@ -1693,19 +1745,19 @@ fn init_mode_and_upgrade() {
     }
     assert!(
         sb.git_ok(&repo, &["status", "--porcelain"])
-            .contains(".fullops-squad/")
+            .contains(".fullops/")
     );
     assert_eq!(sb.git_ok(&repo, &["rev-list", "--count", "HEAD"]), "1");
 
     // 다시 실행: 사람이 고친 파일은 그대로이고 역할과 방침만 더한다
-    sb.write(&squad.join("project.md"), "# 이 레포의 정본\n");
+    sb.write(&squad.join("guide/project.md"), "# 이 레포의 정본\n");
     let mut agents = std::fs::read_to_string(repo.join("AGENTS.md")).unwrap();
     agents.insert_str(0, "# 우리 안내\n\n");
     sb.write(&repo.join("AGENTS.md"), &agents);
     let again = sb.cli(&repo, &["init", "--roles", "ops", "--parallel", "ultra"]);
     assert_eq!(again.code, Some(0), "{}", again.stderr);
     assert_eq!(
-        std::fs::read_to_string(squad.join("project.md")).unwrap(),
+        std::fs::read_to_string(squad.join("guide/project.md")).unwrap(),
         "# 이 레포의 정본\n"
     );
     assert_eq!(
@@ -1879,11 +1931,10 @@ fn migrate_finalize_retires_python_state_after_two_weeks() {
         early.stderr
     );
     assert_eq!(sb.cli(&lead, &["migrate", "--from-python"]).code, Some(0));
-    commit_all(sb, &lead, "전환");
-    // 옛 판에 남은 워크트리
+    // 옛 판에 남은 워크트리(전환과 자리 옮김의 두 커밋 앞)
     sb.git_ok(
         &lead,
-        &["worktree", "add", "-q", "--detach", "../old", "HEAD~1"],
+        &["worktree", "add", "-q", "--detach", "../old", "HEAD~2"],
     );
     let old = sb.path("old");
     sb.write(&git.join("worktrees/old/fullops-gate/x.json"), "{}");
@@ -1923,7 +1974,7 @@ fn migrate_finalize_retires_python_state_after_two_weeks() {
         "fullops/py-backup",
         "fullops-decisions",
         "worktrees/old/fullops-gate",
-        "git rm .fullops-squad/fullops.json.py-1.24.0",
+        "git rm .fullops/fullops.json.py-1.24.0",
     ] {
         assert!(plan.stdout.contains(line), "{line}\n{}", plan.stdout);
     }
@@ -1939,7 +1990,7 @@ fn migrate_finalize_retires_python_state_after_two_weeks() {
     assert!(to.join("worktrees/old/fullops-gate/x.json").is_file());
     assert!(!git.join("fullops/py-backup").exists() && !git.join("fullops-decisions").exists());
     assert!(git.join("fullops/state.json").is_file());
-    assert!(lead.join(PY_MARKER_MOVED).is_file());
+    assert!(lead.join(PY_MARKER_AT_NEW).is_file());
     assert_eq!(sb.git_ok(&lead, &["status", "--porcelain"]), "");
 
     // 다시: 옮길 것이 없고 되돌리기 기록이 없다고 알린다
@@ -1967,7 +2018,6 @@ fn migrate_finalize_edge_cases() {
     let sb = &driver.sb;
     let git = lead.join(".git");
     assert_eq!(sb.cli(&lead, &["migrate", "--from-python"]).code, Some(0));
-    commit_all(sb, &lead, "전환");
     let record = git.join("fullops/py-backup/migrate.json");
     let good = std::fs::read_to_string(&record).unwrap();
 

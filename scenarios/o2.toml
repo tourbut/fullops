@@ -14,14 +14,14 @@ expect = { verdict = "warn", flow = "continues", escape = "fullops status" }
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 content = "---\nid: handover-dev\ntitle: A-1\nstatus: draft\nkey: A-1\nrole: dev\ngoal: A-1 구현\nbase: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\ntest_level: lite\nparallel: on\n---\n# A-1\n\n## 완료 보고\n"
 
 [[step]]
 act = "edits_file"
 df = "DF-30"
 who = "dev"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 old = "key: A-1"
 new = "key: B-2"
 expect = { verdict = "deny", rule = "T-05", flow = "stopped", escape = "fullops plan add" }

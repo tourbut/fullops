@@ -119,11 +119,15 @@ function fixedBinary() {
   return path.join(os.homedir(), '.fullops', 'bin', process.platform === 'win32' ? 'fullops.exe' : 'fullops');
 }
 
-/** `--repo`: 설치 뒤 활성 레포면 fullops upgrade를 부른다. 아직 켜지 않은 레포와 Python판 레포는 고치지 않고 안내만 한다. */
+/**
+ * `--repo`: 설치 뒤 활성 레포면 fullops upgrade를 부른다. 아직 켜지 않은 레포와 Python판 레포는 고치지 않고 안내만 한다.
+ * 활성 표식은 `.fullops/fullops.toml`이다. 옛 자리(`.fullops-squad/fullops.toml`)의 레포도 upgrade에 넘긴다(옮기라는 안내를 내고 0으로 끝난다).
+ */
 function repoStep(file, options) {
-  const marker = path.join(options.repo, '.fullops-squad');
-  if (!fs.existsSync(path.join(marker, 'fullops.toml'))) {
-    const python = fs.existsSync(path.join(marker, 'fullops.json'));
+  const old = path.join(options.repo, '.fullops-squad');
+  const active = [path.join(options.repo, '.fullops'), old].some(dir => fs.existsSync(path.join(dir, 'fullops.toml')));
+  if (!active) {
+    const python = fs.existsSync(path.join(old, 'fullops.json'));
     // 설치는 이미 끝났으므로 안내만 하고 성공으로 끝낸다(upgrade는 활성 레포가 아니면 2를 낸다)
     console.log(
       python

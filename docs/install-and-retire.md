@@ -236,6 +236,8 @@ claude plugin list --json; codex plugin list --json; grok plugin list --json; ag
 
 ### 2.2 레포 쪽(레포마다. jevpet은 파일 이름만 확인)
 
+아래 표의 자리는 전환 전의 옛 자리(`.fullops-squad/`)다. 2.1.0부터 `migrate --from-python`은 전환 끝에 레포 폴더를 `.fullops/`로 옮기고(design.md 13.6절의 표), 2.0.x에서 이미 전환한 레포는 `fullops migrate --layout`으로 옮긴다. 옮긴 뒤 `fullops.json.py-1.24.0`은 `.fullops/` 아래에 있다.
+
 | 무엇 | 어디 | 누가 만들었나 | migrate가 하는 일 / 새 판도 쓰나 | 언제 지워도 되나 |
 |---|---|---|---|---|
 | 표식·설정 `fullops.json` | `.fullops-squad/` | `setup.py` | `fullops.toml`로 옮기고 `git mv`로 `fullops.json.py-1.24.0`이 된다 | 되돌리기가 더는 필요 없을 때(2주 뒤). 그 전에는 `--rollback`의 원본이다 |

@@ -62,7 +62,7 @@ content = "메모\n"
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/handovers/logs/A-1.dev.r0.md"
+path = ".fullops/tasks/A-1/dev.r0.md"
 content = "# 기록\n"
 
 [[step]]

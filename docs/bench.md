@@ -77,7 +77,7 @@ export FULLOPS_PY_BASELINE="<py-baseline 사본의 루트>"
   | `inactive` | 비활성 레포의 PreToolUse(Bash `ls -la`) | 표식 없는 레포 |
   | `pre_bash` | lead의 PreToolUse(Bash `ls -la`) | |
   | `pre_edit` | worker의 PreToolUse(Edit `src/app.py`) | |
-  | `pre_inbox_edit` | lead의 PreToolUse(Edit `handovers/to_dev.md`) | |
+  | `pre_inbox_edit` | lead의 PreToolUse(Edit `.fullops/inbox/to_dev.md`) | |
   | `pre_worker_start` | lead의 PreToolUse(Bash 날것 `orca orchestration worker-start`) | |
   | `pre_git_commit` | worker의 PreToolUse(Bash `git commit -m x`) | |
   | `stop_lead_clean` | lead의 Stop | 상태 파일 없음 |

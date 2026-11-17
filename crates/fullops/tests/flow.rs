@@ -62,7 +62,7 @@ const SUBDISPATCH: &str = "[[step]]\nact = \"worker_subdispatches\"\nrole = \"de
 /// 인박스의 완료 보고 절을 채우고 커밋한다.
 fn report(role: &str) -> String {
     format!(
-        "[[step]]\nact = \"edits_file\"\nwho = \"{role}\"\npath = \".fullops-squad/handovers/to_{role}.md\"\nold = \"## 완료 보고\\n\"\n\
+        "[[step]]\nact = \"edits_file\"\nwho = \"{role}\"\npath = \".fullops/inbox/to_{role}.md\"\nold = \"## 완료 보고\\n\"\n\
          new = \"## 완료 보고\\n\\n구현과 확인을 마쳤다.\\n\"\n[[step]]\nact = \"commits\"\nwho = \"{role}\"\n"
     )
 }
@@ -119,7 +119,7 @@ fn dispatch_records_state_and_sends_the_spec() {
     let mut d = Driver::new(&Setup::default());
     // 원본 체크아웃의 미추적 환경 파일은 대상 워크트리에 연결된다
     d.sb.write(
-        &d.sb.path("lead").join(".fullops-squad/.env"),
+        &d.sb.path("lead").join(".fullops/.env"),
         "TOKEN_FOR_TEST=1\n",
     );
     // worker의 첫 프롬프트 hook이 상태 기록보다 먼저 돌아 세션 파일에만 묶였다
@@ -183,7 +183,7 @@ fn dispatch_records_state_and_sends_the_spec() {
     let base = sb.git_ok(&sb.path("lead"), &["rev-parse", "HEAD~1"]);
     assert!(
         spec.starts_with(&format!(
-            "Task key: A-1; Purpose: implementation; Role: dev; Handover: {dev}/.fullops-squad/handovers/to_dev.md; \
+            "Task key: A-1; Purpose: implementation; Role: dev; Handover: {dev}/.fullops/inbox/to_dev.md; \
              Base: {base}; Test level: lite; Parallel: on. 병렬 방침 on: "
         )),
         "{spec}"
@@ -210,13 +210,9 @@ fn dispatch_records_state_and_sends_the_spec() {
         sb.git_ok(&lead, &["rev-parse", "origin/main"]),
         head(sb, "lead")
     );
-    assert!(
-        sb.path("dev")
-            .join(".fullops-squad/handovers/to_dev.md")
-            .is_file()
-    );
+    assert!(sb.path("dev").join(".fullops/inbox/to_dev.md").is_file());
     assert_eq!(
-        std::fs::read_to_string(sb.path("dev").join(".fullops-squad/.env")).unwrap(),
+        std::fs::read_to_string(sb.path("dev").join(".fullops/.env")).unwrap(),
         "TOKEN_FOR_TEST=1\n"
     );
     // 이미 연결된 뒤의 `env link`는 할 일이 없다
@@ -742,7 +738,7 @@ fn done_without_hooks_reaches_the_lead_with_a_sha() {
     );
     assert!(
         d.sb.path("dev")
-            .join(".fullops-squad/handovers/logs/A-1.dev.r0.md")
+            .join(".fullops/tasks/A-1/dev.r0.md")
             .is_file()
     );
     assert_eq!(
@@ -921,7 +917,7 @@ fn review_dispatch_goes_to_the_snapshot_in_a_separate_session() {
     assert!(spec.contains(&format!("; Review SHA: {sha}; Implementer session: sid-dev; Reviewer session: separate; Review folder: ")), "{spec}");
     assert!(
         spec.contains(&format!(
-            ".fullops-squad/reviews/A-1/{}; Read only: true. ",
+            ".fullops/tasks/A-1/reviews/{}; Read only: true. ",
             &sha[..12]
         )) && spec.contains("Purpose: review")
     );
@@ -1075,9 +1071,9 @@ fn route_classifies_through_curl_and_falls_back() {
     }
     assert_eq!(sb.curl_calls().len(), 3, "폴백은 curl을 부르지 않는다");
 
-    // 레포의 .fullops-squad/.env에서 찾은 키는 그 제공자의 엔드포인트로 간다
+    // 레포의 .fullops/.env에서 찾은 키는 그 제공자의 엔드포인트로 간다
     sb.write(
-        &lead.join(".fullops-squad/.env"),
+        &lead.join(".fullops/.env"),
         "# 키\nOPENROUTER_API_KEY=\"or-key\"\n",
     );
     sb.curl_rule(json!({"when": ["--config", "-"], "times": 1, "stdout": reply(0.95, 0.05)}));
@@ -1264,7 +1260,7 @@ fn route_rules_and_tuple_records() {
     // 2.1.0에서 패킷을 뗐다. 1.24.0 기록의 requires_packet은 옮기지 않고,
     // 그 키가 남은 2.0.x의 route 기록도 읽혀 재분류가 이어진다(키는 버린다)
     sb.write(
-        &lead.join(".fullops-squad/docs/evaluations/jev/P-6-route.json"),
+        &lead.join(".fullops/docs/evaluations/jev/P-6-route.json"),
         "{\"requires_packet\": true}",
     );
     let moved = out(&run(
@@ -1282,7 +1278,7 @@ fn route_rules_and_tuple_records() {
         ],
     ));
     assert!(moved["requires_packet"].is_null());
-    let record = lead.join(".fullops-squad/routes/P-6.json");
+    let record = lead.join(".fullops/tasks/P-6/route.json");
     let mut old: Value = serde_json::from_str(&read(&record)).unwrap();
     old["requires_packet"] = json!(true);
     sb.write(&record, &old.to_string());
@@ -1327,7 +1323,7 @@ fn task_new_reopen_and_recover() {
     steps(&mut d, DISPATCH);
     let sb = &d.sb;
     let (lead, dev) = (sb.path("lead"), sb.path("dev"));
-    let inbox = std::fs::read_to_string(dev.join(".fullops-squad/handovers/to_dev.md")).unwrap();
+    let inbox = std::fs::read_to_string(dev.join(".fullops/inbox/to_dev.md")).unwrap();
     let (front, body) = fullops_core::parse_front_matter(&inbox).unwrap();
     let parsed = fullops_core::frontmatter::inbox_of(&front).expect("인박스 전용 필드 열 개");
     assert_eq!(
@@ -1389,9 +1385,9 @@ fn task_new_reopen_and_recover() {
         ],
     );
     assert_eq!(none.code, Some(2), "인박스가 남아 있다: {}", none.stderr);
-    std::fs::rename(lead.join(".fullops-squad/handovers/to_dev.md"), {
-        std::fs::create_dir_all(lead.join(".fullops-squad/handovers/logs")).unwrap();
-        lead.join(".fullops-squad/handovers/logs/A-1.dev.r0.md")
+    std::fs::rename(lead.join(".fullops/inbox/to_dev.md"), {
+        std::fs::create_dir_all(lead.join(".fullops/tasks/A-1")).unwrap();
+        lead.join(".fullops/tasks/A-1/dev.r0.md")
     })
     .unwrap();
     let dup = sb.cli(
@@ -1498,7 +1494,7 @@ fn plan_edits_only_the_task_table() {
     assert_eq!(run(&["plan", "set", "A-1", "보류(나중에)"]).code, Some(0));
     assert_eq!(out(&run(&["plan", "ready", "--json"]))["ready"], json!([]));
     assert_eq!(out(&run(&["plan", "check", "--json"]))["errors"], json!([]));
-    let text = std::fs::read_to_string(lead.join(".fullops-squad/PLANS.md")).unwrap();
+    let text = std::fs::read_to_string(lead.join(".fullops/PLANS.md")).unwrap();
     assert!(text.starts_with("# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n| A-1 | 목표 \\| 파이프 | dev | 보류(나중에) | 사용자 지시 |\n"), "{text}");
     assert!(text.ends_with("\n\n## 위임 범위\n\n"), "{text}");
 }
@@ -1561,7 +1557,7 @@ fn status_reports_metrics_landing_and_the_first_lines() {
     assert!(
         worker.starts_with("역할: dev(worker)")
             && worker.contains("하위 worker다")
-            && worker.contains("인박스: .fullops-squad/handovers/to_dev.md (과제 A-1)"),
+            && worker.contains("인박스: .fullops/inbox/to_dev.md (과제 A-1)"),
         "{worker}"
     );
 
@@ -1650,10 +1646,7 @@ expect = {{ verdict = "pass" }}
         sha,
         "주 담당의 브랜치로 push한다"
     );
-    assert!(
-        lead.join(".fullops-squad/handovers/logs/A-1.dev.r0.md")
-            .is_file()
-    );
+    assert!(lead.join(".fullops/tasks/A-1/dev.r0.md").is_file());
     // 직접 작업은 통합 대기로 세지 않는다
     assert_eq!(
         out(&sb.cli(&lead, &["status", "--json"]))["pending"],
@@ -1721,11 +1714,7 @@ fn dispatch_publishes_from_a_coordinator_branch_and_guards_the_baseline() {
         sb.git_ok(&lead, &["rev-parse", "origin/main"]),
         head(&sb, "coor")
     );
-    assert!(
-        sb.path("dev")
-            .join(".fullops-squad/handovers/to_dev.md")
-            .is_file()
-    );
+    assert!(sb.path("dev").join(".fullops/inbox/to_dev.md").is_file());
 
     // 기본 브랜치 워크트리가 더러우면 게시하지 않는다
     prepare("B-2", "art", "grok");
@@ -1859,7 +1848,7 @@ fn k4_three_tasks_run_end_to_end() {
     assert_eq!(st["decisions"].as_array().map_or(0, Vec::len), 0, "{st}");
     let status = out(&sb.cli(&lead, &["status", "--json"]));
     assert_eq!(status["pending"], json!([]), "{status}");
-    let plans = std::fs::read_to_string(lead.join(".fullops-squad/PLANS.md")).unwrap();
+    let plans = std::fs::read_to_string(lead.join(".fullops/PLANS.md")).unwrap();
     assert!(
         plans.contains("| C-3 |") && plans.contains("대기(사람: 배포)"),
         "{plans}"
@@ -1890,8 +1879,9 @@ fn review(sb: &Sandbox, sha: &str, conclusion: &str) {
 fn review_of(sb: &Sandbox, key: &str, sha: &str, conclusion: &str) {
     let path = sb
         .path("lead")
-        .join(".fullops-squad/reviews")
+        .join(".fullops/tasks")
         .join(key)
+        .join("reviews")
         .join(&sha[..12])
         .join("result.json");
     let mut result: Value = serde_json::from_str(&read(&path)).expect("result.json");
@@ -1927,10 +1917,10 @@ fn review_reject_reopens_and_the_fix_round_merges() {
     let mut d = Driver::new(&Setup::default());
     steps(&mut d, &format!("{DISPATCH}{}", round(400, "msg_r0")));
     let (lead, dev) = (d.sb.path("lead"), d.sb.path("dev"));
-    let logs = ".fullops-squad/handovers/logs";
-    let inbox = ".fullops-squad/handovers/to_dev.md";
+    let logs = ".fullops/tasks";
+    let inbox = ".fullops/inbox/to_dev.md";
     let old = head(&d.sb, "dev");
-    let record = read(&dev.join(logs).join("A-1.dev.r0.md"));
+    let record = read(&dev.join(logs).join("A-1/dev.r0.md"));
     assert!(record.contains("구현과 확인을 마쳤다"), "{record}");
 
     // 리뷰어가 reject했다: 병합은 거절되고 탈출구는 수정 배정이다
@@ -1956,7 +1946,7 @@ fn review_reject_reopens_and_the_fix_round_merges() {
         &mut d,
         "[[step]]\nact = \"runs_fullops\"\nargs = [\"task\", \"reopen\", \"--role\", \"dev\", \"--key\", \"A-1\", \"--goal\", \"리뷰 지적 수정\"]\nexpect = { verdict = \"pass\" }\n",
     );
-    assert_eq!(read(&lead.join(logs).join("A-1.dev.r0.md")), record);
+    assert_eq!(read(&lead.join(logs).join("A-1/dev.r0.md")), record);
     let fresh = read(&lead.join(inbox));
     assert!(
         fresh.contains("round: 1") && fresh.contains("리뷰 지적 수정"),
@@ -1981,7 +1971,7 @@ fn review_reject_reopens_and_the_fix_round_merges() {
         delivered.contains("round: 1") && delivered.contains("경계 검사를 넣는다"),
         "{delivered}"
     );
-    assert_eq!(read(&dev.join(logs).join("A-1.dev.r0.md")), record);
+    assert_eq!(read(&dev.join(logs).join("A-1/dev.r0.md")), record);
     let starts = calls(&d.sb, "worker-start");
     let spec = starts.last().unwrap()["stdin"].as_str().unwrap();
     assert!(spec.contains("Purpose: fix"), "{spec}");
@@ -1996,9 +1986,9 @@ fn review_reject_reopens_and_the_fix_round_merges() {
         d.sb.git_ok(&dev, &["log", "-1", "--format=%s"]),
         "fullops: 완료 기록 A-1 (dev)"
     );
-    let second = read(&dev.join(logs).join("A-1.dev.r1.md"));
+    let second = read(&dev.join(logs).join("A-1/dev.r1.md"));
     assert!(second.contains("경계 검사를 넣는다") && !dev.join(inbox).exists());
-    assert_eq!(read(&dev.join(logs).join("A-1.dev.r0.md")), record);
+    assert_eq!(read(&dev.join(logs).join("A-1/dev.r0.md")), record);
     // 같은 과제의 보고가 둘이면 안내가 고를 ID를 준다
     assert!(
         waited
@@ -2038,10 +2028,10 @@ fn review_reject_reopens_and_the_fix_round_merges() {
         &mut d,
         "[[step]]\nact = \"runs_fullops\"\nargs = [\"merge\", \"A-1\", \"--completion\", \"msg_r1\"]\nexpect = { verdict = \"pass\" }\n",
     );
-    for name in ["A-1.dev.r0.md", "A-1.dev.r1.md"] {
+    for name in ["A-1/dev.r0.md", "A-1/dev.r1.md"] {
         assert!(lead.join(logs).join(name).is_file(), "{name}");
     }
-    assert_eq!(read(&lead.join(logs).join("A-1.dev.r0.md")), record);
+    assert_eq!(read(&lead.join(logs).join("A-1/dev.r0.md")), record);
     assert!(!lead.join(inbox).exists());
     // 앞선 보고(병합한 SHA의 조상)도 함께 닫혀 다음 배정이 바로 이어진다
     let st = state(&d.sb);
@@ -2081,7 +2071,7 @@ fn lint_failure_after_merge_reopens_and_the_fix_round_merges() {
         &mut d,
         &format!(
             "{DISPATCH}{}[[step]]\nact = \"orca_sends\"\nid = \"msg_r0\"\n[[step]]\nact = \"lead_waits\"\nexpect = {{ verdict = \"pass\" }}\n\
-             [[step]]\nact = \"file\"\npath = \".fullops-squad/lint/lint.json\"\ncontent = '''{rule}'''\n\
+             [[step]]\nact = \"file\"\npath = \".fullops/config/lint.json\"\ncontent = '''{rule}'''\n\
              [[step]]\nact = \"commits\"\nmessage = \"옛 API 검사\"\n\
              [[step]]\nact = \"git\"\nargs = [\"push\", \"-q\", \"origin\", \"main\"]\n\
              [[step]]\nact = \"lead_merges\"\nkey = \"A-1\"\n\
@@ -2094,9 +2084,9 @@ fn lint_failure_after_merge_reopens_and_the_fix_round_merges() {
             code("NEW_API()")
         ),
     );
-    let logs = d.sb.path("lead").join(".fullops-squad/handovers/logs");
-    assert!(read(&logs.join("A-1.dev.r1.md")).contains("옛 API를 걷어낸다"));
-    assert!(read(&logs.join("A-1.dev.r0.md")).contains("구현과 확인을 마쳤다"));
+    let logs = d.sb.path("lead").join(".fullops/tasks");
+    assert!(read(&logs.join("A-1/dev.r1.md")).contains("옛 API를 걷어낸다"));
+    assert!(read(&logs.join("A-1/dev.r0.md")).contains("구현과 확인을 마쳤다"));
     let st = state(&d.sb);
     let open = |c: &&Value| c["landed_at"].is_null();
     let completions = st["completions"].as_array().unwrap();
@@ -2113,7 +2103,7 @@ fn finished_round_inbox_is_not_dispatched_again() {
     let mut d = Driver::new(&Setup::default());
     steps(&mut d, &format!("{DISPATCH}{}", round(3, "msg_r0")));
     let dev = d.sb.path("dev");
-    let record = read(&dev.join(".fullops-squad/handovers/logs/A-1.dev.r0.md"));
+    let record = read(&dev.join(".fullops/tasks/A-1/dev.r0.md"));
     let refused = steps(
         &mut d,
         "[[step]]\nact = \"lead_dispatches\"\nkey = \"A-1\"\nrole = \"dev\"\npurpose = \"fix\"\nbare = true\n\
@@ -2125,10 +2115,7 @@ fn finished_round_inbox_is_not_dispatched_again() {
         refused[0].output
     );
     assert_eq!(calls(&d.sb, "worker-start").len(), 1);
-    assert_eq!(
-        read(&dev.join(".fullops-squad/handovers/logs/A-1.dev.r0.md")),
-        record
-    );
+    assert_eq!(read(&dev.join(".fullops/tasks/A-1/dev.r0.md")), record);
     // 다음 차수를 연 뒤 앞 차수의 보고를 먼저 병합해도 기록과 새 인박스가 섞이지 않는다
     let lead = d.sb.path("lead");
     steps(
@@ -2136,11 +2123,8 @@ fn finished_round_inbox_is_not_dispatched_again() {
         "[[step]]\nact = \"runs_fullops\"\nargs = [\"task\", \"reopen\", \"--role\", \"dev\", \"--key\", \"A-1\", \"--goal\", \"후속 수정\"]\nexpect = { verdict = \"pass\" }\n\
          [[step]]\nact = \"lead_merges\"\nkey = \"A-1\"\nexpect = { verdict = \"pass\" }\n",
     );
-    assert_eq!(
-        read(&lead.join(".fullops-squad/handovers/logs/A-1.dev.r0.md")),
-        record
-    );
-    let next = read(&lead.join(".fullops-squad/handovers/to_dev.md"));
+    assert_eq!(read(&lead.join(".fullops/tasks/A-1/dev.r0.md")), record);
+    let next = read(&lead.join(".fullops/inbox/to_dev.md"));
     assert!(
         next.contains("round: 1")
             && next.contains("후속 수정")
@@ -2172,7 +2156,7 @@ fn sync_after_reopen_keeps_the_record_apart_from_the_new_inbox() {
     let mut d = Driver::new(&Setup::default());
     steps(&mut d, &format!("{DISPATCH}{}", round(3, "msg_r0")));
     let (lead, dev) = (d.sb.path("lead"), d.sb.path("dev"));
-    let log = dev.join(".fullops-squad/handovers/logs/A-1.dev.r0.md");
+    let log = dev.join(".fullops/tasks/A-1/dev.r0.md");
     let record = read(&log);
     // worker 워크트리가 더러워 배정의 동기화가 멈춘다
     d.sb.write(&dev.join("stray.txt"), "치우지 않은 파일\n");
@@ -2185,7 +2169,7 @@ fn sync_after_reopen_keeps_the_record_apart_from_the_new_inbox() {
     let synced = d.sb.cli(&lead, &["sync", "--role", "dev"]);
     assert_eq!(synced.code, Some(0), "{}{}", synced.stdout, synced.stderr);
     assert_eq!(read(&log), record);
-    let inbox = read(&dev.join(".fullops-squad/handovers/to_dev.md"));
+    let inbox = read(&dev.join(".fullops/inbox/to_dev.md"));
     assert!(inbox.contains("round: 1"), "{inbox}");
 }
 
@@ -2257,18 +2241,15 @@ fn done_refuses_an_inbox_it_cannot_read() {
         &mut d,
         &format!(
             "{DISPATCH}[[step]]\nact = \"worker_works\"\nrole = \"dev\"\nkey = \"A-1\"\n\
-             [[step]]\nact = \"edits_file\"\nwho = \"dev\"\npath = \".fullops-squad/handovers/to_dev.md\"\nold = \"round: 0\"\nnew = \"round: 1차\"\n\
+             [[step]]\nact = \"edits_file\"\nwho = \"dev\"\npath = \".fullops/inbox/to_dev.md\"\nold = \"round: 0\"\nnew = \"round: 1차\"\n\
              [[step]]\nact = \"commits\"\nwho = \"dev\"\n\
              [[step]]\nact = \"worker_lints\"\nrole = \"dev\"\nexpect = {{ verdict = \"pass\" }}\n\
              [[step]]\nact = \"worker_finishes\"\nrole = \"dev\"\nexpect = {{ verdict = \"deny\", rule = \"R-04\", escape = \"round\" }}\n"
         ),
     );
     let dev = d.sb.path("dev");
-    assert!(dev.join(".fullops-squad/handovers/to_dev.md").is_file());
-    assert!(
-        !dev.join(".fullops-squad/handovers/logs/A-1.dev.r0.md")
-            .exists()
-    );
+    assert!(dev.join(".fullops/inbox/to_dev.md").is_file());
+    assert!(!dev.join(".fullops/tasks/A-1/dev.r0.md").exists());
     assert!(state(&d.sb)["dispatches"][0]["reported"].is_null());
     // 실패 보고는 그대로 보낼 수 있다
     steps(
@@ -2278,7 +2259,7 @@ fn done_refuses_an_inbox_it_cannot_read() {
 
     // 읽지 못한 분류 기록도 '없음'이 아니다: 재분류가 기록을 덮어쓰지 않는다
     let lead = d.sb.path("lead");
-    let route = lead.join(".fullops-squad/routes/A-1.json");
+    let route = lead.join(".fullops/tasks/A-1/route.json");
     d.sb.write(&route, "{ 쓰다 만");
     let rerouted = d.sb.cli(
         &lead,
@@ -2303,7 +2284,7 @@ fn done_refuses_an_inbox_it_cannot_read() {
 fn plan_keeps_line_endings_and_reads_a_table_after_a_bom() {
     let sb = Sandbox::with(&Setup::default());
     let lead = sb.path("lead");
-    let plan = lead.join(".fullops-squad/PLANS.md");
+    let plan = lead.join(".fullops/PLANS.md");
     let row = "| A-1 | 첫째 | Dev | 대기 | 요청 |\r\n";
     let crlf = format!(
         "# 현재 작업\r\n\r\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\r\n|---|---|---|---|---|\r\n{row}\r\n## 위임 범위\r\n\r\n- 묻지 말고 끝까지\r\n"
@@ -2390,14 +2371,14 @@ fn design_dispatch_without_an_inbox_carries_the_request() {
             route("F-9")
         ),
     );
-    let file = ".fullops-squad/routes/F-9.request.md";
+    let file = ".fullops/tasks/F-9/request.md";
     let starts = calls(&d.sb, "worker-start");
     let spec = starts.last().unwrap()["stdin"].as_str().unwrap();
     assert!(spec.contains(&format!("Request: {file}")), "{spec}");
     assert_eq!(read(&d.sb.path("architecture").join(file)), text);
     let lead = d.sb.path("lead");
     let recorded: Value =
-        serde_json::from_str(&read(&lead.join(".fullops-squad/routes/F-9.json"))).unwrap();
+        serde_json::from_str(&read(&lead.join(".fullops/tasks/F-9/route.json"))).unwrap();
     assert_eq!(recorded["request_file"], file);
 
     // 비밀값 무늬가 있는 글은 커밋되는 자리에 쓰지 않고 Git 공용 디렉터리에 남긴다
@@ -2417,13 +2398,13 @@ fn design_dispatch_without_an_inbox_carries_the_request() {
         ],
     );
     let local = out(&run)["request_file"].as_str().unwrap().to_string();
-    assert!(!lead.join(".fullops-squad/routes/F-7.request.md").exists());
+    assert!(!lead.join(".fullops/tasks/F-7/request.md").exists());
     assert!(local.contains("/.git/fullops/requests/F-7.md"), "{local}");
     assert_eq!(read(Path::new(&local)), secret);
 
     // 요청 글이 없는 기록(옛 실행본이 쓴 것)으로는 인박스 없는 설계 배정을 하지 않는다
     steps(&mut d, &route("F-8"));
-    let path = lead.join(".fullops-squad/routes/F-8.json");
+    let path = lead.join(".fullops/tasks/F-8/route.json");
     let mut old: Value = serde_json::from_str(&read(&path)).unwrap();
     old["request_file"] = Value::Null;
     std::fs::write(&path, old.to_string()).unwrap();
@@ -2444,7 +2425,7 @@ fn design_merge_leads_to_dispatching_the_written_inbox() {
          [[step]]\nact = \"lead_dispatches\"\nkey = \"F-1\"\nrole = \"architecture\"\nbare = true\nexpect = { verdict = \"pass\" }\n\
          [[step]]\nact = \"session_starts\"\nwho = \"architecture\"\n\
          [[step]]\nact = \"preamble_arrives\"\nwho = \"architecture\"\n\
-         [[step]]\nact = \"writes_file\"\nwho = \"architecture\"\npath = \".fullops-squad/docs/design-docs/f-1.md\"\ncontent = \"---\\nstatus: draft\\n---\\n# F-1 설계\\n\"\nexpect = { verdict = \"pass\" }\n\
+         [[step]]\nact = \"writes_file\"\nwho = \"architecture\"\npath = \".fullops/docs/design-docs/f-1.md\"\ncontent = \"---\\nstatus: draft\\n---\\n# F-1 설계\\n\"\nexpect = { verdict = \"pass\" }\n\
          [[step]]\nact = \"runs_fullops\"\nwho = \"architecture\"\nargs = [\"task\", \"new\", \"--role\", \"dev\", \"--key\", \"F-1\", \"--goal\", \"F-1 구현\"]\nexpect = { verdict = \"pass\" }\n\
          [[step]]\nact = \"commits\"\nwho = \"architecture\"\n\
          [[step]]\nact = \"runs_fullops\"\nwho = \"architecture\"\nargs = [\"lint\"]\n\
@@ -2491,11 +2472,7 @@ fn design_merge_leads_to_dispatching_the_written_inbox() {
     );
     let status = d.sb.cli(&lead, &["status"]);
     assert!(!status.stdout.contains("이어서 할 일"), "{}", status.stdout);
-    assert!(
-        d.sb.path("dev")
-            .join(".fullops-squad/handovers/to_dev.md")
-            .is_file()
-    );
+    assert!(d.sb.path("dev").join(".fullops/inbox/to_dev.md").is_file());
 }
 
 /// (F6): 인박스 없이 받은 설계 과제(설계 문서만 만든 과제, 질문 전달 과제)를 같은 lead 세션에서 병합까지 하면
@@ -2510,7 +2487,7 @@ fn merged_design_task_without_an_inbox_does_not_trip_x04() {
          [[step]]\nact = \"lead_dispatches\"\nkey = \"F-1-Q1\"\nrole = \"architecture\"\nbare = true\nexpect = { verdict = \"pass\" }\n\
          [[step]]\nact = \"session_starts\"\nwho = \"architecture\"\n\
          [[step]]\nact = \"preamble_arrives\"\nwho = \"architecture\"\n\
-         [[step]]\nact = \"writes_file\"\nwho = \"architecture\"\npath = \".fullops-squad/docs/design-docs/f-1-q1.md\"\ncontent = \"---\\nstatus: draft\\n---\\n# 답\\n\"\nexpect = { verdict = \"pass\" }\n\
+         [[step]]\nact = \"writes_file\"\nwho = \"architecture\"\npath = \".fullops/docs/design-docs/f-1-q1.md\"\ncontent = \"---\\nstatus: draft\\n---\\n# 답\\n\"\nexpect = { verdict = \"pass\" }\n\
          [[step]]\nact = \"commits\"\nwho = \"architecture\"\n\
          [[step]]\nact = \"runs_fullops\"\nwho = \"architecture\"\nargs = [\"lint\"]\n\
          [[step]]\nact = \"runs_fullops\"\nwho = \"architecture\"\nargs = [\"done\"]\nexpect = { verdict = \"pass\" }\n\
@@ -2634,8 +2611,8 @@ fn unsent_done(advance: bool) {
         ),
     );
     let dev = d.sb.path("dev");
-    let logs = ".fullops-squad/handovers/logs";
-    let record = read(&dev.join(logs).join("A-1.dev.r0.md"));
+    let logs = ".fullops/tasks";
+    let record = read(&dev.join(logs).join("A-1/dev.r0.md"));
     let reported = head(&d.sb, "dev");
     if advance {
         steps(
@@ -2655,7 +2632,7 @@ fn unsent_done(advance: bool) {
     let spec = starts.last().unwrap()["stdin"].as_str().unwrap();
     let handover = spec.split("Handover: ").nth(1).unwrap();
     let handover = handover.split(';').next().unwrap();
-    assert!(handover.ends_with("logs/A-1.dev.r0.md"), "{spec}");
+    assert!(handover.ends_with("tasks/A-1/dev.r0.md"), "{spec}");
     assert!(Path::new(handover).is_file(), "{handover}");
 
     // 새 worker가 done을 다시 실행한다: 완료 기록은 다시 만들지 않고 새 배정에 reported를 쓴다.
@@ -2672,7 +2649,7 @@ fn unsent_done(advance: bool) {
     );
     let body = &finished.last().unwrap().output;
     assert!(body.contains("[완료] A-1"), "{body}");
-    assert_eq!(read(&dev.join(logs).join("A-1.dev.r0.md")), record);
+    assert_eq!(read(&dev.join(logs).join("A-1/dev.r0.md")), record);
     let subjects =
         d.sb.git_ok(&dev, &["log", "--format=%s", &format!("{reported}..HEAD")]);
     assert!(!subjects.contains("완료 기록"), "{subjects}");
@@ -2689,7 +2666,7 @@ fn unsent_done(advance: bool) {
     );
     assert_eq!(calls(&d.sb, "worker-start").len(), 2);
     assert_eq!(
-        read(&d.sb.path("lead").join(logs).join("A-1.dev.r0.md")),
+        read(&d.sb.path("lead").join(logs).join("A-1/dev.r0.md")),
         record
     );
 }
@@ -2796,7 +2773,7 @@ const DESIGNED: &str = "[[step]]\nact = \"lead_routes\"\nkey = \"F-1\"\nrole = \
      [[step]]\nact = \"lead_dispatches\"\nkey = \"F-1\"\nrole = \"architecture\"\nbare = true\nexpect = { verdict = \"pass\" }\n\
      [[step]]\nact = \"session_starts\"\nwho = \"architecture\"\n\
      [[step]]\nact = \"preamble_arrives\"\nwho = \"architecture\"\n\
-     [[step]]\nact = \"writes_file\"\nwho = \"architecture\"\npath = \".fullops-squad/docs/design-docs/f-1.md\"\ncontent = \"---\\nstatus: draft\\n---\\n# F-1 설계\\n\"\nexpect = { verdict = \"pass\" }\n\
+     [[step]]\nact = \"writes_file\"\nwho = \"architecture\"\npath = \".fullops/docs/design-docs/f-1.md\"\ncontent = \"---\\nstatus: draft\\n---\\n# F-1 설계\\n\"\nexpect = { verdict = \"pass\" }\n\
      [[step]]\nact = \"runs_fullops\"\nwho = \"architecture\"\nargs = [\"task\", \"new\", \"--role\", \"dev\", \"--key\", \"F-1\", \"--goal\", \"F-1 구현\"]\nexpect = { verdict = \"pass\" }\n\
      [[step]]\nact = \"commits\"\nwho = \"architecture\"\n\
      [[step]]\nact = \"runs_fullops\"\nwho = \"architecture\"\nargs = [\"lint\"]\n\
@@ -2902,8 +2879,8 @@ fn design_task_reject_reopens_and_the_fix_round_merges() {
         &mut d,
         "[[step]]\nact = \"runs_fullops\"\nargs = [\"merge\", \"F-1\", \"--completion\", \"msg_r1\"]\nexpect = { verdict = \"pass\" }\n",
     );
-    let logs = lead.join(".fullops-squad/handovers/logs");
-    assert!(read(&logs.join("F-1.dev.r1.md")).contains("리뷰 지적 수정"));
+    let logs = lead.join(".fullops/tasks");
+    assert!(read(&logs.join("F-1/dev.r1.md")).contains("리뷰 지적 수정"));
     let status = cli(&d, &["status"]);
     assert!(!status.stdout.contains("이어서 할 일"), "{}", status.stdout);
 
@@ -2964,13 +2941,13 @@ fn design_task_reject_reopens_and_the_fix_round_merges() {
     assert!(
         planned
             .stdout
-            .contains("Request: .fullops-squad/routes/F-1.request.md")
+            .contains("Request: .fullops/tasks/F-1/request.md")
             && !planned.stdout.contains("Rejected SHA"),
         "{}",
         planned.stdout
     );
     assert!(
-        read(&lead.join(".fullops-squad/routes/F-1.request.md")).contains("경계 버그"),
+        read(&lead.join(".fullops/tasks/F-1/request.md")).contains("경계 버그"),
         "{}",
         planned.stdout
     );
@@ -3265,8 +3242,8 @@ fn failed_report_after_done_redispatches_the_record() {
         ),
     );
     let lead = d.sb.path("lead");
-    let logs = ".fullops-squad/handovers/logs";
-    let record = read(&d.sb.path("dev").join(logs).join("A-1.dev.r0.md"));
+    let logs = ".fullops/tasks";
+    let record = read(&d.sb.path("dev").join(logs).join("A-1/dev.r0.md"));
     let next = "`fullops dispatch A-1 --role dev`";
     let status = d.sb.cli(&lead, &["status"]);
     assert!(status.stdout.contains(next), "{}", status.stdout);
@@ -3292,7 +3269,7 @@ fn failed_report_after_done_redispatches_the_record() {
     let spec = starts.last().unwrap()["stdin"].as_str().unwrap();
     let handover = spec.split("Handover: ").nth(1).unwrap();
     let handover = handover.split(';').next().unwrap();
-    assert!(handover.ends_with("logs/A-1.dev.r0.md"), "{spec}");
+    assert!(handover.ends_with("tasks/A-1/dev.r0.md"), "{spec}");
     // 새 worker의 done 다시 실행이 보고를 끝내고, 그 보고가 병합된다. 보고를 받은 차수의 재배정은 다시 D-02다
     steps(
         &mut d,
@@ -3304,7 +3281,7 @@ fn failed_report_after_done_redispatches_the_record() {
          [[step]]\nact = \"lead_merges\"\nkey = \"A-1\"\nexpect = { verdict = \"pass\" }\n",
     );
     assert_eq!(calls(&d.sb, "worker-start").len(), 2);
-    assert_eq!(read(&lead.join(logs).join("A-1.dev.r0.md")), record);
+    assert_eq!(read(&lead.join(logs).join("A-1/dev.r0.md")), record);
 }
 
 /// C3 3-3·C4-1: 설계 역할이 다음 차수의 지시서를 보낸 보고(msg_a1)가 병합 전이면 RT-02는 그 보고의 병합을 먼저 안내하고
@@ -3314,11 +3291,7 @@ fn failed_report_after_done_redispatches_the_record() {
 fn rework_waits_for_the_design_roles_pending_brief() {
     let mut d = Driver::new(&roles(&[("dev", "worker"), ("architecture", "design")]));
     designed_and_rejected(&mut d);
-    let record = read(
-        &d.sb
-            .path("dev")
-            .join(".fullops-squad/handovers/logs/F-1.dev.r0.md"),
-    );
+    let record = read(&d.sb.path("dev").join(".fullops/tasks/F-1/dev.r0.md"));
     let a2 = |step: &str| {
         format!(
             "[[step]]
@@ -3354,9 +3327,7 @@ expect = { verdict = \"pass\" }
         ),
     );
     // 설계 역할이 1차 지시서 본문을 채운다
-    let brief =
-        d.sb.path("architecture")
-            .join(".fullops-squad/handovers/to_dev.md");
+    let brief = d.sb.path("architecture").join(".fullops/inbox/to_dev.md");
     let text = format!(
         "{}
 - [ ] 설계가 새로 정한 경계 규칙
@@ -3413,8 +3384,8 @@ expect = { verdict = \"pass\" }
     );
 
     // 병합 전에 lead가 reopen하면 거절되고 기록·인박스는 그대로다
-    let logs = lead.join(".fullops-squad/handovers/logs");
-    let inbox = lead.join(".fullops-squad/handovers/to_dev.md");
+    let logs = lead.join(".fullops/tasks");
+    let inbox = lead.join(".fullops/inbox/to_dev.md");
     let before = read(&inbox);
     let reopen = d.sb.cli(
         &lead,
@@ -3431,7 +3402,7 @@ expect = { verdict = \"pass\" }
         "{}",
         reopen.stderr
     );
-    assert!(!logs.join("F-1.dev.r0.md").exists());
+    assert!(!logs.join("F-1/dev.r0.md").exists());
     assert_eq!(read(&inbox), before);
 
     // 안내대로 먼저 병합하면 0차 기록은 dev의 것 그대로, 인박스는 설계 역할이 쓴 1차 지시서다
@@ -3443,7 +3414,7 @@ args = [\"merge\", \"F-1\", \"--completion\", \"msg_a1\"]
 expect = { verdict = \"pass\" }
 ",
     );
-    assert_eq!(read(&logs.join("F-1.dev.r0.md")), record);
+    assert_eq!(read(&logs.join("F-1/dev.r0.md")), record);
     let next = read(&inbox);
     assert!(
         next.contains("round: 1") && next.contains("설계가 새로 정한 경계 규칙"),
@@ -3474,7 +3445,7 @@ bare = true
 expect = { verdict = \"pass\" }
 ",
     );
-    let delivered = read(&d.sb.path("dev").join(".fullops-squad/handovers/to_dev.md"));
+    let delivered = read(&d.sb.path("dev").join(".fullops/inbox/to_dev.md"));
     assert!(
         delivered.contains("설계가 새로 정한 경계 규칙"),
         "{delivered}"
@@ -3488,12 +3459,8 @@ fn reopen_does_not_overwrite_a_changed_inbox_with_the_record() {
     let mut d = Driver::new(&Setup::default());
     steps(&mut d, &format!("{DISPATCH}{}", round(3, "msg_r0")));
     let lead = d.sb.path("lead");
-    let record = read(
-        &d.sb
-            .path("dev")
-            .join(".fullops-squad/handovers/logs/A-1.dev.r0.md"),
-    );
-    let inbox = ".fullops-squad/handovers/to_dev.md";
+    let record = read(&d.sb.path("dev").join(".fullops/tasks/A-1/dev.r0.md"));
+    let inbox = ".fullops/inbox/to_dev.md";
     let changed = format!(
         "{}
 - [ ] lead가 나중에 덧붙인 지시
@@ -3523,8 +3490,8 @@ fn reopen_does_not_overwrite_a_changed_inbox_with_the_record() {
         "{}",
         refused.stderr
     );
-    let logs = lead.join(".fullops-squad/handovers/logs");
-    assert!(!logs.join("A-1.dev.r0.md").exists());
+    let logs = lead.join(".fullops/tasks");
+    assert!(!logs.join("A-1/dev.r0.md").exists());
     assert_eq!(read(&lead.join(inbox)), changed);
 
     // 탈출구: 그 차수의 지시서로 되돌려 커밋한 뒤 다시 실행한다
@@ -3534,7 +3501,7 @@ fn reopen_does_not_overwrite_a_changed_inbox_with_the_record() {
     d.sb.git_ok(&lead, &["commit", "-q", "-m", "지시 되돌림"]);
     let passed = reopen(&d);
     assert_eq!(passed.code, Some(0), "{}{}", passed.stdout, passed.stderr);
-    assert_eq!(read(&logs.join("A-1.dev.r0.md")), record);
+    assert_eq!(read(&logs.join("A-1/dev.r0.md")), record);
 }
 
 /// C4-2: `done`이 완료 기록을 커밋한 뒤 push(R-07)에서 멈춰 `reported` 없이 실패 보고를 보낸 차수도
@@ -3574,7 +3541,7 @@ fn failed_report_after_a_push_stop_redispatches_the_record() {
             .split(';')
             .next()
             .unwrap()
-            .ends_with("logs/A-1.dev.r0.md"),
+            .ends_with("tasks/A-1/dev.r0.md"),
         "{spec}"
     );
 }
@@ -3617,7 +3584,7 @@ fn design_round(session: &str, doc: &str, brief: bool, message: &str) -> String 
         a("act = \"session_starts\"\n"),
         a("act = \"preamble_arrives\"\n"),
         a(&format!(
-            "act = \"writes_file\"\npath = \".fullops-squad/docs/design-docs/f-1.md\"\ncontent = \"---\\ntitle: F-1 설계\\nstatus: draft\\nupdated: 2026-01-01\\nowner: architecture\\nsummary: F-1 설계\\n---\\n# F-1 설계\\n\\n{doc}\\n\"\nexpect = {{ verdict = \"pass\" }}\n"
+            "act = \"writes_file\"\npath = \".fullops/docs/design-docs/f-1.md\"\ncontent = \"---\\ntitle: F-1 설계\\nstatus: draft\\nupdated: 2026-01-01\\nowner: architecture\\nsummary: F-1 설계\\n---\\n# F-1 설계\\n\\n{doc}\\n\"\nexpect = {{ verdict = \"pass\" }}\n"
         )),
         if brief { task } else { String::new() },
         a("act = \"runs_fullops\"\nargs = [\"lint\"]\nexpect = { verdict = \"pass\" }\n"),
@@ -3628,9 +3595,9 @@ fn design_round(session: &str, doc: &str, brief: bool, message: &str) -> String 
 /// 설계 문서도 리뷰를 받는 설계 과제에서 설계 역할의 첫 보고(msg_a0)를 받은 데까지. 그 보고의 SHA를 돌려준다.
 fn designed_report(d: &mut Driver) -> String {
     let lead = d.sb.path("lead");
-    let config = lead.join(".fullops-squad/fullops.toml");
+    let config = lead.join(".fullops/fullops.toml");
     let text = format!(
-        "{}\n[review]\nalways = [\".fullops-squad/docs/design-docs/**\"]\n",
+        "{}\n[review]\nalways = [\".fullops/docs/design-docs/**\"]\n",
         read(&config)
     );
     d.sb.write(&config, &text);
@@ -3681,7 +3648,7 @@ fn redesign_and_merge(d: &mut Driver, old: &str, request: &str, doc: &str) {
     // spec이 반려 사유를 담은 요청 글을 싣는다
     let starts = calls(&d.sb, "worker-start");
     let spec = starts.last().unwrap()["stdin"].as_str().unwrap();
-    let file = ".fullops-squad/routes/F-1.request.md";
+    let file = ".fullops/tasks/F-1/request.md";
     assert!(spec.contains(&format!("Request: {file}")), "{spec}");
     assert_eq!(read(&d.sb.path("architecture").join(file)), request);
     let new = head(&d.sb, "architecture");
@@ -3698,7 +3665,7 @@ fn redesign_and_merge(d: &mut Driver, old: &str, request: &str, doc: &str) {
         d,
         "[[step]]\nact = \"runs_fullops\"\nargs = [\"merge\", \"F-1\", \"--completion\", \"msg_a1\"]\nexpect = { verdict = \"pass\" }\n",
     );
-    let merged = read(&lead.join(".fullops-squad/docs/design-docs/f-1.md"));
+    let merged = read(&lead.join(".fullops/docs/design-docs/f-1.md"));
     assert!(merged.contains(doc), "{merged}");
 }
 
@@ -3778,7 +3745,7 @@ fn design_report_failing_lint_after_merge_goes_back_to_the_design_role() {
     ok(d.sb.cli(&lead, &["review", "check", "F-1", "--sha", &old]));
     // 보고 뒤 기본 브랜치에 설계 문서의 낱말을 막는 검사가 들어온다
     let rule = r#"{"schema_version":1,"commands":[],"exclude":[],"rules":[{"code":"OLD-001","description":"옛 설계","pattern":"첫 설계","severity":"ERROR"}]}"#;
-    d.sb.write(&lead.join(".fullops-squad/lint/lint.json"), rule);
+    d.sb.write(&lead.join(".fullops/config/lint.json"), rule);
     d.sb.git_ok(&lead, &["add", "-A"]);
     d.sb.git_ok(&lead, &["commit", "-q", "-m", "옛 설계 검사"]);
     d.sb.git_ok(&lead, &["push", "-q", "origin", "main"]);

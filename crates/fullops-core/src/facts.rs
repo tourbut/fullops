@@ -41,7 +41,7 @@ pub trait Facts {
     fn review_need(&mut self, base: &Sha, head: &Sha) -> Known<Need>;
     fn review_evidence(&mut self, head: &Sha) -> Known<ReviewEvidence>;
     fn landing(&mut self, sha: &Sha) -> Known<Landing>;
-    /// T-09: `scope`가 담는 qa-reports 항목의 레포 상대 경로.
+    /// T-09: `scope`가 담는 `tasks/` 아래 항목의 레포 상대 경로.
     fn qa_commit_candidates(&mut self, scope: &CommitScope) -> Known<Vec<String>>;
     fn orca_settled(&mut self, id: &DispatchId) -> Known<bool>;
     fn waiter_alive(&mut self, run: &RunId) -> Known<bool>;

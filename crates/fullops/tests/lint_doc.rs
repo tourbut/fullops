@@ -6,7 +6,7 @@ use fullops_testkit::{Run, Sandbox, Setup, run_scenario, scenario};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
-const LINT_TEMPLATE: &str = include_str!("../assets/repo/lint/lint.json");
+const LINT_TEMPLATE: &str = include_str!("../assets/repo/config/lint.json");
 const INDEX_TEMPLATE: &str = include_str!("../assets/repo/docs/deliverables/README.md");
 
 fn scenarios_dir() -> PathBuf {
@@ -41,6 +41,8 @@ scenario_tests! {
     lint_doc_001 => "lint-doc-001",
     lint_doc_002 => "lint-doc-002",
     lint_doc_003 => "lint-doc-003",
+    lint_qa_001 => "lint-qa-001",
+    lint_qa_002 => "lint-qa-002",
     lint_lint_000 => "lint-lint-000",
     lint_lint_001 => "lint-lint-001",
     lint_lint_002 => "lint-lint-002",
@@ -59,7 +61,8 @@ fn lint_lint_002_slow() {
 fn every_builtin_code_has_a_scenario() {
     for code in [
         "SIZE-001", "SIZE-002", "DEP-001", "ANTI-002", "ANTI-003", "ANTI-004", "ANTI-005",
-        "SEC-001", "DOC-001", "DOC-002", "DOC-003", "LINT-000", "LINT-001", "LINT-002",
+        "SEC-001", "DOC-001", "DOC-002", "DOC-003", "QA-001", "QA-002", "LINT-000", "LINT-001",
+        "LINT-002",
     ] {
         let file = format!("lint-{}", code.to_lowercase());
         assert!(
@@ -179,7 +182,7 @@ fn lint_writes_result_and_pass_from_the_default_start() {
 
     // 인박스가 있으면 그 base가 시작점이다: 앞 커밋의 금지 표현은 검사 범위 밖이 된다
     sb.write(
-        &dev.join(".fullops-squad/handovers/to_dev.md"),
+        &dev.join(".fullops/inbox/to_dev.md"),
         &format!(
             "---\nid: handover-dev\ntitle: PAY-12 — 결제\nstatus: draft\nupdated: 2026-11-14\nowner: dev\nsummary: 결제\n\
              key: PAY-12\nrole: dev\ngoal: 결제\nbase: {head}\nroute: direct\nfrom: lead\nround: 0\nbudget: 2\n\
@@ -212,12 +215,12 @@ fn lint_keeps_logs_and_reports_setup_problems() {
     let lead = sb.path("lead");
     let dir = lint_dir(&sb, &lead);
     let config = r#"{"schema_version": 1, "commands": [{"name": "ver sion/1", "run": ["git", "--version"]}]}"#;
-    sb.write(&lead.join(".fullops-squad/lint/lint.json"), config);
+    sb.write(&lead.join(".fullops/config/lint.json"), config);
     // 기준 시점의 fullops.toml이 읽히지 않는다
-    let toml = std::fs::read_to_string(lead.join(".fullops-squad/fullops.toml")).unwrap();
-    sb.write(&lead.join(".fullops-squad/fullops.toml"), "schema = \n");
+    let toml = std::fs::read_to_string(lead.join(".fullops/fullops.toml")).unwrap();
+    sb.write(&lead.join(".fullops/fullops.toml"), "schema = \n");
     let base = commit(&sb, &lead, "기준");
-    sb.write(&lead.join(".fullops-squad/fullops.toml"), &toml);
+    sb.write(&lead.join(".fullops/fullops.toml"), &toml);
     sb.write(&lead.join("notes/a.txt"), "메모\n");
     commit(&sb, &lead, "변경");
 
@@ -274,7 +277,7 @@ fn lint_keeps_logs_and_reports_setup_problems() {
         r#"{"schema_version": 1, "commands": [{"name": "out", "run": ["git"], "cwd": "../.."}]}"#,
         "깨진 글",
     ] {
-        sb.write(&lead.join(".fullops-squad/lint/lint.json"), broken);
+        sb.write(&lead.join(".fullops/config/lint.json"), broken);
         let base = commit(&sb, &lead, "깨진 설정");
         sb.write(&lead.join("notes/a.txt"), &format!("{broken}\n"));
         commit(&sb, &lead, "변경");
@@ -288,7 +291,7 @@ fn lint_keeps_logs_and_reports_setup_problems() {
 // ---- doc ----
 
 fn squad(sb: &Sandbox) -> PathBuf {
-    sb.path("lead").join(".fullops-squad")
+    sb.path("lead").join(".fullops")
 }
 
 /// 내장 템플릿의 인덱스에서 그 ID 행의 상태 칸을 바꾼다.
@@ -541,7 +544,7 @@ fn doc_stamp_rewrites_front_matter_in_fixed_order() {
         "주간 회의: 결제",
     ]);
     assert_eq!(run.code, Some(0), "{run:?}");
-    assert_eq!(run.stdout.trim(), ".fullops-squad/docs/notes/meeting.md");
+    assert_eq!(run.stdout.trim(), ".fullops/docs/notes/meeting.md");
     assert_eq!(
         stamped(&note),
         "---\ntitle: 회의록\nstatus: draft\nupdated: <오늘>\nowner: lead\nsummary: \"주간 회의: 결제\"\n---\n\n# 회의록\n\n내용\n"
@@ -555,12 +558,7 @@ fn doc_stamp_rewrites_front_matter_in_fixed_order() {
         "--status",
         "review",
     ]);
-    let run = stamp(&[
-        "--path",
-        ".fullops-squad/docs/notes/meeting.md",
-        "--task",
-        "57",
-    ]);
+    let run = stamp(&["--path", ".fullops/docs/notes/meeting.md", "--task", "57"]);
     assert_eq!(run.code, Some(0), "{run:?}");
     stamp(&["--path", "docs/notes/meeting.md", "--task", "57"]);
     assert_eq!(
@@ -623,7 +621,7 @@ fn doc_stamp_rewrites_front_matter_in_fixed_order() {
         .filter(|l| l.contains(" DOC-00"))
         .collect();
     assert_eq!(docs.len(), 1, "{run:?}");
-    assert!(docs[0].starts_with("ERROR DOC-003 .fullops-squad/docs/deliverables/README.md"));
+    assert!(docs[0].starts_with("ERROR DOC-003 .fullops/docs/deliverables/README.md"));
     let check = stdout_json(&sb.cli(
         &lead,
         &["doc", "check", "--strict", "--id", "D03", "--json"],
@@ -745,10 +743,7 @@ fn lint_commands_ignore_relative_path_entries() {
     let config = json!({"schema_version": 1, "commands": [
         {"name": "planted", "run": ["planted-tool"]},
         {"name": "git", "run": [exe("git"), "--version"]}]});
-    sb.write(
-        &lead.join(".fullops-squad/lint/lint.json"),
-        &config.to_string(),
-    );
+    sb.write(&lead.join(".fullops/config/lint.json"), &config.to_string());
     let base = commit(&sb, &lead, "기준");
     sb.write(&lead.join("notes/a.txt"), "메모\n");
     commit(&sb, &lead, "변경");

@@ -79,7 +79,7 @@ pub fn offline() -> bool {
 }
 
 /// `curl` 프로세스로 Jev를 부르는 구현(설계 9.3절). 키는 환경 변수, 그다음 작업 디렉터리에서 위로 찾은
-/// `.fullops-squad/.env`에서 찾는다. `--env-file`이나 `--repo`를 받는 명령은 `JevCurl::at`으로 자리를 정해 준다.
+/// `.fullops/.env`에서 찾는다. `--env-file`이나 `--repo`를 받는 명령은 `JevCurl::at`으로 자리를 정해 준다.
 #[derive(Debug, Clone, Default)]
 pub struct JevCurl;
 
@@ -88,16 +88,16 @@ pub struct JevCurl;
 pub struct JevCurlAt {
     /// `--env-file`의 값.
     pub env_file: Option<PathBuf>,
-    /// 레포의 `.fullops-squad/.env`.
+    /// 레포의 `.fullops/.env`.
     pub squad_env: Option<PathBuf>,
 }
 
 impl JevCurl {
-    /// `repo_root`의 `.fullops-squad/.env`와 `--env-file`에서 키를 찾는 구현.
+    /// `repo_root`의 `.fullops/.env`와 `--env-file`에서 키를 찾는 구현.
     pub fn at(repo_root: &Path, env_file: Option<PathBuf>) -> JevCurlAt {
         JevCurlAt {
             env_file,
-            squad_env: Some(repo_root.join(".fullops-squad").join(".env")),
+            squad_env: Some(repo_root.join(fullops_core::layout::DIR).join(".env")),
         }
     }
 }
@@ -107,8 +107,9 @@ impl Judge for JevCurl {
         let cwd = std::env::current_dir().unwrap_or_default();
         let squad = cwd
             .ancestors()
-            .map(|dir| dir.join(".fullops-squad"))
-            .find(|dir| dir.is_dir());
+            .map(|dir| dir.join(fullops_core::layout::DIR))
+            // 활성 표식이 있는 폴더만이다: 사용자 홈의 `~/.fullops/`는 레포 폴더가 아니다
+            .find(|dir| dir.join("fullops.toml").is_file());
         JevCurlAt {
             env_file: None,
             squad_env: squad.map(|dir| dir.join(".env")),

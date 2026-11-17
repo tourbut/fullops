@@ -443,7 +443,8 @@ fn orca(args: &[Token], vars: &BTreeMap<String, Option<String>>) -> Vec<Intent> 
             let mut out = vec![Intent::OrcaTerminalSend {
                 chars: text.chars().count(),
             }];
-            if text.contains("handovers/") || text.contains("handovers\\") {
+            // 인박스 경로를 터미널에 보내는 것은 지시서 붙여 넣기와 같다
+            if text.contains("inbox/to_") || text.contains("inbox\\to_") {
                 out.push(Intent::OrcaInject);
             }
             out
@@ -829,9 +830,9 @@ mod tests {
             ),
             ("orca terminal send --enter", Bash, vec![send(0)]),
             (
-                r#"& orca.exe terminal send --text "handovers/to_dev.md 를 읽어 주세요" --enter"#,
+                r#"& orca.exe terminal send --text "inbox/to_dev.md 를 읽어 주세요" --enter"#,
                 PowerShell,
-                vec![send(28), Intent::OrcaInject],
+                vec![send(24), Intent::OrcaInject],
             ),
             (
                 "git commit -m msg",
@@ -868,11 +869,7 @@ mod tests {
                 Bash,
                 vec![add(&[":/"], false)],
             ),
-            (
-                "D=.fullops-squad; git add $D",
-                Bash,
-                vec![add(&[":/"], false)],
-            ),
+            ("D=.fullops; git add $D", Bash, vec![add(&[":/"], false)]),
             (
                 r#"git add "$(git rev-parse --show-toplevel)""#,
                 Bash,
@@ -902,9 +899,9 @@ mod tests {
                 vec![Intent::OrcaWorkerStart],
             ),
             (
-                "orca --json terminal send --terminal t --text 'handovers/to_dev.md'",
+                "orca --json terminal send --terminal t --text 'inbox/to_dev.md'",
                 Bash,
-                vec![send(19), Intent::OrcaInject],
+                vec![send(15), Intent::OrcaInject],
             ),
             (
                 "orca worktree create --name orchestration",
@@ -1010,7 +1007,7 @@ mod tests {
         // 터미널 주입도 같다
         assert!(
             of(
-                "(orca terminal send --terminal t --text 'read .fullops-squad/handovers/to_dev.md')",
+                "(orca terminal send --terminal t --text 'read .fullops/inbox/to_dev.md')",
                 Bash
             )
             .contains(&Intent::OrcaInject)
@@ -1031,7 +1028,7 @@ mod tests {
             "echo \"orca orchestration worker-start (금지)\"",
             "echo orca orchestration worker-start",
             "grep -rn 'orca orchestration worker-start' docs",
-            "rg \"orca terminal send --text handovers/\" crates",
+            "rg \"orca terminal send --text inbox/to_\" crates",
             "git commit -m \"fix(hook): orca orchestration worker-start 막기\"",
             "git commit -m 'T-01: `orca orchestration worker-start` 거부'",
             "git commit -m \"T-01: \\`orca orchestration worker-start\\` 거부\"",

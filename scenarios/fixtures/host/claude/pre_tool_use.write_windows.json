@@ -7,7 +7,7 @@
   "hook_event_name": "PreToolUse",
   "tool_name": "Write",
   "tool_input": {
-    "file_path": "C:\\project\\.fullops-squad\\handovers\\to_dev.md",
+    "file_path": "C:\\project\\.fullops\\inbox\\to_dev.md",
     "content": "---\nkey: PAY-12\nrole: dev\n---\n# PAY-12 — 결제 재시도 버튼\n"
   },
   "tool_use_id": "toolu_01EXAMPLE0000000000000000"

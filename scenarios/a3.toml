@@ -7,7 +7,7 @@ expect = { verdict = "context", flow = "continues" }
 
 [[step]]
 act = "file"
-path = ".fullops-squad/fullops.toml"
+path = ".fullops/fullops.toml"
 content = "schema = = 2\n"
 
 [[step]]
@@ -52,7 +52,7 @@ expect = { verdict = "pass", flow = "continues" }
 [[step]]
 act = "writes_file"
 df = "DF-26"
-path = ".fullops-squad/fullops.toml"
+path = ".fullops/fullops.toml"
 content = "schema = 2\napplied_version = \"2.0.0\"\nmode = \"coor\"\nrouting = \"legacy\"\ntest_level = \"lite\"\nparallel = \"on\"\n\n[git]\nbase = \"main\"\nremote = \"origin\"\n\n[roles.dev]\nbranch = \"fullops/dev\"\nkind = \"worker\"\n"
 expect = { verdict = "pass", flow = "continues" }
 

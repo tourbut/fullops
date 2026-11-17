@@ -4,6 +4,7 @@ use super::dispatch::{usage, value};
 use super::find::{path_refusal, repo_path};
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::flow::refusal;
+use fullops_core::layout;
 use fullops_core::model::{
     Config, DecidedBy, Known, Origin, RoleId, RoleKind, Route, RouteClass, RouteTuple, Routing,
     TaskKey, path_text, sha256_hex,
@@ -75,11 +76,7 @@ fn classify(
     if workers.is_empty() {
         return Ok(fallback("worker 역할이 없다".into()));
     }
-    let index = repo
-        .squad()
-        .join("docs")
-        .join("deliverables")
-        .join("README.md");
+    let index = repo.root.join(layout::deliverables_index());
     let docs = fullops_core::parse_deliverable_index(
         &fullops_store::read_text(&index)
             .yes()
@@ -291,7 +288,8 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     // 읽지 못한 기록을 '없음'으로 보면 tuple·이력을 잃고 덮어쓴다
     let Known::Yes(existing) = fullops_store::read_route(repo, &key) else {
         return Err(usage(format!(
-            "`.fullops-squad/routes/{key}.json`을 읽을 수 없다. JSON을 고치거나 다른 이름으로 옮긴 뒤 다시 분류한다."
+            "`{}`을 읽을 수 없다. JSON을 고치거나 다른 이름으로 옮긴 뒤 다시 분류한다.",
+            layout::route(&key)
         )));
     };
     let blank = |class, role: Option<RoleId>, decided_by| Route {
@@ -486,7 +484,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     // `--request "<글>"`도 기록 옆에 남긴다: 인박스 없이 받는 설계 역할은 이 파일로 할 일을 안다(준비 커밋에 들어간다)
     route.request_file = match (&request, request_file) {
         (Some(text), _) if fullops_core::explore::sendable_text(text) => {
-            let file = format!(".fullops-squad/routes/{key}.request.md");
+            let file = layout::request(&key);
             fullops_store::write_atomic(&repo.root.join(&file), text.as_bytes())?;
             Some(file)
         }

@@ -2,7 +2,7 @@
 
 - 검토자 / CLI / 모델:
 - base SHA / head SHA / merge-base:
-- 적용 규칙(`review/rule.json`의 sha256):
+- 적용 규칙(`config/review.json`의 sha256):
 - 요구사항·완료 기준 원천과 기준별 충족/미달(맡은 성공 기준·증명 방법 포함):
 - 전체 변경 / 리뷰 대상 / 제외 / reviewed / skipped / 지시서 허용·제외 범위와 실제 diff 차이:
 - lint(`lint.json`) ERROR / WARNING / 실행 불가와 사유:

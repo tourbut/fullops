@@ -52,6 +52,9 @@ pub fn warn(text: &str) -> String {
 
 pub const INACTIVE_REPO: &str = "활성 레포가 아닙니다";
 
+/// 옛 자리 레포의 안내(설계 13.6절). SessionStart와 CLI 거절이 같은 글을 낸다.
+pub const LEGACY_REPO: &str = "이 체크아웃은 옛 자리(`.fullops-squad/`)다. hook과 명령이 돌지 않는다. lead 체크아웃에서 `fullops migrate --layout`으로 `.fullops/`로 옮긴다. 이미 옮긴 레포의 워크트리면 기준 브랜치를 받아 맞춘다(lead의 `fullops sync`).";
+
 /// 미구현 명령과 함수가 내는 문구. 뼈대의 빈 골격이 쓴다.
 pub const UNIMPLEMENTED: &str = "아직 구현되지 않았습니다";
 

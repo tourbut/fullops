@@ -7,6 +7,7 @@ pub mod explore;
 pub mod facts;
 pub mod flow;
 pub mod frontmatter;
+pub mod layout;
 pub mod lint_rules;
 pub mod messages;
 pub mod model;

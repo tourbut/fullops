@@ -331,6 +331,31 @@ fn dispatch(name: &str, args: Vec<OsString>, as_json: &mut bool) -> Result<u8, C
         Err(e) if command.needs_repo => return Err(e.into()),
         Err(_) => None,
     };
+    // 옛 자리 레포(설계 13.6절): 옮기는 명령과 설치·점검만 돈다. 요약과 upgrade는 안내만 내고 끝난다
+    if repo.is_none() && fullops_store::legacy_root(&start).is_some() {
+        match name {
+            "migrate" | "doctor" | "install" | "rules" => {}
+            "status" | "upgrade" => {
+                if json_flag {
+                    println!(
+                        "{}",
+                        json!({"ok": true, "legacy": true, "message": messages::LEGACY_REPO})
+                    );
+                } else {
+                    println!("{}", messages::warn(messages::LEGACY_REPO));
+                }
+                return Ok(EXIT_OK);
+            }
+            _ => {
+                return Err(CliError::Refused(vec![Refusal {
+                    rule: "layout",
+                    reason: messages::LEGACY_REPO.to_string(),
+                    escape: String::new(),
+                    exit: EXIT_REFUSED,
+                }]));
+            }
+        }
+    }
     if command.needs_repo && repo.is_none() {
         return Err(CliError::Inactive);
     }

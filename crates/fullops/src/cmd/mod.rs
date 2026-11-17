@@ -19,6 +19,7 @@ mod merge;
 mod migrate;
 mod mode;
 mod plan;
+mod relocate;
 mod retire;
 mod review;
 mod route;
@@ -135,7 +136,7 @@ pub static COMMANDS: &[Command] = &[
     anywhere(command("init", "레포 초기화", init::run)),
     anywhere(command(
         "migrate",
-        "Python판에서 전환과 되돌리기",
+        "Python판에서 전환과 되돌리기, 옛 자리 `.fullops-squad/`를 `.fullops/`로 옮기기(--layout)",
         migrate::run,
     )),
     anywhere(command(

@@ -4,10 +4,10 @@ origin = "12.2 R8"
 [setup]
 roles = { dev = "worker", architecture = "design" }
 
-# Python판(1.24.0)을 쓰던 레포로 만든다: 새 표식을 지우고 fullops.json과 라우팅 기준을 둔다
+# Python판(1.24.0)을 쓰던 레포로 만든다: 새 자리의 레포 폴더를 지우고 옛 자리에 fullops.json과 라우팅 기준을 둔다
 [[step]]
 act = "git"
-args = ["rm", "-q", "--ignore-unmatch", ".fullops-squad/fullops.toml"]
+args = ["rm", "-q", "-r", "--ignore-unmatch", ".fullops"]
 [[step]]
 act = "file"
 path = ".fullops-squad/fullops.json"

@@ -5,7 +5,7 @@ use crate::model::{
 };
 use std::collections::BTreeSet;
 
-/// 과제 단계. `archive`는 `archive.jsonl`에서 `landed_at`이 있는 줄의 키, `routed`는 `routes/<KEY>.json`의 존재다.
+/// 과제 단계. `archive`는 `archive.jsonl`에서 `landed_at`이 있는 줄의 키, `routed`는 `tasks/<KEY>/route.json`의 존재다.
 pub fn stage_of(key: &TaskKey, state: &State, archive: &BTreeSet<TaskKey>, routed: bool) -> Stage {
     let work = || {
         state
@@ -107,27 +107,14 @@ pub fn ready(
         .collect()
 }
 
-/// 기록 경로(설계 6.6절 5번). `changed()`의 대상에서 항상 빼고, lint 통과 뒤의 기록 전용 커밋을 가릴 때 쓴다.
-pub const RECORD_PATHS: [&str; 5] = [
-    ".fullops-squad/handovers/",
-    ".fullops-squad/docs/evaluations/",
-    ".fullops-squad/routes/",
-    ".fullops-squad/reviews/",
-    ".fullops-squad/PLANS.md",
-];
-
-pub fn is_record_path(path: &str) -> bool {
-    RECORD_PATHS.iter().any(|record| path.starts_with(record))
-}
-
-/// `changed()`의 대상인가: 기록 경로가 아니고, 코드 파일이다(dev 직접 작업은 lint 제외에 안 걸리는 모든 파일).
+/// `changed()`의 대상인가: 기록 경로(`layout::is_record`. 설계 6.6절 5번)가 아니고, 코드 파일이다(dev 직접 작업은 lint 제외에 안 걸리는 모든 파일).
 pub fn is_change_target(
     path: &str,
     code: &crate::model::CodeDef,
     exclude: &globset::GlobSet,
     direct_dev: bool,
 ) -> bool {
-    if is_record_path(path) {
+    if crate::layout::is_record(path) {
         return false;
     }
     if direct_dev {

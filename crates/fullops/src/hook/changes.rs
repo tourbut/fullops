@@ -1,7 +1,8 @@
 //! 세션이 만든 변경과 lint 통과 인정(설계 6.6절). Stop의 X-01·X-02(`facts_real`)와 `done`·`lint`가 같은 함수를 쓴다.
 
 use crate::assets;
-use fullops_core::derive::{is_change_target, is_record_path};
+use fullops_core::derive::is_change_target;
+use fullops_core::layout::{self, is_record as is_record_path};
 use fullops_core::model::{
     Actor, ChangeSet, CodeDef, Config, Known, Landing, LintPass, Mode, ReviewPolicy, RoleId, Seat,
     Sha, State, WorkOutcome,
@@ -11,8 +12,8 @@ use fullops_store::Repo;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-const CONFIG_TOML: &str = ".fullops-squad/fullops.toml";
-const LINT_JSON: &str = ".fullops-squad/lint/lint.json";
+const CONFIG_TOML: &str = layout::config_toml();
+const LINT_JSON: &str = layout::lint_json();
 
 /// `Unknown`이면 그 사유로 돌려준다.
 macro_rules! know {

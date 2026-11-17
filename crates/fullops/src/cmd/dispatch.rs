@@ -5,6 +5,7 @@ use crate::cli::{Caller, CliError, Ctx, EXIT_OK, session_handle};
 use fullops_core::config::PolicyError;
 use fullops_core::facts::{CommitScope, Facts};
 use fullops_core::flow::{self, ReviewSpec, SpecInput, refusal};
+use fullops_core::layout;
 use fullops_core::messages;
 use fullops_core::model::{
     Actor, Caps, ChangeSet, Config, Decision, DecisionId, DecisionStatus, Dispatch, DispatchId,
@@ -204,16 +205,9 @@ pub(super) fn step_refusal(step: &'static str, reason: String, escape: &str) -> 
     }])
 }
 
-fn squad_path(rest: &str) -> String {
-    format!(".fullops-squad/{rest}")
-}
-
-/// 인박스의 차수가 역할 브랜치에서 완료 기록(`logs/<KEY>.<역할>.r<N>.md`)이 됐는가(D-02, `leftover`, reopen의 H-03).
+/// 인박스의 차수가 역할 브랜치에서 완료 기록(`tasks/<KEY>/<역할>.r<N>.md`)이 됐는가(D-02, `leftover`, reopen의 H-03).
 pub(super) fn round_logged(git: &GitCli, branch: &str, inbox: &Inbox) -> bool {
-    let log = squad_path(&format!(
-        "handovers/logs/{}.{}.r{}.md",
-        inbox.key, inbox.role, inbox.round
-    ));
+    let log = layout::handover_log(&inbox.key, &inbox.role, inbox.round);
     git.rev_parse(&format!("refs/heads/{branch}:{log}"))
         .yes()
         .is_some()
@@ -268,7 +262,7 @@ fn publish_records(repo: &Repo, config: &Config, git: &GitCli) -> Result<(), Cli
 /// 기본 브랜치가 이 역할의 인박스를 완료 기록으로 옮긴 뒤(병합 전 `task reopen`) 다음 차수 인박스를 만들었으면
 /// 옮긴 커밋이 먼저다. 한 번에 병합하면 rename 감지가 새 인박스의 내용을 이전 차수의 완료 기록에 섞는다.
 pub(super) fn merge_steps(target: &Path, role: &RoleId, base_tip: &Sha) -> Vec<String> {
-    let inbox = squad_path(&format!("handovers/to_{role}.md"));
+    let inbox = layout::inbox(role);
     let range = format!("HEAD..{base_tip}");
     let argv = [
         "git",
@@ -630,7 +624,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         && inbox.key == key
     {
         let finished = round_logged(&git, branch, &inbox);
-        let log = squad_path(&format!("handovers/logs/{key}.{role}.r{}.md", inbox.round));
+        let log = layout::handover_log(&key, role, inbox.round);
         if finished && unreported(&state, &key, role, &git, &log) {
             resend = Some(log);
         } else if finished {
@@ -671,9 +665,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
 
     // spec의 재료. 인박스는 준비 커밋과 동기화로 대상 워크트리에 간다
     let handover = (work && lead_inbox.is_some()).then(|| {
-        let file = resend
-            .clone()
-            .unwrap_or_else(|| squad_path(&format!("handovers/to_{role}.md")));
+        let file = resend.clone().unwrap_or_else(|| layout::inbox(&role));
         path_text(&target.join(file))
     });
     let base = lead_inbox
@@ -793,10 +785,10 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
             }
         }
         let paths = [
-            squad_path(&format!("routes/{key}.json")),
-            squad_path(&format!("routes/{key}.request.md")),
-            squad_path(&format!("handovers/to_{role}.md")),
-            squad_path("PLANS.md"),
+            layout::route(&key),
+            layout::request(&key),
+            layout::inbox(&role),
+            layout::plans().to_string(),
         ];
         git.commit_only(&paths, &format!("fullops: 배정 준비 {key}"))?;
         // 3. 기록 게시

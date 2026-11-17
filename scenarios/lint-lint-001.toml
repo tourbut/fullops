@@ -7,7 +7,7 @@ roles = {}
 
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
 
 [[step]]
@@ -21,7 +21,7 @@ args = ["tag", "base"]
 # 검출: 기준 시점 뒤에 lint.json을 고쳤다. 고친 내용(없는 실행 파일)은 적용되지 않는다
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '{"schema_version": 1, "commands": [{"name": "missing", "run": ["fullops-no-such-program"]}]}'
 
 [[step]]
@@ -31,7 +31,7 @@ act = "commits"
 act = "runs_fullops"
 raw = true
 args = ["lint", "--from", "base"]
-expect = { verdict = "pass", exit = 0, escape = "WARNING LINT-001 .fullops-squad/lint/lint.json" }
+expect = { verdict = "pass", exit = 0, escape = "WARNING LINT-001 .fullops/config/lint.json" }
 
 [[step]]
 act = "runs_fullops"
@@ -42,7 +42,7 @@ expect = { verdict = "pass", exit = 0, escape = "[passed] version" }
 # 비검출: lint.json을 기준 시점과 같게 되돌렸다
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
 
 [[step]]

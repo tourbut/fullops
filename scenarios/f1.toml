@@ -4,13 +4,13 @@ origin = "설계 12.2절 F1"
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/report.md"
+path = ".fullops/tasks/A-1/qa/report.md"
 content = "# A-1 테스트 보고서\n\n- 판정: 통과\n"
 
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/shot.png"
+path = ".fullops/tasks/A-1/qa/shot.png"
 content = "PNG"
 
 [[step]]
@@ -42,7 +42,7 @@ expect = { verdict = "deny", rule = "T-09", flow = "stopped", escape = "raw/" }
 [[step]]
 act = "runs_shell"
 who = "dev"
-command = "git add .fullops-squad/docs/evaluations/qa-reports/A-1-test/shot.png && git commit -am qa"
+command = "git add .fullops/tasks/A-1/qa/shot.png && git commit -am qa"
 expect = { verdict = "deny", rule = "T-09", flow = "stopped" }
 
 [[step]]
@@ -55,7 +55,7 @@ expect = { verdict = "pass", flow = "continues" }
 [[step]]
 act = "runs_shell"
 who = "dev"
-command = "cd .fullops-squad/docs/evaluations/qa-reports/A-1-test && git add shot.png && git commit -m qa"
+command = "cd .fullops/tasks/A-1/qa/ && git add shot.png && git commit -m qa"
 expect = { verdict = "deny", rule = "T-09", flow = "stopped" }
 
 [[step]]
@@ -72,7 +72,7 @@ expect = { verdict = "deny", rule = "T-09", flow = "stopped", escape = "raw/" }
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/report.md"
+path = ".fullops/tasks/A-1/qa/report.md"
 content = "# A-1 테스트 보고서\n\n- 판정: 통과 ![화면](shot.png)\n"
 
 [[step]]
@@ -84,7 +84,7 @@ expect = { verdict = "pass", flow = "continues" }
 [[step]]
 act = "file"
 who = "dev"
-path = ".fullops-squad/docs/evaluations/qa-reports/A-1-test/raw/cap.png"
+path = ".fullops/tasks/A-1/qa/raw/cap.png"
 content = "PNG"
 
 [[step]]

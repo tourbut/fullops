@@ -3,7 +3,7 @@
 //! hook은 이벤트당 프로세스 하나이고 `decide`는 한 스레드에서 한 번 돈다.
 
 use super::Effect;
-use super::decide::{HANDOVERS, QA_REPORTS};
+use super::decide::{INBOX, TASKS};
 use super::tool::CONFIG;
 use crate::facts::Facts;
 use crate::messages::hook::Brief;
@@ -112,7 +112,7 @@ pub(super) fn rel_path(path: &Path, input: &HookInput, facts: &mut dyn Facts) ->
     let rel = repo_relative(&path.to_string_lossy(), &input.cwd, &real_root, &mut real)?;
     if cfg!(windows) {
         // 아직 없는 폴더는 받은 표기 그대로다: 규칙이 견주는 이름을 정본 표기로 맞춘다
-        for known in [HANDOVERS, QA_REPORTS, CONFIG, ".fullops-squad/"] {
+        for known in [INBOX, TASKS, CONFIG, crate::layout::RECORDS[0], ".fullops/"] {
             if let (Some(head), Some(tail)) = (rel.get(..known.len()), rel.get(known.len()..))
                 && head.eq_ignore_ascii_case(known)
             {
