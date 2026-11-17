@@ -5,13 +5,13 @@ description: FullOps 활성 레포에서 UI/UX 설계·화면 구현·디자인 
 
 # 프런트엔드 디자인
 
-활성 레포(`.fullops-squad/fullops.toml`이 있는 레포)에서 UI를 바꾸는 작업에만 쓴다. 표식이 없으면 `setup-fullops`를 안내한다. UI 변경이 없는 작업에는 이 절차를 적용하지 않는다.
+활성 레포(`.fullops/fullops.toml`이 있는 레포)에서 UI를 바꾸는 작업에만 쓴다. 표식이 없으면 `setup-fullops`를 안내한다. UI 변경이 없는 작업에는 이 절차를 적용하지 않는다.
 
 명령 표기: 이 문서의 `fullops`는 Claude Code 세션에서 그대로 실행된다. Codex·grok·agy 세션에서는 고정 위치 실행본을 전체 경로로 부른다: `~/.fullops/bin/fullops`(Windows는 `%USERPROFILE%\.fullops\bin\fullops.exe`).
 
 ## 1. 범위와 선택
 
-`fullops.toml`, `.fullops-squad/project.md`, 공통 코딩 규칙, 현재 역할 인박스를 읽는다. 이번 과제의 선택은 역할 인박스가 정본이다.
+`fullops.toml`, `.fullops/guide/project.md`, 공통 코딩 규칙, 현재 역할 인박스를 읽는다. 이번 과제의 선택은 역할 인박스가 정본이다.
 
 호스트·모델·effort는 대화의 사용자 지정, 이번 과제에 기록된 값, `orca-agents.md`의 모델 후보 순으로 따른다. 호스트를 바꾸면 이전 제공사의 모델 이름을 그대로 넘기지 않는다. 브랜드별 우열을 전제로 자동 배정하지 않는다.
 
@@ -34,7 +34,7 @@ description: FullOps 활성 레포에서 UI/UX 설계·화면 구현·디자인 
 - 기존 `DESIGN.md`나 `project.md`가 가리키는 문서를 디자인 정본으로 쓴다. 기존 토큰과 공용 컴포넌트의 경로를 인박스에 연결하고 본문을 복제하지 않는다.
 - 정본이 없으면 기존 화면·CSS·컴포넌트와 사용자 요구에서 방향을 정한 뒤 한 경로만 정본으로 지정한다. 새 정본을 만드는 것이 기존 디자인을 바꾼다는 뜻은 아니다.
 - 지시서에는 대상 화면과 상태(빈 상태, 오류, 로딩 포함), 디자인 정본과 토큰·컴포넌트 경로, 피할 스타일의 구체적 목록, 수락 기준과 검증 방법을 적는다. 모호한 금지는 쓰지 않는다.
-- 외부 스킬이 새 역할, 하위 에이전트, hook, 유료 서비스, 외부 업로드를 요구하면 FullOps의 권한과 병렬 방침(`.fullops-squad/rules/delegation.md`) 안에서만 따른다. 외부 스킬이 자기 hook을 자동으로 넣게 두지 않는다.
+- 외부 스킬이 새 역할, 하위 에이전트, hook, 유료 서비스, 외부 업로드를 요구하면 FullOps의 권한과 병렬 방침(`.fullops/guide/rules/delegation.md`) 안에서만 따른다. 외부 스킬이 자기 hook을 자동으로 넣게 두지 않는다.
 
 ## 3. 구현·비평·검증
 

@@ -1,6 +1,6 @@
 # 작업 입력, 검수, 인계
 
-활성 레포(`.fullops-squad/fullops.toml`이 있다)에서는 현재 역할 인박스의 기존 절에 아래를 채우거나 원천 문서를 연결한다. 별도의 중복 지시서를 만들지 않는다. 활성 레포가 아니면 `videos/<작업>/` 안에 같은 내용을 `scenes.md`와 `qa/`로 남긴다.
+활성 레포(`.fullops/fullops.toml`이 있다)에서는 현재 역할 인박스의 기존 절에 아래를 채우거나 원천 문서를 연결한다. 별도의 중복 지시서를 만들지 않는다. 활성 레포가 아니면 `videos/<작업>/` 안에 같은 내용을 `scenes.md`와 `qa/`로 남긴다.
 
 ## 작업 입력
 
@@ -44,7 +44,7 @@ ffmpeg -i renders/v01/clip.mp4 -map 0:a:0 -acodec pcm_s16le qa/v01/final-audio.w
 - 종료 코드 0은 연출 수락이 아니다. 자동 검사는 문구의 정확성, 자연스러운 소리, 미적 완성도를 입증하지 못한다.
 - 다시 렌더한 MP4가 바이트까지 같다고 보증하지 않는다.
 
-활성 레포에서는 기록을 `.fullops-squad/docs/evaluations/qa-reports/<과제 키>-test/report.md`에 둔다(`fullops-test` 스킬). 재작업도 새 폴더를 만들지 않고 같은 `report.md`에 절을 덧붙인다. 그 폴더에 커밋하는 스틸·영상은 `report.md`가 상대 경로로 링크해야 한다. 큰 MP4는 커밋을 강제하지 않고 보관 위치를 적는다.
+활성 레포에서는 기록을 `.fullops/tasks/<과제 키>/qa/report.md`에 둔다(`fullops-test` 스킬). 재작업도 새 폴더를 만들지 않고 같은 `report.md`에 절을 덧붙인다. 그 폴더에 커밋하는 스틸은 `report.md`가 상대 경로로 링크해야 한다. 영상(MP4·WebM·MOV)은 그 폴더에 커밋하지 않는다(lint QA-001). `raw/`에 두거나 레포의 영상 자리에 두고 보관 위치를 적는다.
 
 ## 인계 완료
 

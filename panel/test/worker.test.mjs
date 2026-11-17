@@ -16,8 +16,8 @@ function repo(t, { status, active = true } = {}) {
   t.after(() => rmSync(root, { recursive: true, force: true }))
   mkdirSync(path.join(root, '.git', 'fullops'), { recursive: true })
   if (active) {
-    mkdirSync(path.join(root, '.fullops-squad'))
-    writeFileSync(path.join(root, '.fullops-squad', 'fullops.toml'), 'schema = 2\n')
+    mkdirSync(path.join(root, '.fullops'))
+    writeFileSync(path.join(root, '.fullops', 'fullops.toml'), 'schema = 2\n')
   }
   if (status !== undefined) writeFileSync(path.join(root, '.git', 'fullops', 'status.json'), status)
   return root

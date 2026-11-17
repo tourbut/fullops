@@ -142,7 +142,15 @@ test('--repo: 활성 레포에만 셸 없이 경로를 그대로 넘기고, 켜�
   assert.ok(python.out.includes(`${fixed}`), python.out);
   assert.match(python.out, /" migrate --from-python --dry-run/);
 
+  // 옛 자리의 2.0.x 레포: upgrade가 옮기라는 안내를 낸다
   fs.writeFileSync(path.join(repo, '.fullops-squad', 'fullops.toml'), '');
+  const legacy = pkg.run(['update', '--repo', repo]);
+  assert.equal(legacy.status, 0, legacy.out);
+  assert.deepEqual(legacy.calls, [['install'], ['upgrade', '--repo', repo]]);
+
+  fs.rmSync(path.join(repo, '.fullops-squad'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.fullops'));
+  fs.writeFileSync(path.join(repo, '.fullops', 'fullops.toml'), '');
   const update = pkg.run(['update', '--repo', repo]);
   assert.equal(update.status, 0, update.out);
   assert.deepEqual(update.calls, [['install'], ['upgrade', '--repo', repo]]);
