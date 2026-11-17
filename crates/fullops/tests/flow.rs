@@ -146,7 +146,9 @@ fn dispatch_records_state_and_sends_the_spec() {
     assert!(dispatch["sub_of"].is_null() && dispatch["settled"].is_null());
     let request = dispatch["request"].as_str().unwrap();
     assert!(
-        request.starts_with("req_") && request.len() == 20,
+        request.len() == 36
+            && request.split('-').map(str::len).eq([8, 4, 4, 4, 12])
+            && request.as_bytes()[14] == b'4',
         "{request}"
     );
     assert_eq!(st["runs"][0]["id"], "run_1");
