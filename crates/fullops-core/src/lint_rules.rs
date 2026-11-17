@@ -3,6 +3,7 @@
 
 use crate::config::{CODE_EXTENSIONS, is_code};
 use crate::frontmatter::{FmValue, FrontMatter, parse_front_matter};
+use crate::layout;
 use crate::messages::lint as msg;
 use crate::model::{CodeDef, DeliverableRow, LintFinding, Severity, TestLevel};
 use fancy_regex::Regex;
@@ -28,8 +29,6 @@ const DOC_ORDER: [&str; 10] = [
     "downstream",
     "summary",
 ];
-/// 커밋되는 파일의 폴더. 산출물 인덱스의 원천 경로가 이 폴더 기준이다.
-pub const SQUAD: &str = ".fullops-squad/";
 const HASH_EXT: [&str; 6] = [".sh", ".bash", ".rb", ".gd", ".pl", ".r"];
 const EVAL_EXT: [&str; 9] = [
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".svelte", ".vue",
@@ -86,7 +85,7 @@ fn warning() -> Severity {
     Severity::Warning
 }
 
-/// `lint/lint.json`(1.24.0 형식 그대로. 설계 6.1절).
+/// `config/lint.json`(1.24.0 형식 그대로. 설계 6.1절).
 #[derive(Debug, Clone, Deserialize)]
 pub struct LintConfig {
     pub schema_version: u32,
@@ -834,6 +833,67 @@ pub fn diff_size_finding(added: u32, limit: u32) -> Option<LintFinding> {
     })
 }
 
+/// 커밋하지 않는 QA 원본의 확장자(QA-001). 압축, 영상, trace다.
+const QA_HEAVY: [&str; 5] = [".zip", ".webm", ".mp4", ".mov", ".trace"];
+const QA_IMAGES: [&str; 5] = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+/// 한 `qa/` 폴더에 커밋하는 이미지의 장 수와 한 장의 크기(QA-002).
+pub const QA_MAX_IMAGES: usize = 12;
+pub const QA_MAX_IMAGE_BYTES: u64 = 1024 * 1024;
+
+fn ends_with_any(path: &str, exts: &[&str]) -> bool {
+    let lower = path.to_ascii_lowercase();
+    exts.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// 커밋되는 QA 증거면 그 과제 키: `tasks/<KEY>/qa/` 아래이고 `raw/` 밖이다.
+pub fn qa_evidence(path: &str) -> Option<&str> {
+    let (key, inner) = layout::qa_parts(path)?;
+    (!inner.starts_with("raw/") && !inner.contains("/raw/")).then_some(key)
+}
+
+/// 커밋되는 QA 증거 가운데 이미지인가.
+pub fn qa_image(path: &str) -> bool {
+    qa_evidence(path).is_some() && ends_with_any(path, &QA_IMAGES)
+}
+
+/// QA-001(ERROR): 바뀐 QA 증거에 압축·영상·trace가 있다. QA-002(WARNING): 바뀐 QA 폴더의 이미지가 `QA_MAX_IMAGES`장을 넘거나
+/// 바뀐 이미지 한 장이 `QA_MAX_IMAGE_BYTES`를 넘는다. 코드 lint의 `exclude`와 별도로 적용한다.
+/// `changed`는 바뀐 파일(삭제 제외), `images`는 검사 대상 커밋의 QA 이미지 `(경로, 바이트 수)`다.
+pub fn qa_findings(changed: &[&str], images: &[(String, u64)]) -> Vec<LintFinding> {
+    let mut found = Vec::new();
+    let mut keys: Vec<&str> = Vec::new();
+    for path in changed {
+        let Some(key) = qa_evidence(path) else {
+            continue;
+        };
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+        if ends_with_any(path, &QA_HEAVY) {
+            found.push(finding("QA-001", Severity::Error, path, None, &[]));
+        }
+    }
+    for key in keys {
+        let count = images
+            .iter()
+            .filter(|(path, _)| qa_evidence(path) == Some(key))
+            .count();
+        if count > QA_MAX_IMAGES {
+            let args = ["count".into(), count.to_string(), QA_MAX_IMAGES.to_string()];
+            let folder = format!("{}/", layout::qa_dir(key));
+            found.push(finding("QA-002", Severity::Warning, &folder, None, &args));
+        }
+    }
+    for (path, bytes) in images {
+        if *bytes > QA_MAX_IMAGE_BYTES && changed.contains(&path.as_str()) {
+            let kb = |n: u64| n.div_ceil(1024).to_string();
+            let args = ["size".into(), kb(*bytes), kb(QA_MAX_IMAGE_BYTES)];
+            found.push(finding("QA-002", Severity::Warning, path, None, &args));
+        }
+    }
+    found
+}
+
 /// LINT-000(`commands`가 비었다)과 LINT-001(브랜치가 `lint.json`을 바꿨다).
 pub fn config_finding(code: &str, config_path: &str) -> LintFinding {
     finding(code, Severity::Warning, config_path, None, &[])
@@ -978,7 +1038,7 @@ pub fn doc_problems(text: &str, doc_id: Option<&str>, index_status: Option<&str>
 /// 산출물 인덱스 `docs/deliverables/README.md`의 표를 읽는다.
 /// 행은 칸이 다섯(`ID | 단계 | 산출물 | 원천 | 상태`)이고 첫 칸이 `D` + 숫자 두 자리인 표 줄이다. 그 밖의 줄은 읽지 않는다.
 /// `title`은 산출물 칸, `summary`는 단계 칸, `status`는 상태 칸의 글 그대로다.
-/// `sources`는 원천 칸의 백틱 안 글마다 첫 공백 앞까지를 `.fullops-squad/` 뒤에 붙인 레포 상대 경로다. `/`로 끝나면 그 폴더 아래의 Markdown 파일들이다.
+/// `sources`는 원천 칸의 백틱 안 글마다 첫 공백 앞까지를 `.fullops/` 뒤에 붙인 레포 상대 경로다. `/`로 끝나면 그 폴더 아래의 Markdown 파일들이다.
 /// 같은 ID가 두 번 나오면 뒤의 행이 이긴다.
 pub fn parse_deliverable_index(text: &str) -> Vec<DeliverableRow> {
     let mut rows: Vec<DeliverableRow> = Vec::new();
@@ -1004,7 +1064,7 @@ pub fn parse_deliverable_index(text: &str) -> Vec<DeliverableRow> {
             .skip(1)
             .step_by(2)
             .filter_map(|code| code.split(' ').next().filter(|p| !p.is_empty()))
-            .map(|path| format!("{SQUAD}{path}"))
+            .map(layout::at)
             .collect();
         let row = DeliverableRow {
             id: id.into(),
@@ -1029,11 +1089,20 @@ pub fn owns(row: &DeliverableRow, path: &str) -> bool {
     })
 }
 
-/// DOC-002(산출물 원천 문서)와 DOC-003(그 밖의 `.fullops-squad/**/*.md`). 코드 lint의 `exclude`와 별도로 적용한다.
+/// DOC-002(산출물 원천 문서)와 DOC-003(그 밖의 `.fullops/**/*.md`). 코드 lint의 `exclude`와 별도로 적용한다.
+/// 보관(`archive/`)과 리뷰 기록(`tasks/*/reviews/`)은 둘 다 대상이 아니다.
 pub fn doc_findings(path: &str, text: &str, index: &[DeliverableRow]) -> Vec<LintFinding> {
-    let Some(relative) = path.strip_prefix(SQUAD) else {
+    let Some(relative) = layout::inside(path) else {
         return Vec::new();
     };
+    // 과제 폴더 안의 자리: `reviews/`와 폴더 바로 아래 파일(끝난 지시서, 요청 원문)은 기록이다
+    let in_task = relative
+        .strip_prefix("tasks/")
+        .and_then(|rest| rest.split_once('/'))
+        .map(|(_, inner)| inner);
+    if relative.starts_with("archive/") || in_task.is_some_and(|i| i.starts_with("reviews/")) {
+        return Vec::new();
+    }
     let hit = |code: &str, problem: String, id: &str| {
         let args = [problem, relative.to_string(), id.to_string()];
         finding(code, Severity::Error, path, None, &args)
@@ -1051,11 +1120,13 @@ pub fn doc_findings(path: &str, text: &str, index: &[DeliverableRow]) -> Vec<Lin
             .collect();
     }
     let name = relative.rsplit('/').next().unwrap_or(relative);
-    // 인박스·로그·템플릿·rules/·FULLOPS.md·PLANS.md는 공통 front matter를 요구하지 않는다
-    let exempt = relative.starts_with("handovers/")
-        || relative.starts_with("rules/")
+    // 인박스·끝난 지시서·템플릿·guide/rules/·FULLOPS.md·PLANS.md는 공통 front matter를 요구하지 않는다
+    let exempt = ["inbox/", "templates/", "guide/rules/"]
+        .iter()
+        .any(|dir| relative.starts_with(dir))
+        || in_task.is_some_and(|inner| !inner.contains('/'))
         || name.starts_with('_')
-        || ["FULLOPS.md", "PLANS.md"].contains(&relative);
+        || ["guide/FULLOPS.md", "PLANS.md"].contains(&relative);
     if exempt || !path.ends_with(".md") || text.trim().is_empty() {
         return Vec::new();
     }
@@ -1069,7 +1140,7 @@ pub fn doc_findings(path: &str, text: &str, index: &[DeliverableRow]) -> Vec<Lin
 mod tests {
     use super::*;
 
-    const TEMPLATE: &str = include_str!("../../fullops/assets/repo/lint/lint.json");
+    const TEMPLATE: &str = include_str!("../../fullops/assets/repo/config/lint.json");
     const INDEX: &str = include_str!("../../fullops/assets/repo/docs/deliverables/README.md");
 
     #[test]
@@ -1109,19 +1180,73 @@ mod tests {
             ("D06", "엔티티정의서", "분석")
         );
         assert_eq!(d06.status, "미작성");
-        assert_eq!(
-            d06.sources,
-            [".fullops-squad/docs/design-docs/data-model.md"]
-        );
+        assert_eq!(d06.sources, [".fullops/docs/design-docs/data-model.md"]);
         assert_eq!(rows[2].sources.len(), 2);
         assert!(owns(
             &rows[1],
-            ".fullops-squad/docs/planning/product-specs/a/login.md"
+            ".fullops/docs/planning/product-specs/a/login.md"
         ));
         assert!(!owns(
             &rows[1],
-            ".fullops-squad/docs/planning/product-specs/a.png"
+            ".fullops/docs/planning/product-specs/a.png"
         ));
+    }
+
+    #[test]
+    fn qa_rules_see_committed_evidence_only() {
+        let qa = |name: &str| format!(".fullops/tasks/A-1/qa/{name}");
+        let changed = [
+            qa("report.md"),
+            qa("flow.WEBM"),
+            qa("trace.zip"),
+            qa("raw/trace.zip"),
+            qa("shots/raw/a.mp4"),
+            qa("big.png"),
+            ".fullops/tasks/A-1/reviews/0123456789ab/a.zip".to_string(),
+            "src/demo.mp4".to_string(),
+        ];
+        let changed: Vec<&str> = changed.iter().map(String::as_str).collect();
+        let mut images: Vec<(String, u64)> =
+            (0..12).map(|n| (qa(&format!("s{n}.png")), 10)).collect();
+        // 12장까지는 받고, 1MB는 넘어야 걸린다. raw/의 이미지는 세지 않는다
+        images.push((qa("raw/extra.png"), 10));
+        let shown = |found: &[LintFinding]| -> Vec<String> {
+            found
+                .iter()
+                .map(|f| format!("{} {} {}", f.code, f.path, f.message))
+                .collect()
+        };
+        assert_eq!(
+            shown(&qa_findings(&changed, &images)),
+            [
+                format!(
+                    "QA-001 {} 커밋하는 QA 증거에 압축·영상·trace 파일이 있다.",
+                    qa("flow.WEBM")
+                ),
+                format!(
+                    "QA-001 {} 커밋하는 QA 증거에 압축·영상·trace 파일이 있다.",
+                    qa("trace.zip")
+                ),
+            ]
+        );
+        images.push((qa("big.png"), QA_MAX_IMAGE_BYTES + 1));
+        images.push((qa("old-big.png"), QA_MAX_IMAGE_BYTES * 3));
+        let found = qa_findings(&[changed[5]], &images);
+        assert_eq!(
+            shown(&found),
+            [
+                "QA-002 .fullops/tasks/A-1/qa/ QA 폴더의 이미지가 14장이다(상한 12장).".to_string(),
+                format!(
+                    "QA-002 {} QA 이미지가 1025KB다(상한 1024KB).",
+                    qa("big.png")
+                ),
+            ]
+        );
+        assert!(found.iter().all(|f| f.severity == Severity::Warning));
+        // QA 폴더를 건드리지 않은 변경은 폴더의 장 수를 보지 않는다
+        assert!(qa_findings(&["src/a.py"], &images).is_empty());
+        assert_eq!(qa_evidence(&qa("raw/a.png")), None);
+        assert!(qa_image(&qa("a.JPG")) && !qa_image(&qa("report.md")));
     }
 
     #[test]

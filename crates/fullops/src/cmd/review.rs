@@ -4,13 +4,13 @@
 use super::hold::{commit, is_record, known, load_state, refused, task_key, value};
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use fullops_core::layout;
 use fullops_core::lint_rules::config_sha256;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
-    Accepted, Completion, Config, HeadRef, Known, LintResult, Need, NeedAction, PacketCheck,
-    Purpose, Refusal, RoleId, RoleKind, RunOwner, Sha, Snapshot, SnapshotHold, SnapshotState,
-    State, TaskKey, Waiver, WorkOutcome, parse_packet, parse_packet_outcomes, path_text, same_path,
-    sha256_hex,
+    Accepted, Completion, Config, HeadRef, LintResult, Need, NeedAction, Purpose, Refusal, RoleId,
+    RoleKind, RunOwner, Sha, Snapshot, SnapshotHold, SnapshotState, State, TaskKey, Waiver,
+    WorkOutcome, path_text, same_path, sha256_hex,
 };
 use fullops_core::review::{
     ReviewResult, RuleFile, Targets, check_lint, check_result, result_skeleton, review_need,
@@ -23,13 +23,9 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const CONFIG: &str = ".fullops-squad/fullops.toml";
-const LINT_JSON: &str = ".fullops-squad/lint/lint.json";
-const RULE_JSON: &str = ".fullops-squad/review/rule.json";
 /// `review check`의 실패 항목 번호(설계 8.9절)에 붙인 ID.
-const ITEMS: [&str; 11] = [
+const ITEMS: [&str; 10] = [
     "RV-00", "RV-01", "RV-02", "RV-03", "RV-04", "RV-05", "RV-06", "RV-07", "RV-08", "RV-09",
-    "RV-10",
 ];
 
 fn read<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
@@ -62,7 +58,11 @@ fn text(bytes: &Option<Vec<u8>>) -> Option<String> {
 /// 필요 판정(설계 8.9절). 정책과 lint 제외는 merge-base 시점의 것이다. 둘째 값은 그 시점 설정을 읽지 못해 기본값을 썼는가다.
 pub(super) fn need_for(git: &GitCli, base: &Sha, head: &Sha) -> Result<(Need, bool), CliError> {
     let mb = known(git.merge_base(base.as_str(), head.as_str()), "merge-base")?;
-    let at = blobs(git, &mb, &[CONFIG.to_string(), LINT_JSON.to_string()]);
+    let at = blobs(
+        git,
+        &mb,
+        &[layout::config_toml().into(), layout::lint_json().into()],
+    );
     let (config, lint) = (text(&at[0]), text(&at[1]));
     let baseline = fullops_store::baseline(config.as_deref());
     let exclude = fullops_core::lint_excludes(lint.as_deref(), assets::LINT_JSON);
@@ -160,7 +160,7 @@ fn subject(
 
 /// 리뷰 규칙 파일과 그 지문. 체크아웃마다 줄끝이 달라도 같은 지문이 되게 LF로 맞춘다. 파일이 없으면 빈 규칙이다.
 fn rules(repo: &Repo) -> (RuleFile, String) {
-    let bytes = std::fs::read(repo.root.join(RULE_JSON)).unwrap_or_default();
+    let bytes = std::fs::read(repo.root.join(layout::review_json())).unwrap_or_default();
     let text = String::from_utf8_lossy(&bytes).replace("\r\n", "\n");
     (
         serde_json::from_str(&text).unwrap_or_default(),
@@ -482,70 +482,6 @@ fn snapshot(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     Ok(EXIT_OK)
 }
 
-/// 10번: 패킷 조건이 참이면 리뷰 head 커밋의 패킷·처리 기록·지시서로 `check_packet`을 부른다.
-fn packet_failures(repo: &Repo, git: &GitCli, key: &TaskKey, subject: &Subject) -> Vec<Refusal> {
-    let files = blobs(
-        git,
-        &subject.head,
-        &[
-            rel(repo, repo.packet_path(key)),
-            rel(repo, repo.packet_outcomes_path(key)),
-        ],
-    );
-    let packet = files[0].as_deref().and_then(parse_packet);
-    let outcomes = files[1].as_deref().and_then(parse_packet_outcomes);
-    // 읽지 못한 기록을 '없음'으로 내리면 패킷 검사를 건너뛴다
-    let (Known::Yes(route), false, false) = (
-        fullops_store::read_route(repo, key),
-        files[0].is_some() && packet.is_none(),
-        files[1].is_some() && outcomes.is_none(),
-    ) else {
-        return vec![Refusal {
-            rule: "packet",
-            reason: format!(
-                "`routes/{key}.json`이나 리뷰 head의 `{key}-packet.json`, 패킷 처리 기록을 읽을 수 없다."
-            ),
-            escape: "기록 파일의 JSON을 고쳐 커밋한 뒤 다시 리뷰한다".into(),
-            exit: 2,
-        }];
-    };
-    if packet.is_none() && !route.as_ref().is_some_and(|r| r.requires_packet) {
-        return Vec::new();
-    }
-    let role = packet
-        .as_ref()
-        .map(|p| p.role.clone())
-        .or_else(|| subject.completion.as_ref()?.role.clone())
-        .or_else(|| route.as_ref()?.role.clone());
-    let Some(role) = role else {
-        return Vec::new();
-    };
-    let round = packet.as_ref().map_or(0, |p| p.round);
-    // 완료 기록 커밋 뒤에는 지시서가 logs로 옮겨져 있다
-    let instruction = blobs(
-        git,
-        &subject.head,
-        &[
-            rel(repo, repo.inbox_path(&role)),
-            rel(repo, repo.handover_log_path(key, &role, round)),
-        ],
-    )
-    .iter()
-    .find_map(text);
-    fullops_core::check_packet(
-        PacketCheck::Completion,
-        route.as_ref(),
-        packet.as_ref(),
-        outcomes.as_ref(),
-        instruction.as_deref(),
-        key,
-        &role,
-        round,
-        &mut |older| git.is_ancestor(older, subject.head.as_str()),
-        &mut |_| Known::Unknown("review"),
-    )
-}
-
 fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     let parsed = Parsed::new(args, &["sha"], &[])?;
     let key = task_key(parsed.key.clone())?;
@@ -626,7 +562,7 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         }
     }
     if rules(repo).1 != targets.policy_sha256 {
-        fail(8, "review/rule.json이 snapshot을 만든 뒤 바뀌었습니다.");
+        fail(8, "config/review.json이 snapshot을 만든 뒤 바뀌었습니다.");
     }
     let lint_path = dir.join("lint.json");
     if !lint_path.exists()
@@ -653,7 +589,7 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
                     "lint가 리뷰 base부터 검사하지 않았습니다(lint.json의 merge_base가 리뷰 base나 그 조상이 아니다).",
                 );
             }
-            let at = blobs(&git, &targets.base, &[LINT_JSON.to_string()]);
+            let at = blobs(&git, &targets.base, &[layout::lint_json().into()]);
             if lint.config_sha256 != config_sha256(at[0].as_deref(), assets::LINT_JSON) {
                 fail(
                     9,
@@ -673,7 +609,6 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
             }
         }
     }
-    failed.extend(packet_failures(repo, &git, &key, &subject));
     if !failed.is_empty() {
         return Err(CliError::Refused(failed));
     }
@@ -946,7 +881,7 @@ fn supersede(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     };
     let (old, new) = (prefix("old")?, prefix("new")?);
     let repo = ctx.repo()?;
-    let root = repo.squad().join("reviews").join(key.as_str());
+    let root = repo.root.join(layout::reviews_dir(&key));
     let (old_dir, new_dir) = (root.join(old), root.join(new));
     let no = |why: &str| refused("RV-00", "supersede", &[old, new, why]);
     let Some(targets) = read::<Targets>(&old_dir.join("targets.json")) else {

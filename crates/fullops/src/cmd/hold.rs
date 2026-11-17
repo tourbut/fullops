@@ -2,6 +2,7 @@
 //! 통합 쪽 명령(`merge`·`sync`·`review`·`decision`·`gc`)이 함께 쓰는 작은 함수도 여기에 둔다.
 
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use fullops_core::layout;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
     ArchiveLine, ArchivedDispatch, ArchivedTask, Completion, Config, Derived, DispatchId, Hold,
@@ -15,17 +16,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 /// 기록 경로(설계 6.6절). 이 경로만 바꾼 커밋과 미커밋 변경은 코드 변경으로 세지 않는다.
-const RECORD_PATHS: [&str; 5] = [
-    ".fullops-squad/handovers/",
-    ".fullops-squad/docs/evaluations/",
-    ".fullops-squad/routes/",
-    ".fullops-squad/reviews/",
-    ".fullops-squad/PLANS.md",
-];
-
-pub(super) fn is_record(path: &str) -> bool {
-    RECORD_PATHS.iter().any(|p| path.starts_with(p))
-}
+pub(super) use fullops_core::layout::is_record;
 
 /// 옵션의 값.
 pub(super) fn value(args: &mut lexopt::Parser) -> Result<String, CliError> {
@@ -247,7 +238,7 @@ fn drift(repo: &Repo, git: &GitCli, config: &Config, completion: &Completion) ->
     .map(|a| a.to_string())
     .collect();
     argv.extend([format!("{sha}..{tip}"), "--".into(), ".".into()]);
-    argv.extend(RECORD_PATHS.iter().map(|p| format!(":(exclude){p}")));
+    argv.extend(layout::RECORDS.iter().map(|p| format!(":(exclude){p}")));
     let out = fullops_ext::run(&argv, &repo.root, Duration::from_secs(30), &[], None);
     let count: u32 = out.ok().then(|| out.stdout_text().trim().parse().ok())??;
     (count > 0).then_some(count)

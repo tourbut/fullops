@@ -3,6 +3,7 @@
 
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use fullops_core::layout;
 use fullops_core::messages::install as msg;
 use fullops_core::model::{
     Mode, Parallel, Refusal, RoleId, RoleKind, Routing, TestLevel, path_text,
@@ -208,7 +209,13 @@ pub(super) fn with_block(text: &str) -> Result<String, BrokenBlock> {
     )
 }
 
-fn is_symlink(path: &Path) -> bool {
+/// 레포 루트가 사용자 홈인가. 그러면 레포 폴더 `.fullops/`가 `~/.fullops/`(실행본·설치 기록)와 겹친다.
+pub(super) fn is_home(root: &Path) -> bool {
+    fullops_store::home()
+        .is_some_and(|home| fullops_store::same_path(&path_text(&home), &path_text(root)))
+}
+
+pub(super) fn is_symlink(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
 }
 
@@ -241,9 +248,9 @@ pub(super) fn add_templates(
     dry_run: bool,
     done: &mut Applied,
 ) -> Result<(), CliError> {
-    let squad = root.join(".fullops-squad");
+    let squad = root.join(layout::DIR);
     if is_symlink(&squad) {
-        done.refused.push(".fullops-squad".into());
+        done.refused.push(layout::DIR.into());
         return Ok(());
     }
     let keeps = assets::REPO_DIRS
@@ -254,7 +261,7 @@ pub(super) fn add_templates(
         .map(|(rel, text)| (rel.to_string(), *text));
     for (rel, text) in files.chain(keeps) {
         let path = squad.join(&rel);
-        let shown = format!(".fullops-squad/{rel}");
+        let shown = layout::at(&rel);
         // 폴더에 이미 파일이 있으면 .gitkeep은 필요 없다
         let dir_used = rel.ends_with(".gitkeep")
             && path
@@ -568,15 +575,24 @@ fn push_role_branches(
 pub fn run(ctx: &Ctx, parser: lexopt::Parser) -> Result<u8, CliError> {
     let args = parse_args(parser)?;
     let root = git_root(&ctx.start)?;
-    let config_path = root.join(".fullops-squad/fullops.toml");
-    if is_symlink(&root.join(".fullops-squad")) || is_symlink(&config_path) {
+    let config_path = root.join(layout::config_toml());
+    if is_symlink(&root.join(layout::DIR)) || is_symlink(&config_path) {
         return Err(CliError::Usage(
-            "`.fullops-squad`나 `fullops.toml`이 심볼릭 링크입니다. 링크 대상에는 쓰지 않습니다."
-                .into(),
+            "`.fullops`나 `fullops.toml`이 심볼릭 링크입니다. 링크 대상에는 쓰지 않습니다.".into(),
         ));
     }
+    // 사용자 홈의 `.fullops/`는 실행본과 설치 기록의 자리다(설계 6.4절)
+    if is_home(&root) {
+        return Err(CliError::Refused(vec![Refusal {
+            rule: "init",
+            reason: "레포 루트가 사용자 홈이다. 레포 폴더 `.fullops/`가 `~/.fullops/`와 겹친다"
+                .into(),
+            escape: "홈 폴더가 아닌 레포에서 실행한다".into(),
+            exit: 2,
+        }]));
+    }
     // Python판 레포에 새 표식을 만들면 두 판의 hook이 함께 돈다. 전환은 migrate가 한다
-    if root.join(".fullops-squad/fullops.json").exists() {
+    if root.join(layout::LEGACY_DIR).join("fullops.json").exists() {
         return Err(CliError::Refused(vec![Refusal {
             rule: "init",
             reason: "Python판(`.fullops-squad/fullops.json`)을 쓰는 레포다".into(),
@@ -600,8 +616,8 @@ pub fn run(ctx: &Ctx, parser: lexopt::Parser) -> Result<u8, CliError> {
     if before.as_deref() != Some(text.as_str()) {
         write_new(&config_path, &text, args.dry_run)?;
         match before {
-            Some(_) => done.updated.push(".fullops-squad/fullops.toml".into()),
-            None => done.created.push(".fullops-squad/fullops.toml".into()),
+            Some(_) => done.updated.push(layout::config_toml().into()),
+            None => done.created.push(layout::config_toml().into()),
         }
     }
     add_templates(&root, args.dry_run, &mut done)?;

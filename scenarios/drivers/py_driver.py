@@ -27,12 +27,14 @@ stdout에 JSON 하나를 낸다. 시나리오는 {"name", "steps": [{"act", "ver
 - worker_reports: 위의 넷 뒤에 worker가 `orca orchestration send --type worker_done`을 보내고 lead가 받는다.
 - lead_waits: `orca_wait.py --run …`(가짜 Orca는 기다리지 않으므로 확인 주기를 0.001분으로 준다).
 - lead_merges: `integration.py status`로 SHA를 찾고 `review.py need`, 기본 브랜치 병합, push, 역할 워크트리 동기화, PLANS.md 기록.
-- runs_fullops: 1.24.0의 스킬이 같은 일에 시키던 스크립트로 옮긴다. `lint` → `lint.py`, `context` → `jev_context.py`(오프라인), `packet build` → `jev_packet.py`,
+- runs_fullops: 1.24.0의 스킬이 같은 일에 시키던 스크립트로 옮긴다. `lint` → `lint.py`, `context` → `jev_context.py`(오프라인),
   `hold` → `integration.py hold`(통합 대기 기록의 메시지를 찾아), 사용자가 답한 뒤의 `review waive` → `review.py waive --decided-by user`.
   `decision add`·`answer`는 1.24.0에서 대화로 묻던 일이라 "n/a"다(답했다는 사실만 기억한다). 그 밖은 1.24.0에 대응이 없다. 판정 "n/a"로 적는다.
   단 `raw`인 `fullops migrate …`는 FULLOPS_FAKES 폴더의 새 판 실행본으로 실제로 돌린다(판정은 그대로 "n/a").
   전환·되돌린 레포에서 1.24.0의 hook이 무엇을 내는지 뒤 단계가 보게 하려는 것이다(N3).
 - runs_shell은 `fullops <하위 명령>`도 1.24.0의 hook에 그대로 넣는다(그 판정이 1.24.0이 실제로 낸 것이다).
+- 자리: 시나리오의 경로는 새 판의 자리(`.fullops/`)다. 1.24.0은 옛 자리(`.fullops-squad/`)를 쓰므로 단계의 글을 `old_place`로 옮겨 읽는다
+  (설계 13.6절의 표를 거꾸로 읽는다). 시나리오가 `.fullops-squad/`로 적은 경로(Python판 레포를 만드는 준비 단계)는 그대로다.
 - 설정: 1.24.0은 `.fullops-squad/fullops.json`을 읽는다. `fullops.toml`을 쓰는 준비 동사(`file`)는 fullops.json의 mode·primary_role·
   primary_branch·test_level을 바꾸고(TOML로 읽히지 않으면 깨진 JSON을 쓴다), 에이전트가 `fullops.toml`을 쓰는 단계는 1.24.0의 복구 명령
   `setup.py`로 옮긴다.
@@ -68,8 +70,38 @@ SHELL = {'claude': 'Bash', 'codex': 'Bash', 'grok': 'run_terminal_command'}
 SUBAGENT = {'claude': ('Agent', 'prompt'), 'codex': ('spawn_agent', 'message'), 'grok': ('spawn_subagent', 'prompt')}
 CONFIG, CONFIG_JSON = '.fullops-squad/fullops.toml', '.fullops-squad/fullops.json'
 OPERATING = ('mode', 'primary_role', 'primary_branch', 'test_level')  # 1.24.0의 fullops.json에도 있는 운영 값
-PACKET_FLAGS = {'--role': '--role', '--seed': '--seeds', '--update-doc': '--update-docs', '--required': '--required',
-                '--decisions': '--decisions'}  # fullops packet build → jev_packet.py
+# 새 자리의 경로 → 1.24.0의 자리. 위에서부터 먼저 맞는 것을 쓴다. 사용자 홈의 `~/.fullops/`(시나리오의 `../home/.fullops/`)는 레포 폴더가 아니다
+_KEY = r'([A-Za-z0-9][A-Za-z0-9._-]*)'
+OLD_PLACE = tuple((re.compile(r'(?<!~/)(?<!home/)' + new), old) for new, old in (
+    (r'\.fullops/tasks/' + _KEY + r'/qa/', r'.fullops-squad/docs/evaluations/qa-reports/\1-test/'),
+    (r'\.fullops/tasks/' + _KEY + r'/route\.json', r'.fullops-squad/routes/\1.json'),
+    (r'\.fullops/tasks/' + _KEY + r'/request\.md', r'.fullops-squad/routes/\1.request.md'),
+    (r'\.fullops/tasks/' + _KEY + r'/reviews/', r'.fullops-squad/reviews/\1/'),
+    (r'\.fullops/tasks/' + _KEY + r'/([a-z][a-z0-9_-]*\.r\d+\.md)', r'.fullops-squad/handovers/logs/\1.\2'),
+    (r'\.fullops/inbox/', '.fullops-squad/handovers/'),
+    (r'\.fullops/config/lint\.json', '.fullops-squad/lint/lint.json'),
+    (r'\.fullops/config/review\.json', '.fullops-squad/review/rule.json'),
+    (r'\.fullops/guide/lint\.md', '.fullops-squad/lint/README.md'),
+    (r'\.fullops/guide/roles/', '.fullops-squad/contexts/'),
+    (r'\.fullops/guide/agents/', '.fullops-squad/docs/agents/'),
+    (r'\.fullops/guide/', '.fullops-squad/'),
+    (r'\.fullops/templates/handover\.md', '.fullops-squad/handovers/_TEMPLATE.md'),
+    (r'\.fullops/', '.fullops-squad/'),
+))
+
+
+def old_place(value):
+    """단계의 글에 든 새 자리 경로를 1.24.0의 자리로 옮긴다."""
+    if isinstance(value, str):
+        for new, old in OLD_PLACE:
+            value = new.sub(old, value)
+        return value
+    if isinstance(value, list):
+        return [old_place(item) for item in value]
+    if isinstance(value, dict):
+        return {key: old_place(item) for key, item in value.items()}
+    return value
+
 
 
 def quote(arg):
@@ -647,17 +679,6 @@ class Driver:
             level = ['--level', option('--level')] if '--level' in args else []
             return self.cli(act, who, ['python3', self.script('lint.py'), '--repo', repo, '--from', option('--from') or self.base(),
                                        *level], env=env)[0]
-        if args[:2] == ['packet', 'build'] and len(args) > 2:
-            grouped, rest = {}, []
-            words = iter(args[3:])
-            for word in words:
-                if word in PACKET_FLAGS:
-                    grouped.setdefault(PACKET_FLAGS[word], []).append(next(words))
-                else:
-                    rest.append(word)
-            converted = [w for flag, values in grouped.items() for w in (flag, *values)]
-            return self.cli(act, who, ['python3', self.script('jev_packet.py'), '--repo', repo, '--key', args[2],
-                                       *converted, *rest], env=env)[0]
         if args[:1] == ['context'] and len(args) > 1:  # 인자 모양이 같다(--role, --paths, --required, --force)
             return self.cli(act, who, ['python3', self.script('jev_context.py'), '--repo', repo, '--key', args[1], *args[2:]],
                             env=env)[0]
@@ -924,7 +945,7 @@ def main():
             out = driver.bench(int(sys.argv[2]))
         else:
             steps = []
-            for step in scenario.get('step', []):
+            for step in map(old_place, scenario.get('step', [])):
                 driver.ms = 0.0
                 try:
                     done = driver.step(step)

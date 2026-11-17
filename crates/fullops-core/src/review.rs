@@ -78,7 +78,7 @@ pub fn globs(patterns: &[String]) -> globset::GlobSet {
     set.build().unwrap_or_else(|_| globset::GlobSet::empty())
 }
 
-/// `review/rule.json`. 1.24.0의 형식 그대로 읽는다. `include`는 쓰지 않는다(대상은 바뀐 파일 전부다).
+/// `config/review.json`. 1.24.0의 형식 그대로 읽는다. `include`는 쓰지 않는다(대상은 바뀐 파일 전부다).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct RuleFile {
@@ -154,17 +154,11 @@ pub struct ReviewFinding {
 }
 
 const SKIP_REASON: &str = "검증 증거·하네스 기록이다. 파일마다 열람하지 않는다.";
-const MEDIA: &[&str] = &[
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mov", ".log",
-];
 
 /// 리뷰 대상 하나(설계 8.9절 `targets.json`). `status`는 `git diff --name-status`의 첫 글자다.
 pub fn target_file(path: &str, status: char, rules: &RuleFile) -> TargetFile {
     let lower = path.to_ascii_lowercase();
-    let record = path.starts_with(".fullops-squad/handovers/logs/")
-        || path.starts_with(".fullops-squad/routes/")
-        || lower.ends_with(".bak")
-        || (path.contains("qa-reports/") && MEDIA.iter().any(|ext| lower.ends_with(ext)));
+    let record = crate::layout::is_record(path) || lower.ends_with(".bak");
     let skipped = record || globs(&rules.exclude).is_match(path);
     let matching = |r: &&PathRule| globs(std::slice::from_ref(&r.path)).is_match(path);
     TargetFile {
@@ -393,9 +387,11 @@ mod tests {
         for skipped in [
             "ui/a.snap",
             "old/a.py.bak",
-            ".fullops-squad/routes/A-1.json",
-            ".fullops-squad/handovers/logs/A-1.dev.r0.md",
-            ".fullops-squad/docs/evaluations/qa-reports/A-1-test/shot.PNG",
+            ".fullops/tasks/A-1/route.json",
+            ".fullops/tasks/A-1/dev.r0.md",
+            ".fullops/tasks/A-1/qa/shot.PNG",
+            ".fullops/inbox/to_dev.md",
+            ".fullops/PLANS.md",
         ] {
             assert_eq!(
                 file(skipped).preset.as_deref(),

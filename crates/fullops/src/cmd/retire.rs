@@ -5,6 +5,7 @@
 
 use crate::cli::{self, CliError, Ctx, EXIT_HUMAN, EXIT_OK, EXIT_REFUSED};
 use fullops_core::deps::normalize_source;
+use fullops_core::layout;
 use fullops_core::model::{Deps, HostId, Known, Refusal, path_text};
 use fullops_ext::{Git, GitCli, hosts};
 use serde_json::{Value, json};
@@ -149,7 +150,7 @@ fn repo_blockers(repos: &[PathBuf]) -> (Vec<String>, usize) {
             Known::Yes(list) => {
                 seen += list.len();
                 for wt in list {
-                    let marker = wt.path.join(".fullops-squad").join("fullops.json");
+                    let marker = wt.path.join(layout::LEGACY_DIR).join("fullops.json");
                     if marker.is_file() {
                         blockers.push(format!("옛 표식이 남았다: {}", marker.display()));
                     }

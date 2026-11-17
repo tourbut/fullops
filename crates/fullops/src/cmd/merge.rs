@@ -12,6 +12,7 @@ use super::sync::{self, SyncReport};
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK, session_handle};
 use crate::hook::changes::{self, GitGate};
+use fullops_core::layout;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
     AckBy, Completion, Decision, DecisionId, DecisionStatus, Derived, Dispatch, DispatchId,
@@ -254,7 +255,7 @@ fn record(
     sha: &Sha,
     body: &[String],
 ) -> Result<(), CliError> {
-    let plan_path = base.repo_root.join(".fullops-squad").join("PLANS.md");
+    let plan_path = base.repo_root.join(layout::plans());
     let before = std::fs::read_to_string(&plan_path).unwrap_or_default();
     let mut text = before.clone();
     let plan = fullops_core::parse_plan(&text, assets::PLANS_MD);
@@ -312,10 +313,7 @@ fn record(
         std::fs::write(&plan_path, text)?;
     }
     // shortcut: lead가 기본 브랜치 밖(coordinator 브랜치)에 있으면 lead 체크아웃의 리뷰 파일은 이 커밋에 들어가지 않는다, 그 배치를 쓰는 레포가 생기면 옮겨 넣는다
-    let paths = [
-        ".fullops-squad/PLANS.md".to_string(),
-        format!(".fullops-squad/reviews/{key}"),
-    ];
+    let paths = [layout::plans().to_string(), layout::reviews_dir(key)];
     let message = format!("fullops: 병합 기록 {key}\n\n{}", body.join("\n"));
     base.commit_only(&paths, &message)
         .map_err(|e| CliError::Internal(format!("병합 기록 커밋을 만들지 못했습니다: {e}")))?;

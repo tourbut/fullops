@@ -98,7 +98,7 @@ export function snapshot(workspaces, focus) {
       repos.set(id, repo)
     }
     repo.workspaces.push({ name: ws.name ?? null, branch: ws.branch ?? null })
-    repo.active ||= stat(path.join(found.root, '.fullops-squad', 'fullops.toml'))?.isFile() === true
+    repo.active ||= stat(path.join(found.root, '.fullops', 'fullops.toml'))?.isFile() === true
   }
   // 활성 표식도 status.json도 없는 레포는 fullops와 무관하다.
   const list = [...repos.values()].filter((repo) => repo.active || repo.state !== 'none')

@@ -1,6 +1,6 @@
 //! PreToolUse 규칙의 `check`(설계 7.5절). 위에서 아래로 평가하고 먼저 걸린 거부 하나를 낸다.
 
-use super::decide::{HANDOVERS, QA_REPORTS};
+use super::decide::{INBOX, TASKS};
 use super::{Effect, Finding, call, hit, hit_case};
 use crate::config::is_code;
 use crate::facts::{CommitScope, Facts};
@@ -17,7 +17,7 @@ const RECOVERY: [&str; 9] = [
 const MEDIA: [&str; 8] = [
     ".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov",
 ];
-pub(super) const CONFIG: &str = ".fullops-squad/fullops.toml";
+pub(super) const CONFIG: &str = ".fullops/fullops.toml";
 /// 셸에서 작업 위치를 옮기는 명령(bash·PowerShell). T-09가 `git add`의 상대 경로를 풀 수 없게 된다.
 const MOVES: [&str; 6] = [
     "cd",
@@ -28,10 +28,10 @@ const MOVES: [&str; 6] = [
     "push-location",
 ];
 
-/// `handovers/` 바로 아래의 `.md` 파일 이름. `_TEMPLATE.md`는 뺀다.
+/// `inbox/` 바로 아래의 `.md` 파일 이름.
 fn handover_name(rel: &str) -> Option<&str> {
-    let name = rel.strip_prefix(HANDOVERS)?;
-    (!name.contains('/') && name.ends_with(".md") && name != "_TEMPLATE.md").then_some(name)
+    let name = rel.strip_prefix(INBOX)?;
+    (!name.contains('/') && name.ends_with(".md")).then_some(name)
 }
 
 /// `to_<역할 문법>.md`의 역할.
@@ -134,7 +134,7 @@ pub(super) fn t04(_input: &HookInput, facts: &mut dyn Facts) -> Finding {
         return hit(
             key.as_str(),
             vec![format!(
-                "과제 {key}의 분류 기록(`routes/{key}.json`)이 없다"
+                "과제 {key}의 분류 기록(`tasks/{key}/route.json`)이 없다"
             )],
         );
     };
@@ -215,7 +215,7 @@ pub(super) fn t07(input: &HookInput, facts: &mut dyn Facts) -> Finding {
     };
     let none = globset::GlobSet::empty();
     for path in call::target_paths(input, facts) {
-        if !path.starts_with(".fullops-squad/") && is_code(&path, &code, &none) {
+        if crate::layout::inside(&path).is_none() && is_code(&path, &code, &none) {
             return hit(path.clone(), vec![path]);
         }
     }
@@ -301,16 +301,12 @@ pub(super) fn t09(input: &HookInput, facts: &mut dyn Facts) -> Finding {
     for path in &paths {
         let lower = path.to_lowercase();
         let media = MEDIA.iter().any(|ext| lower.ends_with(ext)) && !path.contains("/raw/");
-        let Some((folder, inner)) = path
-            .strip_prefix(QA_REPORTS)
-            .filter(|_| media)
-            .and_then(|rest| rest.split_once('/'))
-        else {
+        let Some((key, inner)) = crate::layout::qa_parts(path).filter(|_| media) else {
             continue;
         };
-        let report = reports.entry(folder.to_string()).or_insert_with(|| {
-            facts.file_text(&root.join(QA_REPORTS).join(folder).join("report.md"))
-        });
+        let report = reports
+            .entry(key.to_string())
+            .or_insert_with(|| facts.file_text(&root.join(crate::layout::qa_report(key))));
         match report {
             Known::Yes(Some(text)) if text.contains(inner) => {}
             Known::Yes(_) => unlinked.push(path.clone()),
@@ -334,36 +330,23 @@ fn is_round(segment: &str) -> bool {
     numbered || matches!(upper.as_str(), "FIX" | "RECHECK" | "RETEST" | "LOWS")
 }
 
-/// T-10
+/// T-10: 차수 이름의 새 과제 폴더(`tasks/<KEY>-FIX/qa/`)에 QA 증거를 쓰는데 같은 과제의 폴더(`tasks/<KEY>/`)가 이미 있다.
 pub(super) fn t10(input: &HookInput, facts: &mut dyn Facts) -> Finding {
-    let qa = call::root().join(QA_REPORTS);
+    let tasks = call::root().join(TASKS);
     for path in call::target_paths(input, facts) {
-        let Some((folder, _)) = path
-            .strip_prefix(QA_REPORTS)
-            .and_then(|rest| rest.split_once('/'))
-        else {
+        let Some((folder, _)) = crate::layout::qa_parts(&path) else {
             continue;
         };
-        if facts.path_exists(&qa.join(folder)) != Known::Yes(false) {
+        if facts.path_exists(&tasks.join(folder)) != Known::Yes(false) {
             continue;
         }
-        let key = folder
-            .strip_suffix("-test")
-            .or(folder.strip_suffix("-review"))
-            .unwrap_or(folder);
-        let parts: Vec<&str> = key.split('-').collect();
+        let parts: Vec<&str> = folder.split('-').collect();
         let Some(at) = (1..parts.len()).find(|i| parts.get(*i).is_some_and(|p| is_round(p))) else {
             continue;
         };
         let base = parts.get(..at).unwrap_or_default().join("-");
-        for existing in [
-            base.clone(),
-            format!("{base}-test"),
-            format!("{base}-review"),
-        ] {
-            if facts.path_exists(&qa.join(&existing)) == Known::Yes(true) {
-                return hit(folder, vec![folder.to_string(), existing]);
-            }
+        if facts.path_exists(&tasks.join(&base)) == Known::Yes(true) {
+            return hit(folder, vec![folder.to_string(), base]);
         }
     }
     Finding::None

@@ -4,6 +4,7 @@ use super::dispatch::{usage, value};
 use super::find::{path_refusal, repo_path};
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::flow::refusal;
+use fullops_core::layout;
 use fullops_core::model::{
     Config, DecidedBy, Known, Origin, RoleId, RoleKind, Route, RouteClass, RouteTuple, Routing,
     TaskKey, path_text, sha256_hex,
@@ -75,11 +76,7 @@ fn classify(
     if workers.is_empty() {
         return Ok(fallback("worker 역할이 없다".into()));
     }
-    let index = repo
-        .squad()
-        .join("docs")
-        .join("deliverables")
-        .join("README.md");
+    let index = repo.root.join(layout::deliverables_index());
     let docs = fullops_core::parse_deliverable_index(
         &fullops_store::read_text(&index)
             .yes()
@@ -288,10 +285,11 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             );
         }
     };
-    // 읽지 못한 기록을 '없음'으로 보면 tuple·requires_packet·이력을 잃고 덮어쓴다
+    // 읽지 못한 기록을 '없음'으로 보면 tuple·이력을 잃고 덮어쓴다
     let Known::Yes(existing) = fullops_store::read_route(repo, &key) else {
         return Err(usage(format!(
-            "`.fullops-squad/routes/{key}.json`을 읽을 수 없다. JSON을 고치거나 다른 이름으로 옮긴 뒤 다시 분류한다."
+            "`{}`을 읽을 수 없다. JSON을 고치거나 다른 이름으로 옮긴 뒤 다시 분류한다.",
+            layout::route(&key)
         )));
     };
     let blank = |class, role: Option<RoleId>, decided_by| Route {
@@ -308,7 +306,6 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         probabilities: BTreeMap::new(),
         thresholds: BTreeMap::new(),
         tuples: BTreeMap::new(),
-        requires_packet: false,
         created_at: fullops_store::now(),
         history: Vec::new(),
     };
@@ -487,7 +484,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     // `--request "<글>"`도 기록 옆에 남긴다: 인박스 없이 받는 설계 역할은 이 파일로 할 일을 안다(준비 커밋에 들어간다)
     route.request_file = match (&request, request_file) {
         (Some(text), _) if fullops_core::explore::sendable_text(text) => {
-            let file = format!(".fullops-squad/routes/{key}.request.md");
+            let file = layout::request(&key);
             fullops_store::write_atomic(&repo.root.join(&file), text.as_bytes())?;
             Some(file)
         }
@@ -507,20 +504,11 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         ("role".to_string(), ROLE),
         ("deliverable".to_string(), DELIVERABLE),
     ]);
-    match existing {
-        // 재분류: tuple 기록과 requires_packet은 잇고, 이전 객체는 history 끝에 넣는다
-        Some(mut old) => {
-            route.tuples = old.tuples.clone();
-            route.requires_packet = old.requires_packet;
-            route.history = std::mem::take(&mut old.history);
-            route.history.push(old);
-        }
-        // 새 기록: 같은 키의 1.24.0 기록에서 켜져 있던 값만 옮긴다
-        None => {
-            let legacy = repo.explore_dir().join(format!("{key}-route.json"));
-            let old: Option<serde_json::Value> = fullops_store::read_json(&legacy).yes().flatten();
-            route.requires_packet = old.is_some_and(|v| v["requires_packet"] == true);
-        }
+    // 재분류: tuple 기록은 잇고, 이전 객체는 history 끝에 넣는다
+    if let Some(mut old) = existing {
+        route.tuples = old.tuples.clone();
+        route.history = std::mem::take(&mut old.history);
+        route.history.push(old);
     }
     match (tuple, &route.role) {
         (Some(tuple), Some(role)) => {

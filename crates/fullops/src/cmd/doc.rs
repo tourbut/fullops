@@ -2,7 +2,8 @@
 
 use crate::cli::{CliError, Ctx, EXIT_OK, EXIT_REFUSED};
 use fullops_core::frontmatter::{FmValue, FrontMatter, FrontMatterError, parse_front_matter};
-use fullops_core::lint_rules::{self as rules, DOC_STATUSES, SQUAD};
+use fullops_core::layout;
+use fullops_core::lint_rules::{self as rules, DOC_STATUSES};
 use fullops_core::model::{DeliverableRow, path_text};
 use fullops_store::Repo;
 use lexopt::prelude::*;
@@ -10,7 +11,7 @@ use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const INDEX: &str = ".fullops-squad/docs/deliverables/README.md";
+const INDEX: &str = layout::deliverables_index();
 
 pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     match args.next()? {
@@ -99,7 +100,7 @@ fn check(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     }
     let relative = |path: &Path| {
         let text = path_text(path.strip_prefix(&repo.root).unwrap_or(path));
-        text.strip_prefix(SQUAD).unwrap_or(&text).to_string()
+        layout::inside(&text).unwrap_or(&text).to_string()
     };
     let (mut errors, mut warnings, mut unwritten, mut lines) =
         (Vec::new(), Vec::new(), 0, Vec::new());
@@ -110,7 +111,7 @@ fn check(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         let sources: Vec<&str> = row
             .sources
             .iter()
-            .map(|s| s.strip_prefix(SQUAD).unwrap_or(s))
+            .map(|s| layout::inside(s).unwrap_or(s))
             .collect();
         if selected.is_some() {
             lines.push(format!(
@@ -211,22 +212,22 @@ fn stamp(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         )));
     }
     let path = path.ok_or_else(|| CliError::Usage("--path가 필요합니다.".into()))?;
-    // 경로는 `.fullops-squad` 기준이다. 레포 루트 기준으로 적은 것(`.fullops-squad/…`)도 받는다
+    // 경로는 `.fullops` 기준이다. 레포 루트 기준으로 적은 것(`.fullops/…`)도 받는다
     let path = path.replace('\\', "/");
     let relative = path.trim_start_matches("./");
-    let relative = relative.strip_prefix(SQUAD).unwrap_or(relative);
+    let relative = layout::inside(relative).unwrap_or(relative);
     if !relative.ends_with(".md")
         || relative.starts_with('/')
         || relative.contains(':')
         || relative.split('/').any(|part| part == "..")
     {
         return Err(CliError::Usage(format!(
-            "--path는 .fullops-squad 안의 Markdown 문서여야 합니다: {path}"
+            "--path는 .fullops 안의 Markdown 문서여야 합니다: {path}"
         )));
     }
     let repo = ctx.repo()?;
-    let target = repo.squad().join(relative);
-    let repo_path = format!("{SQUAD}{relative}");
+    let target = repo.dir().join(relative);
+    let repo_path = layout::at(relative);
 
     let text = match read_lossy(&target) {
         Ok(text) => text,

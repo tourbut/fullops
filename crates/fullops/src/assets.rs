@@ -2,14 +2,14 @@
 //! 아래 넷은 뼈대(묶음 A)가 둔 것이고 이름·파일 자리·표 머리·안내 문장을 동결 뒤 바꾸지 않는다(파서가 기댄다).
 //! 그 밖의 자산 파일과 상수는 묶음 F가 이 모듈에 덧붙인다.
 
-/// `.fullops-squad/PLANS.md`의 내장 템플릿. `parse_plan`·`read_plan`의 `template` 인자다.
+/// `.fullops/PLANS.md`의 내장 템플릿. `parse_plan`·`read_plan`의 `template` 인자다.
 pub const PLANS_MD: &str = include_str!("../assets/repo/PLANS.md");
 
 /// 인박스 본문의 내장 템플릿. `task new`가 쓰고 `done`의 R-04가 템플릿 안내 문장을 가리는 데 쓴다.
-pub const HANDOVER_TEMPLATE: &str = include_str!("../assets/repo/handovers/_TEMPLATE.md");
+pub const HANDOVER_TEMPLATE: &str = include_str!("../assets/repo/templates/handover.md");
 
-/// `.fullops-squad/lint/lint.json`의 내장 템플릿. `lint_excludes`의 `template_lint_json` 인자다.
-pub const LINT_JSON: &str = include_str!("../assets/repo/lint/lint.json");
+/// `.fullops/config/lint.json`의 내장 템플릿. `lint_excludes`의 `template_lint_json` 인자다.
+pub const LINT_JSON: &str = include_str!("../assets/repo/config/lint.json");
 
 /// 산출물 인덱스 `docs/deliverables/README.md`의 내장 템플릿. 인덱스 표의 기준이다.
 pub const DELIVERABLES_README: &str = include_str!("../assets/repo/docs/deliverables/README.md");
@@ -17,14 +17,15 @@ pub const DELIVERABLES_README: &str = include_str!("../assets/repo/docs/delivera
 /// 의존 목록의 내장 사본(설계 10.7절). `plugin/deps.toml`을 빌드할 때 읽은 글이고 `load_deps`의 `builtin` 인자다.
 pub const DEPS_TOML: &str = include_str!("../../../plugin/deps.toml");
 
-/// `rules/delegation.md`의 내장 템플릿(병렬 방침의 정본. 설계 8.15절).
-pub const DELEGATION_MD: &str = include_str!("../assets/repo/rules/delegation.md");
+/// `guide/rules/delegation.md`의 내장 템플릿(병렬 방침의 정본. 설계 8.15절).
+pub const DELEGATION_MD: &str = include_str!("../assets/repo/guide/rules/delegation.md");
 
 /// 1.24.0 템플릿의 `rules/delegation.md`(LF로 맞춘 글)의 sha256. `migrate`가 사람이 고친 흔적이 있는지 가린다.
 pub const DELEGATION_1_24_SHA256: &str =
     "b34ad71bceb0c81a90e53a2e900bc323095e5abf599dc4fe4059ee46367d2d4b";
 
-/// 새 템플릿과 글이 다른 1.24.0 템플릿 문서 `(상대 경로, LF로 맞춘 글의 sha256)`. `migrate`가 기본 글 그대로인 파일을 새 템플릿으로 바꾼다.
+/// 새 템플릿과 글이 다른 1.24.0 템플릿 문서 `(옛 자리 `.fullops-squad/` 기준 상대 경로, LF로 맞춘 글의 sha256)`. `migrate`가 기본 글 그대로인 파일을 새 템플릿으로 바꾼다.
+/// 새 템플릿은 `template_for`가 찾는다.
 pub const STOCK_1_24: &[(&str, &str)] = &[
     (
         "FULLOPS.md",
@@ -100,89 +101,142 @@ pub fn is_stock_1_24(rel: &str, text: &str) -> bool {
         .any(|body| fullops_core::model::sha256_hex(body.as_bytes()) == *stock)
 }
 
-/// `init`이 `.fullops-squad/` 아래에 없을 때만 만드는 파일 `(상대 경로, 내용)`.
+/// 옛 자리(`.fullops-squad/` 기준) 템플릿 문서의 새 내장 템플릿. `migrate --from-python`이 옛 자리에서 글을 바꿀 때 쓴다.
+pub fn template_for(old_rel: &str) -> Option<&'static str> {
+    let new = fullops_core::layout::moved(old_rel, &|_| false)?;
+    REPO_FILES
+        .iter()
+        .find(|(rel, _)| *rel == new)
+        .map(|(_, text)| *text)
+}
+
+/// 2.0.x까지의 템플릿 파일 자리(`.fullops-squad/` 기준). `migrate --from-python`이 옛 자리에 없는 것을 더한다.
+pub const LEGACY_FILES: &[&str] = &[
+    "FULLOPS.md",
+    "project.md",
+    "orca-agents.md",
+    "PLANS.md",
+    ".gitignore",
+    ".env.example",
+    "handovers/_TEMPLATE.md",
+    "lint/lint.json",
+    "lint/README.md",
+    "review/rule.json",
+    "review/_REPORT.md",
+    "rules/delegation.md",
+    "rules/common/README.md",
+    "rules/common/coding-style.md",
+    "rules/common/security.md",
+    "rules/common/testing.md",
+    "rules/common/ECC-LICENSE.txt",
+    "docs/deliverables/README.md",
+    "docs/agents/document-writing.md",
+    "docs/agents/domain.md",
+    "docs/agents/issue-tracker.md",
+    "docs/agents/triage-labels.md",
+    "docs/planning/intents/_TEMPLATE.md",
+];
+
+/// `init`이 `.fullops/` 아래에 없을 때만 만드는 파일 `(상대 경로, 내용)`. 트리는 설계 6.1절이다.
 pub const REPO_FILES: &[(&str, &str)] = &[
-    ("FULLOPS.md", include_str!("../assets/repo/FULLOPS.md")),
-    ("project.md", include_str!("../assets/repo/project.md")),
-    (
-        "orca-agents.md",
-        include_str!("../assets/repo/orca-agents.md"),
-    ),
     ("PLANS.md", PLANS_MD),
     (".gitignore", include_str!("../assets/repo/.gitignore")),
     (".env.example", include_str!("../assets/repo/.env.example")),
-    ("handovers/_TEMPLATE.md", HANDOVER_TEMPLATE),
-    ("lint/lint.json", LINT_JSON),
+    ("config/lint.json", LINT_JSON),
     (
-        "lint/README.md",
-        include_str!("../assets/repo/lint/README.md"),
+        "config/review.json",
+        include_str!("../assets/repo/config/review.json"),
     ),
     (
-        "review/rule.json",
-        include_str!("../assets/repo/review/rule.json"),
+        "guide/FULLOPS.md",
+        include_str!("../assets/repo/guide/FULLOPS.md"),
     ),
     (
-        "review/_REPORT.md",
-        include_str!("../assets/repo/review/_REPORT.md"),
-    ),
-    ("rules/delegation.md", DELEGATION_MD),
-    (
-        "rules/common/README.md",
-        include_str!("../assets/repo/rules/common/README.md"),
+        "guide/project.md",
+        include_str!("../assets/repo/guide/project.md"),
     ),
     (
-        "rules/common/coding-style.md",
-        include_str!("../assets/repo/rules/common/coding-style.md"),
+        "guide/orca-agents.md",
+        include_str!("../assets/repo/guide/orca-agents.md"),
     ),
     (
-        "rules/common/security.md",
-        include_str!("../assets/repo/rules/common/security.md"),
+        "guide/lint.md",
+        include_str!("../assets/repo/guide/lint.md"),
+    ),
+    ("guide/rules/delegation.md", DELEGATION_MD),
+    (
+        "guide/rules/common/README.md",
+        include_str!("../assets/repo/guide/rules/common/README.md"),
     ),
     (
-        "rules/common/testing.md",
-        include_str!("../assets/repo/rules/common/testing.md"),
+        "guide/rules/common/coding-style.md",
+        include_str!("../assets/repo/guide/rules/common/coding-style.md"),
     ),
     (
-        "rules/common/ECC-LICENSE.txt",
-        include_str!("../assets/repo/rules/common/ECC-LICENSE.txt"),
+        "guide/rules/common/security.md",
+        include_str!("../assets/repo/guide/rules/common/security.md"),
+    ),
+    (
+        "guide/rules/common/testing.md",
+        include_str!("../assets/repo/guide/rules/common/testing.md"),
+    ),
+    (
+        "guide/rules/common/ECC-LICENSE.txt",
+        include_str!("../assets/repo/guide/rules/common/ECC-LICENSE.txt"),
+    ),
+    (
+        "guide/agents/document-writing.md",
+        include_str!("../assets/repo/guide/agents/document-writing.md"),
+    ),
+    (
+        "guide/agents/domain.md",
+        include_str!("../assets/repo/guide/agents/domain.md"),
+    ),
+    (
+        "guide/agents/issue-tracker.md",
+        include_str!("../assets/repo/guide/agents/issue-tracker.md"),
+    ),
+    (
+        "guide/agents/triage-labels.md",
+        include_str!("../assets/repo/guide/agents/triage-labels.md"),
+    ),
+    ("templates/handover.md", HANDOVER_TEMPLATE),
+    (
+        "templates/review-report.md",
+        include_str!("../assets/repo/templates/review-report.md"),
+    ),
+    (
+        "templates/intent.md",
+        include_str!("../assets/repo/templates/intent.md"),
     ),
     ("docs/deliverables/README.md", DELIVERABLES_README),
-    (
-        "docs/agents/document-writing.md",
-        include_str!("../assets/repo/docs/agents/document-writing.md"),
-    ),
-    (
-        "docs/agents/domain.md",
-        include_str!("../assets/repo/docs/agents/domain.md"),
-    ),
-    (
-        "docs/agents/issue-tracker.md",
-        include_str!("../assets/repo/docs/agents/issue-tracker.md"),
-    ),
-    (
-        "docs/agents/triage-labels.md",
-        include_str!("../assets/repo/docs/agents/triage-labels.md"),
-    ),
-    (
-        "docs/planning/intents/_TEMPLATE.md",
-        include_str!("../assets/repo/docs/planning/intents/_TEMPLATE.md"),
-    ),
 ];
 
 /// 빈 채로 두는 폴더. `init`이 `.gitkeep`을 둔다.
 pub const REPO_DIRS: &[&str] = &[
-    "handovers/logs",
+    "inbox",
+    "tasks",
+    "guide/roles",
     "docs/design-docs/adr",
     "docs/design-docs/mockups",
-    "docs/evaluations/qa-reports",
+    "docs/evaluations/scenarios",
     "docs/exec-plans/phases",
     "docs/generated",
     "docs/operations",
+    "docs/planning/intents",
     "docs/planning/product-specs",
 ];
 
-/// `.fullops-squad/.gitignore`에 있어야 하는 줄. `init`의 템플릿에 있고 `migrate`가 없으면 더한다.
-pub const GITIGNORE_LINES: &[&str] = &["docs/evaluations/jev/history/"];
+/// `.fullops/.gitignore`의 템플릿 줄(주석 빼고). `migrate --layout`이 옮긴 `.gitignore`에 없는 줄을 더한다.
+pub fn ignore_lines() -> impl Iterator<Item = &'static str> {
+    include_str!("../assets/repo/.gitignore")
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+}
+
+/// `.fullops-squad/.gitignore`에 있어야 하는 줄(옛 자리. `migrate --from-python`이 쓴다). `init`의 템플릿에 있고 `migrate`가 없으면 더한다.
+/// 2.1.0부터 비었다(탐색 결과가 Git 공용 디렉터리로 가서 `docs/evaluations/jev/history/` 줄이 필요 없다).
+pub const GITIGNORE_LINES: &[&str] = &[];
 
 /// 엔트리 문서(`AGENTS.md`·`CLAUDE.md`·`GEMINI.md`)의 관리 블록. 셋 다 같은 글이다(설계 10.6절).
 pub const MANAGED_BLOCK: &str = include_str!("../assets/managed-block.md");
@@ -197,6 +251,7 @@ pub const RELEASES: &[(&str, &str)] = &[
     ("2.0.2", include_str!("../assets/releases/2.0.2.md")),
     ("2.0.3", include_str!("../assets/releases/2.0.3.md")),
     ("2.0.4", include_str!("../assets/releases/2.0.4.md")),
+    ("2.1.0", include_str!("../assets/releases/2.1.0.md")),
 ];
 
 #[cfg(test)]
@@ -224,11 +279,15 @@ mod tests {
         // 사람이 고친 글과 표에 없는 경로는 기본 글이 아니다
         assert!(!is_stock_1_24(rel, &format!("{stock}- 사람이 더한 줄\n")));
         assert!(!is_stock_1_24("project.md", stock));
+        // 옛 자리의 템플릿 파일은 새 템플릿 전부와 하나씩 맞는다
+        assert_eq!(LEGACY_FILES.len(), REPO_FILES.len());
+        for rel in LEGACY_FILES {
+            assert!(template_for(rel).is_some(), "{rel}");
+        }
         // 표의 경로에는 모두 새 템플릿이 있고 새 템플릿은 1.24.0의 글이 아니다
         for (rel, _) in STOCK_1_24 {
-            let new = REPO_FILES.iter().find(|(path, _)| path == rel);
             assert!(
-                new.is_some_and(|(_, text)| !is_stock_1_24(rel, text)),
+                template_for(rel).is_some_and(|text| !is_stock_1_24(rel, text)),
                 "{rel}"
             );
         }

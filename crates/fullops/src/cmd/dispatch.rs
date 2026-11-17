@@ -5,13 +5,14 @@ use crate::cli::{Caller, CliError, Ctx, EXIT_OK, session_handle};
 use fullops_core::config::PolicyError;
 use fullops_core::facts::{CommitScope, Facts};
 use fullops_core::flow::{self, ReviewSpec, SpecInput, refusal};
+use fullops_core::layout;
 use fullops_core::messages;
 use fullops_core::model::{
     Actor, Caps, ChangeSet, Config, Decision, DecisionId, DecisionStatus, Dispatch, DispatchId,
     DispatchReason, DispatchRequest, Extra, HeadRef, HostId, Inbox, Known, Landing, ModelTuple,
-    Need, Origin, PacketCheck, Plan, Purpose, Refusal, ReviewEvidence, RoleId, RoleKind, Route,
-    RouteTuple, Run, RunId, RunOwner, Session, SessionMode, Sha, SkillText, SnapshotState, State,
-    TaskKey, TestLevel, WorkOutcome, caps_of, orca_wakes, path_text, same_path, sha256_hex,
+    Need, Origin, Plan, Purpose, Refusal, ReviewEvidence, RoleId, RoleKind, Route, RouteTuple, Run,
+    RunId, RunOwner, Session, SessionMode, Sha, SkillText, SnapshotState, State, TaskKey,
+    TestLevel, WorkOutcome, caps_of, orca_wakes, path_text, same_path, sha256_hex,
 };
 use fullops_ext::{
     ExtError, Git, GitCli, MergeMode, MergeOutcome, Orca, OrcaCli, StartOutcome, StartRequest,
@@ -204,16 +205,9 @@ pub(super) fn step_refusal(step: &'static str, reason: String, escape: &str) -> 
     }])
 }
 
-fn squad_path(rest: &str) -> String {
-    format!(".fullops-squad/{rest}")
-}
-
-/// 인박스의 차수가 역할 브랜치에서 완료 기록(`logs/<KEY>.<역할>.r<N>.md`)이 됐는가(D-02, `leftover`, reopen의 H-03).
+/// 인박스의 차수가 역할 브랜치에서 완료 기록(`tasks/<KEY>/<역할>.r<N>.md`)이 됐는가(D-02, `leftover`, reopen의 H-03).
 pub(super) fn round_logged(git: &GitCli, branch: &str, inbox: &Inbox) -> bool {
-    let log = squad_path(&format!(
-        "handovers/logs/{}.{}.r{}.md",
-        inbox.key, inbox.role, inbox.round
-    ));
+    let log = layout::handover_log(&inbox.key, &inbox.role, inbox.round);
     git.rev_parse(&format!("refs/heads/{branch}:{log}"))
         .yes()
         .is_some()
@@ -268,7 +262,7 @@ fn publish_records(repo: &Repo, config: &Config, git: &GitCli) -> Result<(), Cli
 /// 기본 브랜치가 이 역할의 인박스를 완료 기록으로 옮긴 뒤(병합 전 `task reopen`) 다음 차수 인박스를 만들었으면
 /// 옮긴 커밋이 먼저다. 한 번에 병합하면 rename 감지가 새 인박스의 내용을 이전 차수의 완료 기록에 섞는다.
 pub(super) fn merge_steps(target: &Path, role: &RoleId, base_tip: &Sha) -> Vec<String> {
-    let inbox = squad_path(&format!("handovers/to_{role}.md"));
+    let inbox = layout::inbox(role);
     let range = format!("HEAD..{base_tip}");
     let argv = [
         "git",
@@ -361,55 +355,6 @@ fn sync_target(
     }
     ctx.update_state(None, |s| {
         s.sync_pending.remove(role);
-    })
-}
-
-/// 패킷 조건이 참일 때의 `check_packet`. 걸린 J 규칙을 한 줄로 돌려준다(D-12와 R-10이 함께 쓴다).
-pub(super) fn packet_findings(
-    target: &Repo,
-    mode: PacketCheck,
-    key: &TaskKey,
-    role: &RoleId,
-) -> Option<String> {
-    // 읽지 못한 기록을 '없음'으로 내리면 패킷 검사를 건너뛴다
-    let (Known::Yes(route), Known::Yes(packet), Known::Yes(outcomes)) = (
-        fullops_store::read_route(target, key),
-        fullops_store::read_packet(target, key),
-        fullops_store::read_packet_outcomes(target, key),
-    ) else {
-        return Some(format!(
-            "`routes/{key}.json`이나 `{key}-packet.json`, 패킷 처리 기록을 읽을 수 없다"
-        ));
-    };
-    if packet.is_none() && !route.as_ref().is_some_and(|r| r.requires_packet) {
-        return None;
-    }
-    let instruction = fullops_store::read_text(&target.inbox_path(role))
-        .yes()
-        .flatten();
-    let round = fullops_store::read_inbox(target, role)
-        .yes()
-        .flatten()
-        .map_or(0, |i| i.round);
-    let git = GitCli::cli(target.root.clone());
-    let found = fullops_core::check_packet(
-        mode,
-        route.as_ref(),
-        packet.as_ref(),
-        outcomes.as_ref(),
-        instruction.as_deref(),
-        key,
-        role,
-        round,
-        &mut |head| git.is_ancestor(head, "HEAD"),
-        &mut |path| fullops_store::read_text(&target.root.join(path)),
-    );
-    (!found.is_empty()).then(|| {
-        found
-            .iter()
-            .map(|r| format!("{} {}", r.rule, r.reason))
-            .collect::<Vec<_>>()
-            .join(" / ")
     })
 }
 
@@ -679,7 +624,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         && inbox.key == key
     {
         let finished = round_logged(&git, branch, &inbox);
-        let log = squad_path(&format!("handovers/logs/{key}.{role}.r{}.md", inbox.round));
+        let log = layout::handover_log(&key, role, inbox.round);
         if finished && unreported(&state, &key, role, &git, &log) {
             resend = Some(log);
         } else if finished {
@@ -720,9 +665,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
 
     // spec의 재료. 인박스는 준비 커밋과 동기화로 대상 워크트리에 간다
     let handover = (work && lead_inbox.is_some()).then(|| {
-        let file = resend
-            .clone()
-            .unwrap_or_else(|| squad_path(&format!("handovers/to_{role}.md")));
+        let file = resend.clone().unwrap_or_else(|| layout::inbox(&role));
         path_text(&target.join(file))
     });
     let base = lead_inbox
@@ -735,7 +678,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     let fixed_bin = fullops_store::fixed_bin().map_or("fullops".to_string(), |p| path_text(&p));
     // 인박스 없이 받는 설계 역할은 요청 글로 할 일을 안다
     let blank = handover.is_none() && work && !req.sub;
-    let spec_of = |packet: bool| {
+    let spec_of = || {
         flow::spec(&SpecInput {
             key: &key,
             purpose: req.purpose,
@@ -744,9 +687,6 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
             base: &base,
             test_level: config.test_level,
             parallel: config.parallel,
-            packet: packet
-                .then(|| squad_path(&format!("docs/evaluations/jev/{key}-packet.json")))
-                .as_deref(),
             request: blank
                 .then(|| route.as_ref().and_then(|r| r.request_file.as_deref()))
                 .flatten(),
@@ -769,12 +709,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     let new_terminal = req.terminal.is_none();
     let effort = flow::orca_effort(&tuple, config.parallel, new_terminal);
     if dry_run {
-        let spec = spec_of(
-            fullops_store::read_packet(repo, &key)
-                .yes()
-                .flatten()
-                .is_some(),
-        );
+        let spec = spec_of();
         ctx.print(
             &format!(
                 "배정 계획(실행하지 않는다)\n대상 워크트리: {}\nagent/model/effort: {}/{}/{effort}\nspec: {spec}",
@@ -826,7 +761,6 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     };
     ctx.update_state(None, add_run)?;
 
-    let mut packet = false;
     if !req.sub {
         // 2. 준비 커밋. tuple 기록이 이 커밋에 들어가도록 먼저 쓴다
         if let Some(mut route) = route.clone() {
@@ -850,16 +784,11 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
                 fullops_store::write_route(repo, &route)?;
             }
         }
-        let jev = |name: &str| squad_path(&format!("docs/evaluations/jev/{key}-{name}.json"));
         let paths = [
-            squad_path(&format!("routes/{key}.json")),
-            squad_path(&format!("routes/{key}.request.md")),
-            squad_path(&format!("handovers/to_{role}.md")),
-            squad_path("PLANS.md"),
-            jev("find"),
-            jev("documents-find"),
-            jev("context"),
-            jev("packet"),
+            layout::route(&key),
+            layout::request(&key),
+            layout::inbox(&role),
+            layout::plans().to_string(),
         ];
         git.commit_only(&paths, &format!("fullops: 배정 준비 {key}"))?;
         // 3. 기록 게시
@@ -870,7 +799,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
                 CliError::External(format!("기본 브랜치 `{}`를 읽지 못했다.", config.base))
             })?;
             sync_target(ctx, config, &role, &target, &base_tip)?;
-            // 5. 기준선과 패킷 확인
+            // 5. 기준선 확인
             let tgit = GitCli::cli(target.clone());
             let behind = |rev: &str| tgit.is_ancestor(rev, "HEAD") == Known::Yes(false);
             if behind(&base_ref) || behind(&config.base_ref()) {
@@ -893,30 +822,6 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
                     ),
                     2,
                 )]));
-            }
-            // 보고만 다시 보낼 차수의 패킷은 이미 전달됐고 인박스는 완료 기록이 됐다
-            if let (true, Some(_), Some(target_repo)) = (
-                work && resend.is_none(),
-                &handover,
-                fullops_store::discover(&target)?,
-            ) {
-                packet = fullops_store::read_packet(&target_repo, &key)
-                    .yes()
-                    .flatten()
-                    .is_some()
-                    || route.as_ref().is_some_and(|r| r.requires_packet);
-                if let Some(found) =
-                    packet_findings(&target_repo, PacketCheck::Delivery, &key, &role)
-                {
-                    return Err(CliError::Refused(vec![refusal(
-                        "D-12",
-                        &[&found],
-                        &format!(
-                            "`fullops packet build {key} --role {role} --write-inbox` 뒤 다시 배정"
-                        ),
-                        2,
-                    )]));
-                }
             }
             // 6. 환경 파일 연결
             for linked in super::env::link_env(&main_checkout(repo), &target) {
@@ -989,7 +894,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     })?;
     let start = StartRequest {
         run: run.clone(),
-        spec: spec_of(packet),
+        spec: spec_of(),
         worktree: target.clone(),
         target: match &req.terminal {
             Some(terminal) => StartTarget::Existing {

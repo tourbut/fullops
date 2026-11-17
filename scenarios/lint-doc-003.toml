@@ -1,4 +1,4 @@
-name = "DOC-003: 바뀐 .fullops-squad Markdown의 공통 front matter"
+name = "DOC-003: 바뀐 .fullops Markdown의 공통 front matter"
 origin = "8.11절 9번 DOC-003"
 
 [setup]
@@ -7,7 +7,7 @@ roles = {}
 
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
 
 [[step]]
@@ -18,10 +18,10 @@ message = "기준"
 act = "git"
 args = ["tag", "base"]
 
-# 검출: front matter가 없는 일반 문서. 코드 lint의 exclude(contexts/**)와 별도로 적용한다
+# 검출: front matter가 없는 일반 문서. 코드 lint의 exclude(guide/roles/**)와 별도로 적용한다
 [[step]]
 act = "file"
-path = ".fullops-squad/contexts/dev.md"
+path = ".fullops/guide/roles/dev.md"
 content = "# dev 맥락\n"
 
 [[step]]
@@ -31,12 +31,12 @@ act = "commits"
 act = "runs_fullops"
 raw = true
 args = ["lint", "--from", "base"]
-expect = { verdict = "deny", exit = 2, escape = "ERROR DOC-003 .fullops-squad/contexts/dev.md front matter: front matter 없음" }
+expect = { verdict = "deny", exit = 2, escape = "ERROR DOC-003 .fullops/guide/roles/dev.md front matter: front matter 없음" }
 
 # 검출: 필수 필드가 빠졌다
 [[step]]
 act = "file"
-path = ".fullops-squad/contexts/dev.md"
+path = ".fullops/guide/roles/dev.md"
 content = """
 ---
 title: dev 맥락
@@ -56,10 +56,10 @@ raw = true
 args = ["lint", "--from", "base"]
 expect = { verdict = "deny", exit = 2, escape = "필수 필드 없음: owner" }
 
-# 비검출: 공통 front matter가 맞는 문서, 인박스·로그·템플릿·rules/·FULLOPS.md·PLANS.md, .fullops-squad 밖의 Markdown
+# 비검출: 공통 front matter가 맞는 문서, 인박스·로그·템플릿·rules/·FULLOPS.md·PLANS.md, .fullops 밖의 Markdown
 [[step]]
 act = "file"
-path = ".fullops-squad/contexts/dev.md"
+path = ".fullops/guide/roles/dev.md"
 content = """
 ---
 title: dev 맥락
@@ -73,32 +73,32 @@ summary: dev 역할이 먼저 읽는 글
 
 [[step]]
 act = "file"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 content = "# 인박스\n"
 
 [[step]]
 act = "file"
-path = ".fullops-squad/handovers/logs/PAY-1.dev.r0.md"
+path = ".fullops/tasks/PAY-1/dev.r0.md"
 content = "# 로그\n"
 
 [[step]]
 act = "file"
-path = ".fullops-squad/docs/planning/intents/_TEMPLATE.md"
+path = ".fullops/templates/intent.md"
 content = "# 템플릿\n"
 
 [[step]]
 act = "file"
-path = ".fullops-squad/rules/team.md"
+path = ".fullops/guide/rules/team.md"
 content = "# 규칙\n"
 
 [[step]]
 act = "file"
-path = ".fullops-squad/FULLOPS.md"
+path = ".fullops/guide/FULLOPS.md"
 content = "# 지도\n"
 
 [[step]]
 act = "file"
-path = ".fullops-squad/PLANS.md"
+path = ".fullops/PLANS.md"
 content = "# 현재 작업\n\n| 과제 키 | 목표 | 담당 | 상태 | 지시서·원천 링크 |\n|---|---|---|---|---|\n\n## 위임 범위\n\n- 결제 묶음\n"
 
 [[step]]

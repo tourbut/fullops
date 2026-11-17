@@ -222,11 +222,8 @@ impl Sandbox {
     pub fn with(setup: &Setup) -> Self {
         let mut sb = Self::empty();
         let lead = sb.init_repo("lead");
-        sb.write(
-            &lead.join(".fullops-squad/fullops.toml"),
-            &setup.config_toml(),
-        );
-        sb.write(&lead.join(".fullops-squad/PLANS.md"), PLANS);
+        sb.write(&lead.join(".fullops/fullops.toml"), &setup.config_toml());
+        sb.write(&lead.join(".fullops/PLANS.md"), PLANS);
         sb.git_ok(&lead, &["add", "-A"]);
         sb.git_ok(&lead, &["commit", "-q", "-m", "fullops 설정"]);
         if setup.remote {

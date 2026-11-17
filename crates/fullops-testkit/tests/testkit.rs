@@ -45,7 +45,7 @@ fn sandbox_builds_repo_remote_and_worktrees() {
     ] {
         assert!(remote.contains(branch), "{branch}이 원격에 없다: {remote}");
     }
-    assert!(sb.path("lead").join(".fullops-squad/PLANS.md").is_file());
+    assert!(sb.path("lead").join(".fullops/PLANS.md").is_file());
     // 사용자의 git 설정이 아니라 격리된 설정을 쓴다
     assert_eq!(
         sb.git_ok(&sb.path("lead"), &["config", "user.email"]),

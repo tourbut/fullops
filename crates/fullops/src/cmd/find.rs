@@ -1,11 +1,12 @@
 //! `fullops find`: 지시서에 맞는 코드·문서 후보를 찾는다(설계 8.14절). 추천이고 게이트가 아니다(묶음 J).
-//! 탐색 명령 셋(`find`·`context`·`packet`)이 함께 쓰는 것(지시서 읽기, Jev 조건, 색인, 재사용과 덮어쓰기)도 여기에 둔다.
+//! 탐색 명령 둘(`find`·`context`)이 함께 쓰는 것(지시서 읽기, Jev 조건, 색인, 재사용과 덮어쓰기)도 여기에 둔다.
 
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::explore::{
     self, Existence, ExploreUsage, FindCandidate, FindOptions, FindResult, IndexEntry, Scope,
 };
+use fullops_core::layout;
 use fullops_core::model::{
     EXPLORE_V, RoleId, TaskKey, TreeEntry, path_text, same_path, sha256_hex,
 };
@@ -180,12 +181,12 @@ pub(super) fn path_refusal(repo: &Repo, rel: &str) -> Option<&'static str> {
     }
 }
 
-/// 결과와 문구에 적는 레포 상대 경로.
+/// 결과와 문구에 적는 경로. 레포 안이면 상대 경로, 밖이면(역할 워크트리에서 본 Git 공용 디렉터리) 절대 경로다.
 pub(super) fn shown(repo: &Repo, path: &Path) -> String {
     path_text(path.strip_prefix(&repo.root).unwrap_or(path))
 }
 
-/// `HEAD`의 tree(`ls-tree` 한 번)와 그 커밋의 `lint/lint.json` 글.
+/// `HEAD`의 tree(`ls-tree` 한 번)와 그 커밋의 `config/lint.json` 글.
 pub(super) fn tree_of(
     git: &dyn Git,
     head: &str,
@@ -194,7 +195,7 @@ pub(super) fn tree_of(
         CliError::External("git ls-tree로 HEAD의 파일 목록을 읽지 못했습니다.".into())
     })?;
     let lint = git
-        .show_blobs(&[(head.to_string(), ".fullops-squad/lint/lint.json".into())])
+        .show_blobs(&[(head.to_string(), layout::lint_json().into())])
         .yes()
         .and_then(|mut found| found.pop().flatten())
         .and_then(|bytes| String::from_utf8(bytes).ok());
@@ -214,8 +215,12 @@ pub(super) fn index(
         .iter()
         .filter(|e| {
             let path = e.path.as_str();
-            let squad = path.starts_with(".fullops-squad/");
+            let inside = layout::inside(path);
+            let squad = inside.is_some();
+            // 보관(1.24.0 기록)은 탐색 대상이 아니다
+            let archived = inside.is_some_and(|rel| rel.starts_with("archive/"));
             e.kind == "blob"
+                && !archived
                 && matches!(e.mode.as_str(), "100644" | "100755")
                 && !path.ends_with(".meta")
                 && explore::sendable_path(path)
@@ -708,7 +713,7 @@ pub(super) mod tests {
         sb.git_ok(&lead, &["commit", "-q", "-m", "시험 파일"]);
         let front = "---\nid: handover-dev\ntitle: PAY-12 — 결제 재시도\nstatus: draft\nkey: PAY-12\nrole: dev\ngoal: 결제 재시도\nround: 0\n---\n";
         sb.write(
-            &lead.join(".fullops-squad/handovers/to_dev.md"),
+            &lead.join(".fullops/inbox/to_dev.md"),
             &format!("{front}# PAY-12 — 결제 재시도\n\n{body}\n\n## 완료 보고\n\n"),
         );
         let repo = fullops_store::discover(&lead).unwrap().unwrap();

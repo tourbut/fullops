@@ -18,8 +18,8 @@ mod lint;
 mod merge;
 mod migrate;
 mod mode;
-pub mod packet;
 mod plan;
+mod relocate;
 mod retire;
 mod review;
 mod route;
@@ -71,11 +71,6 @@ pub static COMMANDS: &[Command] = &[
     command("route", "분류와 tuple 기록", route::run),
     command("find", "지시서에 맞는 코드·문서 후보 찾기(추천)", find::run),
     command("context", "후보 문서 분류(추천)", context::run),
-    command(
-        "packet",
-        "탐색 패킷 만들기(build)와 검사(check)",
-        packet::run,
-    ),
     command(
         "task",
         "인박스 생성(new), 재오픈(reopen), 끊긴 worker 복구(recover)",
@@ -141,7 +136,7 @@ pub static COMMANDS: &[Command] = &[
     anywhere(command("init", "레포 초기화", init::run)),
     anywhere(command(
         "migrate",
-        "Python판에서 전환과 되돌리기",
+        "Python판에서 전환과 되돌리기, 옛 자리 `.fullops-squad/`를 `.fullops/`로 옮기기(--layout)",
         migrate::run,
     )),
     anywhere(command(

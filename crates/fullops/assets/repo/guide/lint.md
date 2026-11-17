@@ -1,6 +1,6 @@
 # Lint 게이트
 
-코드 산출물의 품질을 일정하게 유지하려고 모든 코드 변경에 lint를 실행한다. 실행 명령은 `fullops lint`이고, 설정 정본은 이 디렉터리의 `lint.json`이다.
+코드 산출물의 품질을 일정하게 유지하려고 모든 코드 변경에 lint를 실행한다. 실행 명령은 `fullops lint`이고, 설정 정본은 `.fullops/config/lint.json`이다.
 
 ## 실행
 
@@ -29,7 +29,9 @@
 | SEC-001 | ERROR (테스트·`.md`는 WARNING) | 하드코딩 비밀값 의심. `test`·`example`·`dummy` 등 더미 값과 환경변수 참조는 예외다. |
 | DOC-001 | WARNING | 새 코드 파일에 무엇을 하는지 적은 헤더 설명(docstring·주석 1~3줄)이 없음. 이 설명이 `fullops find`의 코드 지도가 된다 |
 | DOC-002 | ERROR | 바뀐 산출물 원천 문서의 front matter가 없거나, 필수 필드·id·상태·날짜가 틀리거나, 인덱스 상태와 다르거나, `fullops doc stamp`의 출력 형식과 다름. `fullops doc stamp`로 다시 쓴다 |
-| DOC-003 | ERROR | 바뀐 FullOps 일반 Markdown의 front matter가 없거나 필수 필드·상태·날짜·형식이 틀림. `fullops doc stamp --path <경로>`로 쓴다. 빈 인박스·템플릿·외부 공통 규칙은 제외한다. 문서 검사는 코드 lint의 exclude와 별도로 적용한다 |
+| DOC-003 | ERROR | 바뀐 FullOps 일반 Markdown의 front matter가 없거나 필수 필드·상태·날짜·형식이 틀림. `fullops doc stamp --path <경로>`로 쓴다. 빈 인박스·끝난 지시서·템플릿·외부 공통 규칙은 제외한다. 보관(`archive/`)과 리뷰 기록(`tasks/<KEY>/reviews/`)은 DOC-002·DOC-003의 대상이 아니다. 문서 검사는 코드 lint의 exclude와 별도로 적용한다 |
+| QA-001 | ERROR | 바뀐 QA 증거(`tasks/<KEY>/qa/` 아래, `raw/` 제외)에 압축(`.zip`)·영상(`.webm`·`.mp4`·`.mov`)·trace(`.trace`) 파일이 있음. 판정에 쓴 장면만 이미지로 남기고 원본은 `raw/`로 옮긴다(`raw/`는 커밋되지 않는다) |
+| QA-002 | WARNING | 바뀐 QA 폴더에 커밋하는 이미지가 12장을 넘거나 바뀐 이미지 한 장이 1MB를 넘음. 보고서의 판정 항목이 링크하는 이미지만 남긴다. QA 검사는 코드 lint의 exclude와 별도로 적용한다 |
 | LINT-000 | WARNING | 프로젝트 lint 명령이 등록되지 않음 |
 | LINT-001 | WARNING | 검사 대상 브랜치가 `lint.json`을 바꿈. 변경은 병합 후 적용된다 |
 | LINT-002 | WARNING | 매번 도는 명령이 120초를 넘게 걸림. `required: true` 시험 명령과 `paths`·`level`이 없는 명령이 대상이다. 개발 중 매번 돌 필요가 없으면 `level`이나 `paths`로 범위를 좁힌다 |

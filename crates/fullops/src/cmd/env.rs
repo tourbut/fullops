@@ -2,6 +2,7 @@
 
 use super::dispatch::{main_checkout, usage};
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use fullops_core::layout;
 use fullops_ext::{Git, GitCli};
 use lexopt::prelude::*;
 use serde_json::json;
@@ -14,13 +15,10 @@ fn symlink(source: &Path, target: &Path) -> std::io::Result<()> {
     return std::os::unix::fs::symlink(source, target);
 }
 
-/// 원본 체크아웃의 미추적 `.fullops-squad/.env*` 가운데 대상에 없는 것을 심볼릭 링크로 만들고, 안 되면 복사한다.
+/// 원본 체크아웃의 미추적 `.fullops/.env*` 가운데 대상에 없는 것을 심볼릭 링크로 만들고, 안 되면 복사한다.
 /// 추적 파일과 이미 있는 파일은 건드리지 않는다. 연결한 파일 이름을 돌려준다.
 pub(super) fn link_env(source_root: &Path, target_root: &Path) -> Vec<String> {
-    let (source, target) = (
-        source_root.join(".fullops-squad"),
-        target_root.join(".fullops-squad"),
-    );
+    let (source, target) = (source_root.join(layout::DIR), target_root.join(layout::DIR));
     if source == target || !target.is_dir() {
         return Vec::new();
     }
@@ -35,7 +33,7 @@ pub(super) fn link_env(source_root: &Path, target_root: &Path) -> Vec<String> {
     names.sort();
     let git = GitCli::cli(source_root.to_path_buf());
     let tracked = |name: &str| {
-        let item = ("HEAD".to_string(), format!(".fullops-squad/{name}"));
+        let item = ("HEAD".to_string(), layout::at(name));
         git.show_blobs(&[item])
             .yes()
             .is_none_or(|found| found.first().is_some_and(Option::is_some))

@@ -1,10 +1,10 @@
 //! 탐색(묶음 J)의 통합 시험: `scenarios/p*.toml`을 `rs` 구동기로 돌리고, 시나리오 형식으로 적지 못하는 것
-//! (파일 내용, 패킷의 `input_sha256`에 맞춘 처리 기록, 리뷰어가 채우는 리뷰 기록, fake-curl이 받은 요청, 동시 실행)을
+//! (파일 내용, fake-curl이 받은 요청, 동시 실행)을
 //! 같은 임시 레포에서 이어서 본다. 실제 네트워크로 나가지 않는다(가짜 curl이 PATH 맨 앞에 있다).
 //! 끝의 r2_* 시험은 밖으로 나가는 것(Jev 요청의 경로·글 규칙, route의 요청 파일, git 인자, PATH)의 회귀 시험이다.
 
 use fullops_testkit::driver::mismatches;
-use fullops_testkit::{Driver, Run, Sandbox, Setup, orca_shapes, scenario};
+use fullops_testkit::{Driver, Run, Sandbox, Setup, scenario};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -39,11 +39,9 @@ fn play(name: &str) -> Driver {
     driver
 }
 
-fn jev(driver: &Driver, who: &str) -> PathBuf {
-    driver
-        .sb
-        .path(who)
-        .join(".fullops-squad/docs/evaluations/jev")
+/// 탐색 결과의 자리: Git 공용 디렉터리(모든 워크트리가 함께 본다). lead가 원본 체크아웃이다.
+fn explore(driver: &Driver) -> PathBuf {
+    driver.sb.path("lead").join(".git/fullops/explore")
 }
 
 fn read(path: &Path) -> Value {
@@ -69,37 +67,6 @@ fn requests(d: &Driver) -> Vec<String> {
     d.sb.curl_calls().iter().map(text).collect()
 }
 
-fn item<'a>(packet: &'a Value, path: &str) -> &'a Value {
-    let items = packet["items"].as_array().unwrap();
-    let found = items.iter().find(|i| i["path"] == path);
-    found.unwrap_or_else(|| panic!("패킷에 {path} 항목이 없다"))
-}
-
-/// 리뷰어가 그 과제의 가장 새 리뷰 폴더의 `result.json`을 수락으로 채운다.
-fn accept_review(d: &Driver, key: &str) {
-    let reviews = d.sb.path("lead").join(".fullops-squad/reviews").join(key);
-    let modified = |dir: &PathBuf| {
-        dir.join("targets.json")
-            .metadata()
-            .unwrap()
-            .modified()
-            .unwrap()
-    };
-    let dir = reviews
-        .read_dir()
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .max_by_key(modified)
-        .unwrap();
-    let mut result = read(&dir.join("result.json"));
-    result["reviewer_session"] = json!("sid-reviewer");
-    result["conclusion"] = json!("accept");
-    for file in result["files"].as_array_mut().unwrap() {
-        file["review_status"] = json!("reviewed");
-    }
-    std::fs::write(dir.join("result.json"), result.to_string()).unwrap();
-}
-
 fn strings(value: &Value) -> Vec<&str> {
     value
         .as_array()
@@ -110,82 +77,23 @@ fn strings(value: &Value) -> Vec<&str> {
 }
 
 #[test]
-fn p1_task_without_packet_is_never_checked() {
-    let d = play("p1");
-    // 패킷 없는 과제에서 탐색 폴더도 색인도 생기지 않는다
-    assert!(!jev(&d, "lead").exists());
-    assert!(!d.sb.path("lead").join(".git/fullops/search").exists());
-    // 리뷰어가 기록을 채우면 review check가 통과한다. 10번은 패킷이 없어 건너뛴다
-    accept_review(&d, "A-1");
-    let run = cli(&d, &["review", "check", "A-1"]);
-    assert_eq!(run.code, Some(0), "{}", run.stderr);
-    assert!(!jev(&d, "lead").exists() && !jev(&d, "dev").exists());
-}
-
-#[test]
-fn p2_packet_follows_the_instruction_body_only() {
+fn p2_results_live_in_the_shared_dir_and_stay_out_of_the_tree() {
     let d = play("p2");
-    let inbox =
-        std::fs::read_to_string(d.sb.path("lead").join(".fullops-squad/handovers/to_dev.md"))
-            .unwrap();
-    assert_eq!(inbox.matches("<!-- fullops-packet:start -->").count(), 1);
-    assert!(
-        inbox.contains("- [x] `retry`의 중복 클릭과 연타를 막는다")
-            && inbox.contains("status: review")
-    );
-    let block = inbox.find("<!-- fullops-packet:end -->").unwrap();
-    assert!(block < inbox.find("## 완료 보고").unwrap());
-    let packet = read(&jev(&d, "lead").join("PAY-12-packet.json"));
-    // 본문을 고친 뒤 다시 만든 패킷: find·context는 낡았다고 적히고 쓰이지 않는다
-    assert_eq!(
-        packet["producers"]["find"],
-        json!({ "used": false, "reason": "stale" })
-    );
-    assert_eq!(packet["partial"], true);
-    assert_eq!(
-        item(&packet, "src/pay/retry.rs")["categories"],
-        json!(["direct_edit"])
-    );
-    // 산출물 인덱스(7번): 갱신 ID의 원천은 document_update, 작성 글이 말한 ID의 원천은 document_read다
-    let updated = ".fullops-squad/docs/design-docs/architecture.md";
-    let doc = item(&packet, updated);
-    assert_eq!(
-        (&doc["doc_ids"], &doc["status"]),
-        (&json!(["D03"]), &json!("inferred"))
-    );
-    assert!(strings(&doc["categories"]).contains(&"document_update"));
-    assert!(strings(&doc["reasons"]).contains(&"deliverable update"));
-    let by_index = |i: &Value| {
-        i["evidence"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|e| e["method"] == "deliverable-index")
-    };
-    assert!(by_index(doc));
-    let delivered = packet["delivered"].as_array().unwrap();
-    assert!(delivered.contains(&json!({ "path": updated, "category": "document_update" })));
-    let read_doc = item(
-        &packet,
-        ".fullops-squad/docs/design-docs/interface-design.md",
-    );
-    assert_eq!(
-        (
-            &read_doc["categories"],
-            &read_doc["doc_ids"],
-            &read_doc["status"]
-        ),
-        (
-            &json!(["document_read"]),
-            &json!(["D05"]),
-            &json!("unknown")
-        )
-    );
-    assert!(by_index(read_doc));
-    assert_eq!(packet["options"]["update_docs"], json!(["D03"]));
-    assert!(inbox.contains(&format!("- `{updated}` (")));
+    let lead = d.sb.path("lead");
+    // 탐색 결과는 Git 공용 디렉터리에 있다. 커밋되는 폴더에는 생기지 않고 준비 커밋에도 들지 않는다
+    for who in ["lead", "dev"] {
+        let old = d.sb.path(who).join(".fullops/docs/evaluations/jev");
+        assert!(!old.exists(), "{}", old.display());
+    }
+    assert!(!d.sb.git_ok(&lead, &["ls-files"]).contains("PAY-12-"));
+    let names = ["find", "documents-find", "context"];
+    for name in names {
+        assert!(explore(&d).join(format!("PAY-12-{name}.json")).is_file());
+    }
+    // 진행 체크와 front matter만 고친 뒤의 find는 있던 결과를 냈다(history가 없다)
+    assert!(!explore(&d).join("history").exists());
     // 탐색 결과는 본문 없이 경로·요약·지문만 담는다
-    let find = read(&jev(&d, "lead").join("PAY-12-find.json"));
+    let find = read(&explore(&d).join("PAY-12-find.json"));
     assert_eq!(
         (find["v"].as_i64(), find["semantic"].as_bool()),
         (Some(1), Some(false))
@@ -195,240 +103,15 @@ fn p2_packet_follows_the_instruction_body_only() {
         json!(["docs/pay.md", "src/pay/card.rs", "src/pay/retry.rs"])
     );
     assert!(!find.to_string().contains("중복 클릭"));
-    let context = read(&jev(&d, "lead").join("PAY-12-context.json"));
+    let context = read(&explore(&d).join("PAY-12-context.json"));
     assert_eq!(context["candidates"][0]["decision"], "keep");
-    assert!(strings(&context["required_paths"]).contains(&".fullops-squad/handovers/to_dev.md"));
-}
-
-#[test]
-fn p3_changed_sources_and_rewritten_commits_block_delivery() {
-    let d = play("p3");
-    assert_eq!(
-        jev(&d, "lead").join("history").read_dir().unwrap().count(),
-        2
-    );
-    let packet = read(&jev(&d, "lead").join("PAY-12-packet.json"));
-    // 마지막 패킷은 바뀐 원문을 커밋한 뒤에 만들었다
-    assert_eq!(item(&packet, "src/pay/retry.rs")["source_basis"], "head");
-    // 다시 만든 패킷과 인박스가 준비 커밋으로 역할 워크트리에 갔다
-    assert_eq!(read(&jev(&d, "dev").join("PAY-12-packet.json")), packet);
-}
-
-/// 패킷의 전달 목록을 모두 `completed`로 적은 처리 기록.
-fn outcomes(packet: &Value) -> Value {
-    let items: Vec<Value> = packet["delivered"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|d| json!({ "path": d["path"], "category": d["category"], "status": "completed", "reason": "확인했다" }))
-        .collect();
-    json!({ "v": 1, "key": "PAY-12", "round": 0, "packet_input_sha256": packet["input_sha256"],
-            "items": items, "uncertainty_review": "" })
-}
-
-/// worker가 자기 워크트리에서 `fullops <args>`를 실행한다(그 역할의 첫 배정이 준 터미널).
-fn worker(d: &Driver, args: &[&str]) -> Run {
-    let env = [("ORCA_TERMINAL_HANDLE", "term_1")];
-    d.sb.fullops(&d.sb.path("dev"), args, &env, b"")
-}
-
-/// worker가 처리 기록을 쓰고 완료 검사를 돌린다.
-fn completion(d: &Driver, record: &Value) -> Run {
-    let path = jev(d, "dev").join("PAY-12-packet-outcomes.json");
-    std::fs::write(path, record.to_string()).unwrap();
-    worker(
-        d,
-        &["packet", "check", "PAY-12", "--role", "dev", "--completion"],
-    )
-}
-
-/// worker가 처리 기록을 써서 커밋한다.
-fn commit_outcomes(d: &Driver, record: &Value) {
-    let dev = d.sb.path("dev");
-    let path = jev(d, "dev").join("PAY-12-packet-outcomes.json");
-    std::fs::write(path, record.to_string()).unwrap();
-    d.sb.git_ok(&dev, &["add", "-A"]);
-    d.sb.git_ok(&dev, &["commit", "-q", "-m", "처리 기록"]);
-}
-
-/// R-10에 걸려 거절됐고 문구에 그 J 규칙이 있다.
-fn refused_by(run: &Run, rule: &str) {
-    assert_eq!(run.code, Some(2), "{}", run.stderr);
-    assert!(
-        run.stderr.contains("FullOps[R-10]") && run.stderr.contains(rule),
-        "{}",
-        run.stderr
-    );
-}
-
-#[test]
-fn p4_done_needs_an_outcome_for_every_delivered_pair() {
-    let d = play("p4");
-    // 준비 커밋과 동기화가 옮긴 패킷이다
-    let packet = read(&jev(&d, "dev").join("PAY-12-packet.json"));
-    assert_eq!(packet, read(&jev(&d, "lead").join("PAY-12-packet.json")));
-    assert_eq!(packet["partial"], false, "{}", packet["unknown"]);
-    assert_eq!(packet["decisions"][0]["action"], "exclude");
-    let full = outcomes(&packet);
-    assert!(full["items"].as_array().unwrap().len() >= 8);
-
-    // J-15 (a) 전달 항목 누락 (b) 같은 쌍이 두 번 (c) 패킷에 없는 쌍 (d) status (e) 빈 reason
-    let edit = |change: &dyn Fn(&mut Vec<Value>)| {
-        let mut record = full.clone();
-        change(record["items"].as_array_mut().unwrap());
-        record
-    };
-    let cases: [(&str, Value); 5] = [
-        ("빠졌다", edit(&|items| drop(items.remove(0)))),
-        ("두 번 있다", edit(&|items| items.push(items[0].clone()))),
-        (
-            "패킷의 항목이 아니다",
-            edit(&|items| {
-                items.push(json!({ "path": "src/none.rs", "category": "direct_edit", "status": "completed", "reason": "x" }))
-            }),
-        ),
-        (
-            "completed·no_change",
-            edit(&|items| items[0]["status"] = json!("unknown")),
-        ),
-        (
-            "reason이 비었다",
-            edit(&|items| items[0]["reason"] = json!("  ")),
-        ),
-    ];
-    for (word, record) in &cases {
-        let run = completion(&d, record);
-        assert_eq!(run.code, Some(2), "{word}");
-        assert!(
-            run.stderr.contains("FullOps[J-15]") && run.stderr.contains(word),
-            "{word}: {}",
-            run.stderr
-        );
-        assert!(run.stderr.contains("packet-outcomes.json"));
-    }
-    // no_change와 이유를 적으면 통과한다. 추천은 수정 의무가 아니다
-    let run = completion(&d, &edit(&|items| items[0]["status"] = json!("no_change")));
-    assert_eq!(run.code, Some(0), "{}", run.stderr);
-    // 형식 버전이 다르면 없는 것으로 본다
-    let mut old = full.clone();
-    old["v"] = json!(2);
-    assert!(completion(&d, &old).stderr.contains("FullOps[J-14]"));
-
-    // done(R-10): 전달 항목 하나가 빠졌거나 status가 틀리면 거절하고 걸린 J 규칙을 적는다
-    for (word, record) in [&cases[0], &cases[3]] {
-        commit_outcomes(&d, record);
-        let run = worker(&d, &["done", "--no-checks", "시나리오"]);
-        refused_by(&run, "J-15");
-        assert!(run.stderr.contains(word), "{}", run.stderr);
-    }
-    // 전부 기록하면 완료 검사와 done이 통과하고 인박스가 완료 기록으로 옮겨진다
-    commit_outcomes(&d, &full);
-    let check = [
-        "packet",
-        "check",
-        "PAY-12",
-        "--role",
-        "dev",
-        "--completion",
-        "--head",
-        "HEAD",
-        "--json",
-    ];
-    let run = worker(&d, &check);
-    assert_eq!(
-        (run.code, run.stdout.trim()),
-        (Some(0), r#"{"checked":true,"ok":true}"#)
-    );
-    let run = worker(&d, &["done", "--no-checks", "시나리오"]);
-    assert_eq!(run.code, Some(0), "{}", run.stderr);
-    assert!(run.stdout.contains("[완료] PAY-12"), "{}", run.stdout);
-    let log = ".fullops-squad/handovers/logs/PAY-12.dev.r0.md";
-    assert!(d.sb.path("dev").join(log).is_file());
-    // 완료 뒤의 검사는 지시서 글을 완료 기록에서 읽는다
-    assert_eq!(worker(&d, &check).code, Some(0));
-}
-
-#[test]
-fn p5_review_check_runs_the_completion_check_on_the_review_head() {
-    let d = play("p5");
-    let (lead, dev) = (d.sb.path("lead"), d.sb.path("dev"));
-    let packet = read(&jev(&d, "dev").join("PAY-12-packet.json"));
-    assert_eq!(packet["partial"], true);
-    assert_eq!(
-        packet["unknown"],
-        json!([{ "path": null, "source": null, "doc_id": "D99", "reason": "no source" }])
-    );
-    // J-16: partial 패킷은 uncertainty_review를 요구한다. 전달 항목은 다 적었으므로 J-15는 없다
-    let mut record = outcomes(&packet);
-    commit_outcomes(&d, &record);
-    let run = worker(&d, &["done"]);
-    refused_by(&run, "J-16");
-    assert!(!run.stderr.contains("J-15"), "{}", run.stderr);
-    record["uncertainty_review"] = json!("D99는 이번 과제에서 만들지 않는 문서임을 확인했다");
-    commit_outcomes(&d, &record);
-    let done = worker(&d, &["done"]);
-    assert_eq!(done.code, Some(0), "{}", done.stderr);
-
-    // 완료 보고를 받고 리뷰한다. 처리 기록이 완비됐으므로 10번을 통과한다
-    let report = orca_shapes::message(
-        "msg_p5",
-        "worker_done",
-        "ctx_1",
-        "task_1",
-        "PAY-12 완료",
-        done.stdout.trim(),
-        Some("succeeded"),
-    );
-    d.sb.orca_mail("run_1", report);
-    let run = cli(&d, &["wait", "--run", "run_1"]);
-    assert_eq!(run.code, Some(0), "{}", run.stderr);
-    let run = cli(&d, &["review", "snapshot", "PAY-12"]);
-    assert_eq!(run.code, Some(0), "{}", run.stderr);
-    accept_review(&d, "PAY-12");
-    let run = cli(&d, &["review", "check", "PAY-12"]);
-    assert_eq!(run.code, Some(0), "{}", run.stderr);
-
-    // 리뷰 head의 처리 기록에서 쌍이 빠졌거나 uncertainty_review가 비었으면 10번이 실패한다
-    let mut missing = record.clone();
-    missing["items"].as_array_mut().unwrap().remove(0);
-    let mut unreviewed = record.clone();
-    unreviewed["uncertainty_review"] = json!("");
-    for (rule, broken) in [("J-15", missing), ("J-16", unreviewed)] {
-        commit_outcomes(&d, &broken);
-        let head = d.sb.git_ok(&dev, &["rev-parse", "HEAD"]);
-        let run =
-            d.sb.cli(&lead, &["review", "snapshot", "PAY-12", "--sha", &head]);
-        assert_eq!(run.code, Some(0), "{rule}: {}", run.stderr);
-        accept_review(&d, "PAY-12");
-        let run =
-            d.sb.cli(&lead, &["review", "check", "PAY-12", "--sha", &head]);
-        assert_eq!(run.code, Some(2), "{rule}: {}", run.stderr);
-        assert!(
-            run.stderr.contains(&format!("FullOps[{rule}]")),
-            "{rule}: {}",
-            run.stderr
-        );
-    }
-}
-
-#[test]
-fn p6_only_migrated_routes_require_a_packet() {
-    let d = play("p6");
-    let route = |key: &str| {
-        let path = format!(".fullops-squad/routes/{key}.json");
-        read(&d.sb.path("lead").join(path))
-    };
-    // 1.24.0 기록에서 켜져 있던 값만 옮겨 오고 재분류가 잇는다
-    assert_eq!(route("OLD-1")["requires_packet"], true);
-    assert_eq!(route("OLD-1")["history"].as_array().map(Vec::len), Some(1));
-    assert_eq!(route("NEW-2")["requires_packet"], false);
-    assert!(jev(&d, "dev").join("OLD-1-packet.json").is_file());
+    assert!(strings(&context["required_paths"]).contains(&".fullops/inbox/to_dev.md"));
 }
 
 #[test]
 fn p7_find_ends_with_local_candidates_without_jev() {
     let d = play("p7");
-    let dir = jev(&d, "lead");
+    let dir = explore(&d);
     let local = |find: &Value, error: &str, calls: u64| {
         assert_eq!(
             (&find["error"], &find["model"], &find["usage"]["calls"]),
@@ -529,7 +212,7 @@ fn p7_find_ends_with_local_candidates_without_jev() {
 #[test]
 fn p8_secret_files_stay_out_of_the_map_and_results() {
     let d = play("p8");
-    let dir = jev(&d, "lead");
+    let dir = explore(&d);
     let (code, documents) = (
         read(&dir.join("PAY-12-find.json")),
         read(&dir.join("PAY-12-documents-find.json")),
@@ -713,7 +396,7 @@ fn p9_p11_index_handles_many_files_and_concurrent_runs() {
     let index = lead.join(".git/fullops/search/code.json");
     let before = read(&index);
     std::fs::remove_file(&index).unwrap();
-    std::fs::remove_file(jev(&d, "lead").join("PAY-12-find.json")).unwrap();
+    std::fs::remove_file(explore(&d).join("PAY-12-find.json")).unwrap();
     let find = ["find", "PAY-12", "--role", "dev", "--json"];
     let (a, b) = std::thread::scope(|scope| {
         let a = scope.spawn(|| cli(&d, &find));
@@ -745,7 +428,7 @@ fn p9_p11_index_handles_many_files_and_concurrent_runs() {
 #[test]
 fn p10_context_refuses_too_many_paths_and_follows_the_signals() {
     let d = play("p10");
-    let dir = jev(&d, "lead");
+    let dir = explore(&d);
     // 오프라인 결과(--force가 history로 옮겼다): 부르지 않고 전부 keep이다
     let old = dir.join("history").read_dir().unwrap().next().unwrap();
     let offline = read(&old.unwrap().path());
@@ -790,7 +473,7 @@ fn p10_context_refuses_too_many_paths_and_follows_the_signals() {
             ("docs/old.md", "suggest_omit", Some("irrelevant")),
             ("docs/conflict.md", "conflict", Some("contradicts task")),
             ("docs/prompt.md", "caution", Some("instructions")),
-            (".fullops-squad/FULLOPS.md", "keep", None),
+            (".fullops/guide/FULLOPS.md", "keep", None),
         ]
     );
     assert_eq!(
@@ -810,71 +493,9 @@ fn p10_context_refuses_too_many_paths_and_follows_the_signals() {
 }
 
 #[test]
-fn p12_recover_rebuilds_the_packet_in_the_role_worktree() {
-    let d = play("p12");
-    let dev = d.sb.path("dev");
-    let packet = read(&jev(&d, "dev").join("PAY-12-packet.json"));
-    // WIP 커밋이 바꾼 경로가 seed에 더해져 direct_edit 항목이 된다
-    assert_eq!(
-        packet["options"]["seeds"],
-        json!(["src/pay/card.rs", "src/pay/retry.rs"])
-    );
-    for path in ["src/pay/card.rs", "src/pay/retry.rs"] {
-        assert!(strings(&item(&packet, path)["categories"]).contains(&"direct_edit"));
-    }
-    // 패킷과 인박스가 `패킷 갱신` 커밋에 들어가 워크트리가 깨끗하다
-    assert_eq!(d.sb.git_ok(&dev, &["status", "--porcelain"]), "");
-    let log = d.sb.git_ok(&dev, &["log", "--format=%s"]);
-    for subject in ["wip(dev): PAY-12", "fullops: 패킷 갱신 PAY-12 (dev)"] {
-        assert_eq!(log.lines().filter(|line| *line == subject).count(), 1);
-    }
-    // 패킷의 head는 패킷 갱신 커밋의 부모다(조상 검사를 통과한다)
-    let parent = d.sb.git_ok(
-        &dev,
-        &[
-            "log",
-            "-1",
-            "--format=%P",
-            "--grep",
-            "fullops: 패킷 갱신 PAY-12",
-        ],
-    );
-    assert_eq!(packet["head"], parent.as_str());
-    let inbox = std::fs::read_to_string(dev.join(".fullops-squad/handovers/to_dev.md")).unwrap();
-    assert!(inbox.contains("- `src/pay/card.rs` (direct_edit)"));
-
-    // 다시 만들기가 거절이 아닌 실패로 끝나면(history 자리에 파일이 있어 옛 패킷을 옮기지 못한다) 알리고 계속한다
-    let history = jev(&d, "dev").join("history");
-    std::fs::remove_dir_all(&history).unwrap();
-    std::fs::write(&history, "폴더 자리의 파일\n").unwrap();
-    d.sb.write(
-        &dev.join("src/pay/card.rs"),
-        "pub fn charge_card() -> u32 {\n    retry(3)\n}\n",
-    );
-    let recover = [
-        "task", "recover", "--role", "dev", "--key", "PAY-12", "--repo", "../dev", "--json",
-    ];
-    let run = cli(&d, &recover);
-    assert_eq!(run.code, Some(0), "{}", run.stderr);
-    let out: Value = serde_json::from_str(&run.stdout).unwrap();
-    assert!(out["wip"].is_string() && out["packet"].is_null(), "{out}");
-    let told = format!("{}{}", run.stdout, run.stderr);
-    assert!(told.contains("패킷을 다시 만들지 못했다"), "{told}");
-    // 패킷은 옛 것으로 남고 다음 배정의 D-12가 걸린 J 규칙을 알린다
-    assert_eq!(read(&jev(&d, "dev").join("PAY-12-packet.json")), packet);
-    let run = cli(&d, &["dispatch", "PAY-12", "--role", "dev"]);
-    assert_eq!(run.code, Some(2), "{}", run.stderr);
-    assert!(
-        run.stderr.contains("FullOps[D-12]") && run.stderr.contains("J-12"),
-        "{}",
-        run.stderr
-    );
-}
-
-#[test]
 fn p13_stale_results_are_neither_reused_nor_overwritten_silently() {
     let d = play("p13");
-    let dir = jev(&d, "lead");
+    let dir = explore(&d);
     let mut history: Vec<String> = dir
         .join("history")
         .read_dir()
@@ -888,22 +509,16 @@ fn p13_stale_results_are_neither_reused_nor_overwritten_silently() {
             .filter(|name| name.starts_with(prefix))
             .count()
     };
-    // --force마다 이전 결과가 남는다: find 3번, context 1번, packet 2번
+    // --force마다 이전 결과가 남는다: find 3번, context 1번
     assert_eq!(
-        (
-            count("PAY-12-find."),
-            count("PAY-12-context."),
-            count("PAY-12-packet.")
-        ),
-        (3, 1, 2),
+        (count("PAY-12-find."), count("PAY-12-context.")),
+        (3, 1),
         "{history:?}"
     );
+    assert_eq!(history.len(), 4, "{history:?}");
     let find = read(&dir.join("PAY-12-find.json"));
     assert_eq!(find["options"]["provider"], "typesafe");
     assert_eq!(find["semantic"], true);
-    // 원문을 고친 채 만든 패킷은 그 항목의 기준이 작업 트리다
-    let packet = read(&dir.join("PAY-12-packet.json"));
-    assert_eq!(item(&packet, "docs/pay.md")["source_basis"], "worktree");
     // 가짜 curl에 간 요청은 둘이다: 각본이 없어 실패한 것과 답을 받은 것. 같은 입력의 재사용은 부르지 않았다
     let calls = d.sb.curl_calls().len();
     assert_eq!(calls, 2);
@@ -953,7 +568,7 @@ fn outbound_repo() -> Sandbox {
         "rules/common/security.md",
         "rules/common/testing.md",
     ] {
-        let path = lead.join(".fullops-squad").join(doc);
+        let path = lead.join(".fullops").join(doc);
         sb.write(&path, &format!("# {doc}\n\n공통 기준 문서.\n"));
     }
     sb.write(
@@ -972,7 +587,7 @@ fn commit_all(sb: &Sandbox) {
 fn write_inbox(sb: &Sandbox) {
     let front = "---\nid: handover-dev\ntitle: PAY-12 — 결제 재시도\nstatus: draft\nkey: PAY-12\nrole: dev\ngoal: 결제 재시도\nround: 0\n---\n";
     sb.write(
-        &sb.path("lead").join(".fullops-squad/handovers/to_dev.md"),
+        &sb.path("lead").join(".fullops/inbox/to_dev.md"),
         &format!(
             "{front}# PAY-12 — 결제 재시도\n\n`retry`의 중복 클릭을 막는다.\n\n## 완료 보고\n\n"
         ),
@@ -1171,7 +786,7 @@ fn r2_route_reads_request_files_only_inside_the_repo() {
         assert!(run.stderr.contains(why), "{file}: {}", run.stderr);
     }
     assert!(sb.curl_calls().is_empty());
-    assert!(!lead.join(".fullops-squad/routes/PAY-13.json").exists());
+    assert!(!lead.join(".fullops/tasks/PAY-13/route.json").exists());
 
     // 레포 안의 파일은 읽는다. 환경에 키가 없어도 --env-file의 키로 부른다
     let online = [("FULLOPS_OFFLINE", "0")];
@@ -1182,7 +797,7 @@ fn r2_route_reads_request_files_only_inside_the_repo() {
     let body = sent(&sb);
     assert_eq!(sb.curl_calls().len(), 1);
     assert!(body.contains("Bearer file-key") && body.contains("중복 클릭을 막는다"));
-    let route = read(&lead.join(".fullops-squad/routes/PAY-13.json"));
+    let route = read(&lead.join(".fullops/tasks/PAY-13/route.json"));
     assert_eq!(route["request_file"], "docs/request.md");
     // --env-file이 없으면 키가 없어 부르지 않고 폴백으로 끝난다
     let args = ["route", "PAY-14", "--request-file", "docs/request.md"];
@@ -1191,7 +806,7 @@ fn r2_route_reads_request_files_only_inside_the_repo() {
     assert_eq!(sb.curl_calls().len(), 1);
 }
 
-// R2-6: BOM으로 시작하는 `.fullops-squad/.env`의 키를 읽는다
+// R2-6: BOM으로 시작하는 `.fullops/.env`의 키를 읽는다
 #[test]
 fn r2_env_file_with_a_bom_still_gives_the_key() {
     let sb = outbound_repo();
@@ -1199,7 +814,7 @@ fn r2_env_file_with_a_bom_still_gives_the_key() {
     commit_all(&sb);
     write_inbox(&sb);
     sb.write(
-        &lead.join(".fullops-squad/.env"),
+        &lead.join(".fullops/.env"),
         "\u{feff}TYPESAFE_API_KEY=bom-key\n",
     );
     let args = ["find", "PAY-12", "--role", "dev", "--json"];
@@ -1260,7 +875,7 @@ fn r2_config_values_never_become_git_options() {
     ] {
         let sb = outbound_repo();
         let lead = sb.path("lead");
-        let toml = lead.join(".fullops-squad/fullops.toml");
+        let toml = lead.join(".fullops/fullops.toml");
         let text = std::fs::read_to_string(&toml).unwrap();
         assert!(text.contains(good), "{text}");
         std::fs::write(&toml, text.replace(good, evil)).unwrap();
@@ -1274,24 +889,4 @@ fn r2_config_values_never_become_git_options() {
         assert!(run.stderr.contains(name), "{evil}: {}", run.stderr);
         assert!(!lead.join("r2-marker").exists() && !lead.join("main").exists());
     }
-}
-
-// R2-5: 필수 문서가 없는 레포에서도 패킷이 배정을 막지 않는다. 만들 때 읽은 파일이 없어지면 여전히 J-12다
-#[test]
-fn p14_missing_required_docs_do_not_block_delivery() {
-    let d = play("p14");
-    let packet = read(&jev(&d, "lead").join("PAY-12-packet.json"));
-    assert_eq!(packet["partial"], true);
-    let missing = item(&packet, ".fullops-squad/FULLOPS.md");
-    assert_eq!(
-        (&missing["required"], &missing["source_sha256"]),
-        (&json!(true), &Value::Null)
-    );
-    let reasons: Vec<&str> = packet["unknown"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|u| u["reason"].as_str())
-        .collect();
-    assert_eq!(reasons, ["missing"; 6]);
 }

@@ -22,7 +22,7 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
     let a = |i| arg(args, i);
     Some(match id {
         "S-00" | "P-03" => format!(
-            "FullOps 정책 오류: {} 이 상태에서는 도구 호출이 거부되고 종료가 한 번 막힌다. `.fullops-squad/fullops.toml`을 고치거나 새 세션을 연다. 확인은 `fullops doctor`.",
+            "FullOps 정책 오류: {} 이 상태에서는 도구 호출이 거부되고 종료가 한 번 막힌다. `.fullops/fullops.toml`을 고치거나 새 세션을 연다. 확인은 `fullops doctor`.",
             a(0)
         ),
         "S-05" | "P-01" => args.join("\n"),
@@ -55,7 +55,7 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
         },
         "T-09" => format!("보고서가 링크하지 않은 QA 미디어가 커밋 대상에 있다: {}.", a(0)),
         "T-10" => format!(
-            "`qa-reports/{}/`: 차수 폴더를 새로 만들지 않는다. 같은 과제의 `qa-reports/{}/`가 이미 있다.",
+            "`tasks/{}/qa/`: 차수 폴더를 새로 만들지 않는다. 같은 과제의 `tasks/{}/`가 이미 있다.",
             a(0),
             a(1)
         ),
@@ -154,7 +154,7 @@ pub fn role_guide(guide: &RoleGuide, sub: bool, split: bool) -> String {
                 format!("설계 역할 `{id}`다. 설계 문서와 역할별 지시서만 쓴다.")
             }
         ),
-        RoleGuide::Role { id, kind: RoleKind::Tester } => format!("FullOps 역할: tester `{id}`다. 인박스의 검증 범위를 테스트 레벨에 맞춰 확인한다. 제품 코드는 고치지 않고 테스트 코드·시나리오·검증 증거만 만든다. 도구와 순서는 `fullops-test` 스킬을 따르고 결과는 `qa-reports/<KEY>-test/report.md`에 남긴다. 실패는 재현 절차와 증거로 보고하고 직접 고치지 않는다."),
+        RoleGuide::Role { id, kind: RoleKind::Tester } => format!("FullOps 역할: tester `{id}`다. 인박스의 검증 범위를 테스트 레벨에 맞춰 확인한다. 제품 코드는 고치지 않고 테스트 코드·시나리오·검증 증거만 만든다. 도구와 순서는 `fullops-test` 스킬을 따르고 결과는 `.fullops/tasks/<KEY>/qa/report.md`에 남긴다. 실패는 재현 절차와 증거로 보고하고 직접 고치지 않는다."),
         RoleGuide::Role { id, .. } => format!(
             "FullOps 역할: worker `{id}`다. 인박스의 과제 하나를 완료 기준까지 구현한다. {} {OWN_CHOICE} 묻지 않고 추천안으로 진행하고 완료 보고에 선택과 되돌리는 방법을 적는다.",
             if split {
@@ -175,12 +175,12 @@ pub fn role_guide(guide: &RoleGuide, sub: bool, split: bool) -> String {
 }
 
 /// 모든 레벨에 붙는 문장(1.24.0 `test_brief`).
-const TEST_COMMON: &str = "보안·데이터 손실 방지와 프로젝트 필수 검사는 모든 레벨에서 유지한다. 검사가 통과하면 인계하고, 새 변경·실패·근거 결함이 있을 때만 재검증한다. 같은 과제의 수정·재검증은 기존 `qa-reports/<KEY>-test/report.md`에 절을 덧붙이고, 커밋하는 캡처는 `report.md`가 링크하는 것만이다.";
+const TEST_COMMON: &str = "보안·데이터 손실 방지와 프로젝트 필수 검사는 모든 레벨에서 유지한다. 검사가 통과하면 인계하고, 새 변경·실패·근거 결함이 있을 때만 재검증한다. 같은 과제의 수정·재검증은 기존 `tasks/<KEY>/qa/report.md`에 절을 덧붙이고, 커밋하는 캡처는 `report.md`가 링크하는 것만이다.";
 
 pub fn test_level(level: TestLevel) -> String {
     let scope = match level {
         TestLevel::Minimal => {
-            "minimal: 기동과 변경 경로의 스모크 검사만 한다. 통합 후보의 주요 흐름은 `rules/common/testing.md`의 `담당과 반복 범위`대로 한 번 돌린다. 별도 tester·designer 검수 차수를 만들지 않는다. 개발 과제는 lint와 변경 동작 테스트로 검증하고 보고용 캡처를 만들지 않는다."
+            "minimal: 기동과 변경 경로의 스모크 검사만 한다. 통합 후보의 주요 흐름은 `guide/rules/common/testing.md`의 `담당과 반복 범위`대로 한 번 돌린다. 별도 tester·designer 검수 차수를 만들지 않는다. 개발 과제는 lint와 변경 동작 테스트로 검증하고 보고용 캡처를 만들지 않는다."
         }
         TestLevel::Lite => {
             "lite: 변경한 핵심 동작과 필요한 실패 경계만 짧게 검증한다. 사소한 문구 변경에는 새 테스트를 만들지 않는다. 개발 과제는 lint와 변경 동작 테스트로 검증하고 보고용 캡처를 만들지 않는다. tester 독립 QA와 designer 시각 검수는 새 화면·새 흐름·통합 후보에서만 배정한다."
@@ -198,7 +198,7 @@ pub fn test_level(level: TestLevel) -> String {
     format!("테스트 레벨 {scope} {TEST_COMMON}")
 }
 
-pub const INBOX_RULE: &str = "인박스 규칙: 현재 과제는 역할 인박스(`.fullops-squad/handovers/to_<역할>.md`) 하나다. 다음 과제는 `PLANS.md`에 대기로 둔다. 끝나면 `fullops done`을 실행한다.";
+pub const INBOX_RULE: &str = "인박스 규칙: 현재 과제는 역할 인박스(`.fullops/inbox/to_<역할>.md`) 하나다. 다음 과제는 `PLANS.md`에 대기로 둔다. 끝나면 `fullops done`을 실행한다.";
 pub const LINT_GATE: &str = "lint 게이트: 코드를 바꾸면 커밋하고 `fullops lint --from <기준>`을 통과시킨다. 통과 기록이 없으면 종료가 한 번 막힌다(dev 직접 작업은 계속 막힌다).";
 pub const LEAD_MERGE: &str =
     "완료 보고마다 `fullops merge <KEY>`로 리뷰 판정·병합·push·동기화를 바로 처리한다.";

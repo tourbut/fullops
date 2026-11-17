@@ -7,13 +7,13 @@ roles = {}
 
 [[step]]
 act = "file"
-path = ".fullops-squad/lint/lint.json"
+path = ".fullops/config/lint.json"
 content = '{"schema_version": 1, "commands": [{"name": "version", "run": ["git", "--version"]}]}'
 
 # 기준 시점의 산출물 인덱스: D01은 review, D02는 범위 밖이다
 [[step]]
 act = "file"
-path = ".fullops-squad/docs/deliverables/README.md"
+path = ".fullops/docs/deliverables/README.md"
 content = """
 ---
 title: 산출물 인덱스
@@ -40,7 +40,7 @@ args = ["tag", "base"]
 # 검출: 필드 순서가 정해진 형식과 다르다
 [[step]]
 act = "file"
-path = ".fullops-squad/docs/planning/business-plan.md"
+path = ".fullops/docs/planning/business-plan.md"
 content = """
 ---
 title: 사업계획서
@@ -61,12 +61,12 @@ act = "commits"
 act = "runs_fullops"
 raw = true
 args = ["lint", "--from", "base"]
-expect = { verdict = "deny", exit = 2, escape = "ERROR DOC-002 .fullops-squad/docs/planning/business-plan.md D01 front matter: 정해진 형식과 다름" }
+expect = { verdict = "deny", exit = 2, escape = "ERROR DOC-002 .fullops/docs/planning/business-plan.md D01 front matter: 정해진 형식과 다름" }
 
 # 검출: 인덱스 상태(review)와 문서 상태(draft)가 다르다
 [[step]]
 act = "file"
-path = ".fullops-squad/docs/planning/business-plan.md"
+path = ".fullops/docs/planning/business-plan.md"
 content = """
 ---
 id: D01
@@ -92,7 +92,7 @@ expect = { verdict = "deny", exit = 2, escape = "인덱스 상태(review)와 문
 # 비검출: 형식과 상태가 맞는 원천 문서, 범위 밖 산출물의 원천
 [[step]]
 act = "file"
-path = ".fullops-squad/docs/planning/business-plan.md"
+path = ".fullops/docs/planning/business-plan.md"
 content = """
 ---
 id: D01
@@ -109,7 +109,7 @@ summary: 사업 목표와 범위
 
 [[step]]
 act = "file"
-path = ".fullops-squad/docs/planning/product-specs/login.md"
+path = ".fullops/docs/planning/product-specs/login.md"
 content = "front matter 없는 메모\n"
 
 [[step]]

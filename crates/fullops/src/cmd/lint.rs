@@ -3,6 +3,7 @@
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK, EXIT_REFUSED};
 use fullops_core::config::is_code;
+use fullops_core::layout;
 use fullops_core::lint_rules::{self as rules, FileChange, LintCommand, LintConfig};
 use fullops_core::messages::lint as msg;
 use fullops_core::model::{
@@ -16,11 +17,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const LINT_JSON: &str = ".fullops-squad/lint/lint.json";
-const CONFIG_TOML: &str = ".fullops-squad/fullops.toml";
-const INDEX: &str = ".fullops-squad/docs/deliverables/README.md";
-
 /// git을 읽지 못하면 실행 실패(종료 코드 1)다.
+const LINT_JSON: &str = layout::lint_json();
+
 fn known<T>(value: Known<T>) -> Result<T, CliError> {
     match value {
         Known::Yes(value) => Ok(value),
@@ -268,7 +267,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     // 1. 깨끗한 작업 트리와 기준
     // 기록 경로(6.6절)의 미커밋 변경은 검사 대상이 아니다. 리뷰 뒤 lead 체크아웃에는 미커밋 리뷰 파일이 있다(M-07)
     let mut dirty = known(git.status(None))?;
-    dirty.retain(|e| !fullops_core::derive::is_record_path(&e.path));
+    dirty.retain(|e| !layout::is_record(&e.path));
     if !dirty.is_empty() {
         let files: Vec<&str> = dirty.iter().take(3).map(|e| e.path.as_str()).collect();
         return Err(CliError::Refused(vec![Refusal {
@@ -308,9 +307,9 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     let at = |rev: &Sha, path: &str| (rev.as_str().to_string(), path.to_string());
     let settings = known(git.show_blobs(&[
         at(&mb, LINT_JSON),
-        at(&mb, CONFIG_TOML),
+        at(&mb, layout::config_toml()),
         at(&head, LINT_JSON),
-        at(&head, INDEX),
+        at(&head, layout::deliverables_index()),
     ]))?;
     let bytes = |i: usize| settings.get(i).and_then(|blob| blob.as_deref());
     let text = |i: usize| bytes(i).map(|b| String::from_utf8_lossy(b).into_owned());
@@ -419,6 +418,32 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         added_total,
         config.size.max_diff_added,
     ));
+    // QA-001·QA-002: 바뀐 QA 폴더의 증거. 이미지의 장 수와 크기는 검사 대상 커밋의 tree에서 읽는다
+    let qa_changed: Vec<&str> = items
+        .iter()
+        .filter(|item| item.status != 'D' && rules::qa_evidence(&item.path).is_some())
+        .map(|item| item.path.as_str())
+        .collect();
+    if !qa_changed.is_empty() {
+        let keys: Vec<&str> = qa_changed
+            .iter()
+            .filter_map(|p| rules::qa_evidence(p))
+            .collect();
+        let tree = known(git.ls_tree(head.as_str()))?;
+        let images: Vec<_> = tree
+            .iter()
+            .filter(|e| rules::qa_image(&e.path))
+            .filter(|e| rules::qa_evidence(&e.path).is_some_and(|key| keys.contains(&key)))
+            .collect();
+        let oids: Vec<String> = images.iter().map(|e| e.oid.clone()).collect();
+        let sizes = known(git.blob_prefixes(&oids, 1))?;
+        let images: Vec<(String, u64)> = images
+            .iter()
+            .zip(sizes)
+            .map(|(e, blob)| (e.path.clone(), blob.map_or(0, |(size, _)| size)))
+            .collect();
+        findings.extend(rules::qa_findings(&qa_changed, &images));
+    }
 
     // 6~8. 명령 선택과 실행
     let mut results: Vec<Option<LintCommandResult>> = config

@@ -13,13 +13,13 @@
   "toolName": "search_replace",
   "tool_name": "search_replace",
   "toolInput": {
-    "file_path": "/home/dev/repo/.fullops-squad/handovers/to_dev.md",
+    "file_path": "/home/dev/repo/.fullops/inbox/to_dev.md",
     "old_string": "상태: 대기",
     "new_string": "상태: 진행",
     "replace_all": false
   },
   "tool_input": {
-    "file_path": "/home/dev/repo/.fullops-squad/handovers/to_dev.md",
+    "file_path": "/home/dev/repo/.fullops/inbox/to_dev.md",
     "old_string": "상태: 대기",
     "new_string": "상태: 진행",
     "replace_all": false

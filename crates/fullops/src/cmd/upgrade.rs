@@ -4,6 +4,7 @@
 use super::init;
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK, EXIT_REFUSED};
+use fullops_core::layout;
 use serde_json::json;
 use std::path::Path;
 
@@ -34,23 +35,12 @@ const REQUIRED: &[RequiredApply] = &[
     },
     RequiredApply {
         since: "2.0.0",
-        id: "explore-history-ignore",
-        check: |root| {
-            let ignore = read(root, ".fullops-squad/.gitignore");
-            assets::GITIGNORE_LINES
-                .iter()
-                .all(|line| ignore.lines().any(|l| l.trim() == *line))
-        },
-        hint: "`.fullops-squad/.gitignore`에 `docs/evaluations/jev/history/` 줄을 더한다.",
-    },
-    RequiredApply {
-        since: "2.0.0",
         id: "delegation-rule",
         check: |root| {
-            let text = read(root, ".fullops-squad/rules/delegation.md");
+            let text = read(root, &layout::guide("rules/delegation.md"));
             !text.is_empty() && !assets::is_stock_1_24("rules/delegation.md", &text)
         },
-        hint: "`.fullops-squad/rules/delegation.md`가 없거나 1.24.0의 글이다. 병렬 방침에 맞게 고친다(없으면 `fullops init`이 새 템플릿을 둔다).",
+        hint: "`.fullops/guide/rules/delegation.md`가 없거나 1.24.0의 글이다. 병렬 방침에 맞게 고친다(없으면 `fullops init`이 새 템플릿을 둔다).",
     },
 ];
 

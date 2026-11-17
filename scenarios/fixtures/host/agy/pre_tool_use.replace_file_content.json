@@ -2,7 +2,7 @@
   "toolCall": {
     "name": "replace_file_content",
     "args": {
-      "TargetFile": "/home/dev/repo/.fullops-squad/handovers/to_dev.md",
+      "TargetFile": "/home/dev/repo/.fullops/inbox/to_dev.md",
       "TargetContent": "상태: 대기",
       "ReplacementContent": "상태: 진행"
     }

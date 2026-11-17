@@ -26,7 +26,7 @@ fn bare_repo(dir: &Path) -> Repo {
         git_dir: dir.join("git"),
         common_dir: dir.join("git"),
     };
-    std::fs::create_dir_all(repo.squad()).unwrap();
+    std::fs::create_dir_all(repo.dir()).unwrap();
     std::fs::create_dir_all(&repo.git_dir).unwrap();
     std::fs::write(repo.config_path(), Setup::default().config_toml()).unwrap();
     repo
@@ -61,7 +61,7 @@ fn round_trip<T: DeserializeOwned + Serialize>(text: &str) -> T {
 
 #[test]
 fn design_examples_round_trip_through_the_types() {
-    // 6.2.1절 state.json, 6.2.3절 status.json, 6.3절 세션 파일과 탐색 색인, 6.1.4절 route, 6.1.5절 탐색 결과와 패킷
+    // 6.2.1절 state.json, 6.2.3절 status.json, 6.3절 세션 파일과 탐색 색인, 6.1.4절 route, 6.1.5절 탐색 결과
     let state: State = round_trip(&design_block("{ \"v\": 1, \"seq\": 42,"));
     assert_eq!(state.runs[0].coordinator.as_deref(), Some("term_3"));
     assert_eq!(state.dispatches[0].request, "req_5f2c9a1b7d3e4f60");
@@ -75,10 +75,9 @@ fn design_examples_round_trip_through_the_types() {
         "{ \"v\": 1, \"sid\": \"…\", \"host\": \"claude\"",
     ));
     assert_eq!((session.host, session.prompt_fp), (HostId::Claude, None));
-    let route: Route = round_trip(&design_block(
+    let _: Route = round_trip(&design_block(
         "{ \"v\": 1, \"key\": \"PAY-12\", \"class\": \"direct\"",
     ));
-    assert!(!route.requires_packet);
     let index: SearchIndex = round_trip(&design_block("\"parser\": \"map-v1\", \"config_sha256\""));
     assert!(index.files[0].searchable);
     let find: FindResult = round_trip(&design_block("\"options\": { \"scope\": \"code\""));
@@ -89,22 +88,6 @@ fn design_examples_round_trip_through_the_types() {
         context.candidates[0].decision,
         fullops_core::explore::Decision::Keep
     );
-    let packet_text = design_block("\"options\": { \"seeds\": [\"src/pay/retry.rs\"]");
-    let packet: Packet = round_trip(&packet_text);
-    assert_eq!(packet.delivered[0].category, PacketCategory::DirectEdit);
-    assert!(matches!(
-        packet.producers["documents-find"],
-        PacketProducer::Unused { .. }
-    ));
-    let outcomes_text = design_block("\"packet_input_sha256\"");
-    let _: PacketOutcomes = round_trip(&outcomes_text);
-
-    // v가 1이 아니거나 JSON이 아니면 없는 것으로 본다
-    assert!(parse_packet(packet_text.as_bytes()).is_some());
-    assert!(parse_packet(packet_text.replacen("\"v\": 1", "\"v\": 2", 1).as_bytes()).is_none());
-    assert!(parse_packet(b"{ ").is_none());
-    assert!(parse_packet_outcomes(outcomes_text.as_bytes()).is_some());
-
     // 6.3절의 추적 줄, 6.2.2절의 턴 줄, 6.2.1절의 archive 줄, 10.3절의 설치 기록
     let design = design_block("{ \"v\": 1, \"seq\": 42,");
     assert!(!design.is_empty());
@@ -770,14 +753,11 @@ fn committed_records_round_trip() {
         serde_json::to_value(read_route(&repo, &key).yes().flatten().unwrap()).unwrap(),
         example
     );
-    // requires_packet이 없는 기록은 false로 읽는다
+    // 2.1.0에서 뗀 requires_packet이 남은 기록(2.0.x)도 읽힌다. 그 키는 버린다
     let mut old = example.clone();
-    old.as_object_mut().unwrap().remove("requires_packet");
-    assert!(
-        !serde_json::from_value::<Route>(old)
-            .unwrap()
-            .requires_packet
-    );
+    old["requires_packet"] = json!(true);
+    let read: Route = serde_json::from_value(old).unwrap();
+    assert_eq!(serde_json::to_value(&read).unwrap(), example);
 
     assert_eq!(read_inbox(&repo, &role), Known::Yes(None));
     let inbox = format!(
@@ -838,20 +818,6 @@ test_level: lite\nparallel: on\n---\n# 본문\n"
         fullops_core::stage_of(&key, &State::default(), &keys, true),
         Stage::Done
     );
-
-    // 패킷: 없거나 v가 다르면 없는 것으로 본다
-    assert_eq!(read_packet(&repo, &key), Known::Yes(None));
-    let packet = design_block("\"options\": { \"seeds\": [\"src/pay/retry.rs\"]");
-    std::fs::create_dir_all(repo.explore_dir()).unwrap();
-    std::fs::write(repo.packet_path(&key), &packet).unwrap();
-    assert_eq!(read_packet(&repo, &key).yes().flatten().unwrap().key, key);
-    std::fs::write(
-        repo.packet_path(&key),
-        packet.replacen("\"v\": 1", "\"v\": 9", 1),
-    )
-    .unwrap();
-    assert_eq!(read_packet(&repo, &key), Known::Yes(None));
-    assert_eq!(read_packet_outcomes(&repo, &key), Known::Yes(None));
 }
 
 #[test]

@@ -42,5 +42,5 @@ Do not exit the shell. More supervised work arrives here as a fresh preamble
 and TASK block; follow it under its new Dispatch.
 
 === TASK ===
-Task key: PAY-12; Purpose: implementation; Role: dev; Handover: /home/dev/repo-dev/.fullops-squad/handovers/to_dev.md; Base: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b; Test level: lite; Subagent level: lite. 끝나면 fullops done을 실행하고 출력된 본문으로 preamble의 worker_done을 한 번 보낸다.
+Task key: PAY-12; Purpose: implementation; Role: dev; Handover: /home/dev/repo-dev/.fullops/inbox/to_dev.md; Base: 4f0c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b; Test level: lite; Subagent level: lite. 끝나면 fullops done을 실행하고 출력된 본문으로 preamble의 worker_done을 한 번 보낸다.
 </pasted_content id="1">

@@ -628,9 +628,7 @@ impl Driver {
         }
         self.worker_works(role, key, None, 3);
         // 완료 보고 절이 템플릿 그대로면 done이 거절한다(R-04). worker가 채워 커밋한다
-        let inbox = self
-            .dir(role)
-            .join(format!(".fullops-squad/handovers/to_{role}.md"));
+        let inbox = self.dir(role).join(format!(".fullops/inbox/to_{role}.md"));
         if let Ok(text) = std::fs::read_to_string(&inbox) {
             let filled = text.replacen(
                 "## 완료 보고\n",

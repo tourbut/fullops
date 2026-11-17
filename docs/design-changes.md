@@ -895,3 +895,84 @@ hook 규칙 표(`RULES`)는 34개가 된다: 뼈대의 32개에 S-06과 T-13을 
 | 비교 반박: 하위 폴더 cwd의 `add -A`·`$D` 등이 T-09를 지남(위 수정의 회귀) | high | 레포 전체 표식을 `.`에서 `:/`로 바꾸고 `stage`, `--pathspec-from-file`, 풀리지 않은 확장, 경로 없는 add를 레포 전체로 본다 | 설계 7.4 9번, 7.5 T-09 |
 | 비교 반박: 날것 `orchestration dispatch`(`--inject` 없음)가 분류 안 된 Task를 배정 | medium | `OrcaWorkerStart`로 분류해 T-01(`--dry-run`만 통과). DF-28의 근거를 고침 | 설계 7.4 8번, 7.5 T-01, 11.1, 12.2 C5, 12.3 DF-1·DF-28, contracts/orca.md 2.9 |
 | 비교 반박: py 구동기의 `fullops <sub>` 지름길이 1.24.0 판정을 가림, 판정이 같은데 붙은 `df` | low | 지름길을 지우고 a3·a4 6단계에 DF-26, p2 30·r4 14의 `df`를 지우고 r4 18을 DF-33으로 | 설계 16.1(비교), 12.2 A3·A4 |
+
+## 9. 2.1.0: 패킷 기능을 뗐다 (2026-11-17)
+
+레포 주인이 정했다. 이유는 둘이다. `<KEY>-packet.json`은 과제당 1~4MB이고 worker는 항목마다 `<KEY>-packet-outcomes.json`을 써야 해서 토큰만 쓴다. 그리고 새 판에는 패킷을 새로 켜는 길이 없었다(1.24.0의 `requires_packet`만 이어받았다). 설계 3절의 "탐색 패킷은 선택" 결정은 이것으로 거두었다.
+
+### 9.1 뗀 것
+
+| 무엇을 | 내용 | 절 |
+|---|---|---|
+| 명령 | `fullops packet build\|check`와 `cmd/packet.rs`, 명령 표의 줄 | 8.2, 8.14 |
+| 검사 | `check_packet`(`PacketCheck::{Delivery, Completion}`)과 부르던 세 곳: `dispatch`의 D-12, `done`의 R-10, `review check`의 10번(`RV-10`). 번호는 다시 쓰지 않는다. `review check`의 항목은 1~9번이다 | 8.5, 8.7, 8.9 |
+| 거절 ID | J-03과 J-10~J-17, 단계 이름 `FullOps[packet]`. J-01·J-02·J-04는 `find`·`context`의 것으로 남는다 | 8.1, 8.14 |
+| 타입과 함수 | `Packet`·`PacketOutcomes`·`PacketCategory`·`PacketCheck`와 딸린 타입, `PacketInput`·`Source`·`SourceBasis`, `build_packet`·`build_packet_from`·`packet_block`·`with_block`·`packet_source_paths`·`source_sha256`, `parse_packet`·`parse_packet_outcomes`, `read_packet`·`read_packet_outcomes`, `rebuild_packet`, `Repo::packet_path`·`packet_outcomes_path` | 5, 10.2 |
+| `Route.requires_packet` | 필드와, `route`가 1.24.0의 `docs/evaluations/jev/<KEY>-route.json`에서 그 값을 옮기던 코드, `migrate` 보고서의 "requires_packet이 켜진 옛 route 기록" 줄. 이미 커밋된 route 기록에 그 키가 남아 있어도 읽힌다(`Route`는 모르는 필드를 거절하지 않는다. 시험이 고정한다). 다음에 쓸 때 키가 사라진다 | 6.1.4, 8.3, 13.2 |
+| `dispatch` | spec의 `; Packet: …` 필드, 준비 커밋에 `docs/evaluations/jev/` 파일을 넣던 것 | 8.5 |
+| `task recover` | 패킷을 다시 만들고 `패킷 갱신` 커밋을 하던 단계. 출력과 JSON의 `packet` 필드 | 8.4 |
+| 인박스의 패킷 블록 | 쓰는 코드(`--write-inbox`). `instruction_sha256`이 `<!-- fullops-packet:start -->`~`end` 블록을 빼고 계산하는 규칙은 남겼다: 2.0.x가 쓴 인박스가 남아 있을 때 지문과 과제 글이 달라지지 않게 한다 | 6.1.5 |
+| 시나리오 | P1, P3~P6, P12, P14(파일도 지웠다). P2와 P13은 `find`·`context`만으로 고쳐 남겼다 | 12.2 |
+| 스킬 | `fullops-work`의 패킷·처리 기록 안내 | 11.3 |
+
+### 9.2 탐색 결과의 자리
+
+`find`·`context`는 남는다. 결과 파일(`<KEY>-find.json`, `<KEY>-documents-find.json`, `<KEY>-context.json`)과 덮어쓰기 전 사본(`history/`)은 커밋되는 `.fullops-squad/docs/evaluations/jev/`가 아니라 Git 공용 디렉터리 `<git-common-dir>/fullops/explore/`에 쓰고 읽는다(`Repo::explore_dir`). 모든 워크트리가 같은 파일을 보고 커밋되지 않는다.
+
+| 따라 바뀐 것 | 내용 | 절 |
+|---|---|---|
+| 준비 커밋 | 탐색 결과를 넣지 않는다. worker는 공용 디렉터리의 같은 파일을 본다 | 8.5 |
+| 내장 `.gitignore` | `docs/evaluations/jev/history/` 줄을 뺐다. `assets::GITIGNORE_LINES`는 비었고 `migrate`가 `.gitignore`에 더하는 줄이 없다. `upgrade`의 필수 적용 `explore-history-ignore`도 뺐다 | 6.1, 10.6 |
+| 출력의 경로 | 원본 체크아웃에서는 `.git/fullops/explore/<파일>`, 역할 워크트리에서는 절대 경로다(레포 밖이라 상대 경로로 줄이지 않는다) | 8.14 |
+| 워크트리 사이의 재사용 | 결과가 워크트리마다 따로가 아니므로, lead 체크아웃에서 만든 결과가 있는 키를 역할 워크트리에서 다시 돌리면 `head`가 달라 J-04(`--force`)다 | 8.14 |
+| 이미 커밋된 파일 | `.fullops-squad/docs/evaluations/jev/`의 옛 탐색 결과·패킷·처리 기록은 지우지 않고 읽지도 않는다. 레포의 `.gitignore`에 남은 `docs/evaluations/jev/history/` 줄은 해가 없다 | 6.1, 13.2 |
+
+`.fullops-squad`라는 폴더 이름과 나머지 경로는 같은 판의 다음 변경(10절)에서 바꿨다.
+
+## 10. 2.1.0: `.fullops` 자리와 문서 트리 (2026-11-17)
+
+레포 주인이 정했다(명세 `docs/proposals/2.1.0-repo-folder-and-artifacts.md`). 근거는 jevpet 점검이다: `.fullops-squad/` 아래 커밋 파일 9,309개, `docs/evaluations` 약 850MB, 1.24.0의 기계 파일과 사람 문서가 한 곳에 섞여 있고, 과제 하나의 기록이 `handovers/logs/`, `routes/`, `reviews/`, `docs/evaluations/qa-reports/`, `docs/evaluations/jev/` 다섯 곳에 흩어져 있었다. 17절 H2의 "레포 폴더 `.fullops-squad/` 유지"를 뒤집었다. 유지한 이유(Python판과 같은 폴더로 공존)는 Python판 플러그인을 Claude Code·grok에서 지우면서 사라졌다.
+
+### 10.1 바뀐 것
+
+| 무엇을 | 내용 | 절 |
+|---|---|---|
+| 레포 폴더 | `.fullops-squad/` → `.fullops/`. 활성 표식은 `.fullops/fullops.toml` | 1, 4, 6.1, 17 H2 |
+| 문서 트리 | `config/`(lint.json, review.json), `guide/`(FULLOPS.md, project.md, orca-agents.md, lint.md, rules/, roles/, agents/), `templates/`, `inbox/to_<역할>.md`, `tasks/<KEY>/{route.json, request.md, <역할>.r<n>.md, reviews/<head12>/, qa/}`, `docs/`(제품 산출물), `archive/`(1.24.0 기록), `local/` | 6.1 |
+| 경로 모듈 | `fullops_core::layout`: `DIR`, `LEGACY_DIR`, 레포 상대 경로 함수, `is_record`, `REQUIRED_DOCS`, 옛 자리의 대응 `moved`·`rewrite`. `Repo::squad()`는 `Repo::dir()`이 됐고 경로 메서드는 `root.join(layout::…)`만 한다. src의 다른 곳은 `.fullops` 문자열을 만들지 않는다 | 6.1, 10.2, formats 2절 |
+| 흐름 기록 | `derive.rs`·`hold.rs`·`review.rs`가 따로 갖던 목록(`handovers/`, `docs/evaluations/`, `routes/`, `reviews/`, `PLANS.md`)을 `layout::is_record`(`PLANS.md`, `inbox/`, `tasks/`) 하나로 바꿨다. 리뷰 대상의 '기록이라 열람하지 않는다'도 같은 판정이다 | 6.6, 8.9 |
+| hook 규칙 | T-05·T-06은 `inbox/` 바로 아래 `.md`(템플릿 예외가 없어졌다), T-09는 `tasks/` 아래 커밋 후보 가운데 `tasks/<KEY>/qa/`의 미디어와 그 폴더의 `report.md`, T-10은 차수 이름의 새 과제 폴더(`tasks/<KEY>-FIX/qa/…`인데 `tasks/<KEY>/`가 있다), `terminal send`의 주입 판정은 글 안의 `inbox/to_` | 7.4, 7.5 |
+| QA 보고서 | `docs/evaluations/qa-reports/<KEY>-test/report.md` → `tasks/<KEY>/qa/report.md`. `done`의 R-05, tester 안내, 스킬이 따른다 | 8.7, 11.3 |
+| 옛 자리 레포 | 비활성. SessionStart의 안내, 명령의 `FullOps[layout]` 거절(`status`·`upgrade`는 안내와 종료 코드 0), `doctor`의 행. 판정은 `fullops_store::legacy_marker` | 7.1, 13.6 |
+| `migrate --layout [--dry-run]` | 거절 조건, 표대로 옮기기, 추적 해제와 `.fullops/local/legacy/`, 글 고치기, exclude 보강, `.gitignore`, `applied_version`, 커밋 하나 | 13.6 |
+| `migrate --from-python` | 옛 자리에서 전환한 뒤 전환을 커밋하고 같은 실행에서 자리 옮김을 한다(커밋 둘). 없는 템플릿은 옛 자리의 경로로 더한다 | 13.2 |
+| `migrate --rollback` | 옛 자리에서만 한다. 새 자리에서는 거절하고 자리 옮김 커밋의 `git revert`를 안내한다 | 13.3 |
+| `migrate --finalize` | 표식과 `git rm` 안내의 경로가 새 자리를 본다 | 13.5 |
+| lint | DOC-002·DOC-003의 대상에서 `archive/`와 `tasks/*/reviews/`를 뺐다. 새 규칙 QA-001(ERROR), QA-002(WARNING) | 8.11 |
+| `doctor` | `.fullops/` 아래의 '무시 목록에 있으면서 추적되는 파일' 알림 | 10.6 |
+| `init` | 새 트리를 만든다. 레포 루트가 사용자 홈이면 거절한다 | 10.6 |
+| 탐색 | 문서 색인에서 `archive/`를 뺐다. 필수 문서 여섯의 경로가 `guide/` 아래다 | 8.14 |
+| 내장 템플릿 | `crates/fullops/assets/repo/`를 새 트리로 옮기고 글의 경로를 고쳤다. `lint.json`의 `exclude`는 `inbox/`·`tasks/`·`archive/`·`guide/roles/`·`docs/evaluations/`, `review.json`의 `exclude`는 `tasks/`·`archive/`·`*.bak`. `.gitignore`는 `.env*`·`!.env.example`·`local/`·`**/raw/` | 6.1, 11.3 |
+| 스킬·관리 블록·패널 | `plugin/skills/**`와 `managed-block.md`의 경로, Orca 패널의 활성 표식 경로와 판 번호 2.1.0, npx 실행기의 표식 판정 | 10.4, 11.3 |
+
+### 10.2 명세와 다르게 정한 것
+
+| 무엇을 | 명세 | 구현 | 이유 |
+|---|---|---|---|
+| `legacy_marker`의 자리 | `layout::legacy_marker(root)` | `fullops_store::legacy_marker(root)`(와 `legacy_root(cwd)`) | `fullops-core`는 파일에 닿지 않는다(10.1절). 폴더 이름은 `layout`의 상수를 쓴다 |
+| 옛 자리 레포의 `status`·`upgrade` | 거절에서 빼는 명령 | 안내를 내고 종료 코드 0 | 활성 표식 없이는 요약도 필수 적용 검사도 못 한다. 세션 시작의 `fullops status`와 npx의 `upgrade --repo`가 실패로 보이지 않게 한다 |
+| 파일 옮기기 | 추적 파일을 `git mv` | 파일 이동과 `git update-index --index-info` 한 번 | 결과가 같다. 파일 9천 개에 `git mv`를 한 번씩 부르면 Windows에서 여러 분이 걸리고 인덱스를 그만큼 다시 쓴다 |
+| 추적에서 빼는 범위 | jev, OCR 중간 파일, 무시 목록에 있으면서 추적되는 파일 | 그것과 새 `.gitignore` 템플릿에 걸리는 자리로 갈 파일(`raw/` 아래 등) | 옮긴 직후 `doctor`가 바로 알릴 파일을 만들지 않는다 |
+| 추적되지 않는 파일 | `.env*`·`local/`을 옮긴다 | 그 둘은 같은 이름으로, 나머지(옛 무시 목록에 걸려 있던 파일)는 `local/legacy/`로 | 옛 폴더를 남기지 않는다. 새 자리의 무시 목록에 걸리지 않을 파일이 작업 트리를 더럽히지 않는다 |
+| exclude 보강 | `config/review.json` | `config/lint.json`에도 같은 둘을 더한다 | 2.0.x의 템플릿은 `handovers/**`·`docs/evaluations/**`로 끝난 지시서와 QA 폴더를 코드 lint에서 뺐다. 그 자리가 `tasks/`로 갔다 |
+| 글 고치기의 엔트리 문서 | 관리 블록 안의 경로 치환 | 관리 블록을 새 블록으로 바꾼다 | 블록은 fullops가 관리하는 글이고 새 블록이 새 경로를 담는다 |
+| `--from-python`의 커밋 | 13.2절은 커밋하지 않았다 | 전환 커밋과 자리 옮김 커밋 둘 | 자리 옮김이 깨끗한 작업 트리에서 커밋 하나를 만드는 단계다. 커밋을 나눠야 자리 옮김만 revert한 뒤 기존 `--rollback`이 그대로 된다 |
+| `handovers/` 아래 그 밖의 파일 | 표에 없다 | `archive/handovers/` | 인박스(`to_*.md`)와 틀이 아닌 것은 옛 기록이다 |
+| T-10 | 언급 없다 | 차수 이름의 새 과제 폴더로 옮겨 남겼다 | 같은 과제의 QA를 차수마다 새 폴더로 흩는 것을 막는 규칙이다. 폴더의 자리만 바뀌었다 |
+
+### 10.3 남은 것
+
+- 사용자 레포의 안내 문서(`guide/**`)에 접두어 없이 적힌 상대 경로(`handovers/_TEMPLATE.md`, `lint/lint.json` 등)는 `migrate --layout`이 고치지 않는다. 사람이 고치거나 새 템플릿의 글을 가져온다.
+- QA 보고서가 역할별 파일(`tasks/<KEY>/qa/<역할>.md`)인 과제에서 T-09는 `report.md`만 링크의 근거로 본다. 그런 폴더에 미디어를 더 커밋하면 `report.md`에 링크를 적어야 한다.
+- `scenarios/drivers/py_driver.py`는 시나리오의 새 자리 경로를 1.24.0의 자리로 옮겨 읽는다(`old_place`). 기준선 사본이 없는 환경이라 `cargo xtask compare`로 다시 재지 않았다.
+- `Cargo.toml`·`package.json`의 판 번호, 릴리스 노트, 카탈로그는 따로 올린다.

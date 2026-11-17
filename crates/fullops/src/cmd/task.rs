@@ -1,11 +1,11 @@
 //! `fullops task new|reopen|recover`: 인박스 생성, 같은 키 재오픈, 끊긴 worker 복구(설계 8.4절).
 
 use super::dispatch::{CliFacts, is_clean, main_checkout, usage, value};
-use super::done::is_record_path;
 use crate::assets::HANDOVER_TEMPLATE;
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::flow;
 use fullops_core::frontmatter::{FmValue, FrontMatter};
+use fullops_core::layout;
 use fullops_core::messages;
 use fullops_core::model::{
     Completion, Config, DEFAULT_BUDGET, Extra, HeadRef, Known, RoleId, RoleKind, RouteClass, Seat,
@@ -86,8 +86,8 @@ fn parse(mut args: lexopt::Parser) -> Result<Options, CliError> {
 
 /// 그 과제의 완료 기록 가운데 가장 큰 차수.
 fn last_round(ctx: &Ctx, key: &TaskKey, role: &RoleId) -> Option<u32> {
-    let logs = ctx.repo().ok()?.squad().join("handovers").join("logs");
-    let prefix = format!("{key}.{role}.r");
+    let logs = ctx.repo().ok()?.root.join(layout::task_dir(key));
+    let prefix = format!("{role}.r");
     std::fs::read_dir(logs)
         .ok()?
         .flatten()
@@ -141,10 +141,7 @@ fn unmerged_record(
     let (repo, config) = (ctx.repo().ok()?, ctx.config().ok()?);
     let inbox = fullops_store::read_inbox(repo, role).yes().flatten()?;
     let branch = format!("refs/heads/{}", config.roles.get(role)?.branch);
-    let log = format!(
-        ".fullops-squad/handovers/logs/{key}.{role}.r{}.md",
-        inbox.round
-    );
+    let log = layout::handover_log(key, role, inbox.round);
     let waiting = unlanded(state, key).next().is_some();
     (inbox.key == *key && waiting && git.rev_parse(&format!("{branch}:{log}")).yes().is_some())
         .then_some((branch, log))
@@ -161,7 +158,7 @@ fn adopt_record(
     log: &str,
 ) -> Result<(), CliError> {
     let repo = ctx.repo()?;
-    let inbox = format!(".fullops-squad/handovers/to_{role}.md");
+    let inbox = layout::inbox(role);
     // 커밋하지 않은 이전 인박스의 글(lead가 미리 적은 수정 지시)을 말없이 버리지 않는다
     if git.status(Some(&inbox)).yes().is_none_or(|e| !e.is_empty()) {
         return Err(super::dispatch::step_refusal(
@@ -372,32 +369,6 @@ fn recover(ctx: &Ctx, options: Options) -> Result<u8, CliError> {
     for linked in super::env::link_env(&main_checkout(repo), &repo.root) {
         ctx.note(&format!("환경 파일을 연결했다: {linked}"));
     }
-    // 패킷이 있으면 새 HEAD에 맞춰 다시 만들고 커밋 하나에 넣는다. WIP 커밋이 바꾼 경로를 seed에 더한다
-    let seeds: Vec<String> = wip
-        .as_ref()
-        .and_then(|wip| git.diff_names(&format!("{wip}~1"), wip.as_str()).yes())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|path| !is_record_path(path))
-        .collect();
-    let packet = match super::packet::rebuild_packet(repo, &key, &role, &seeds) {
-        Ok(Some(path)) => {
-            let paths = [
-                format!(".fullops-squad/docs/evaluations/jev/{key}-packet.json"),
-                format!(".fullops-squad/handovers/to_{role}.md"),
-            ];
-            git.commit_only(&paths, &format!("fullops: 패킷 갱신 {key} ({role})"))?;
-            Some(path_text(&path))
-        }
-        Ok(None) => None,
-        Err(refusal) => {
-            ctx.note(&format!(
-                "패킷을 다시 만들지 못했다(옛 패킷으로 남는다): {}",
-                messages::refusal(refusal.rule, &refusal.reason, &refusal.escape)
-            ));
-            None
-        }
-    };
     // 끊긴 worker의 배정을 정산한다. 남겨 두면 같은 배정을 다시 내는 것이 D-10에 걸린다
     let here = path_text(&repo.root);
     ctx.update_state(None, |s| {
@@ -422,12 +393,11 @@ fn recover(ctx: &Ctx, options: Options) -> Result<u8, CliError> {
     let head = git.rev_parse("HEAD").yes();
     ctx.print(
         &format!(
-            "복구했다: {key} ({role})\nWIP 커밋: {}\n병합한 ref: {base_ref}\nHEAD: {}\n패킷: {}",
+            "복구했다: {key} ({role})\nWIP 커밋: {}\n병합한 ref: {base_ref}\nHEAD: {}",
             wip.as_ref().map_or("없음", |s| s.as_str()),
-            head.as_ref().map_or("?", |s| s.as_str()),
-            packet.as_deref().unwrap_or("없음")
+            head.as_ref().map_or("?", |s| s.as_str())
         ),
-        json!({"wip": wip, "merged": base_ref, "head": head, "packet": packet}),
+        json!({"wip": wip, "merged": base_ref, "head": head}),
     );
     Ok(EXIT_OK)
 }

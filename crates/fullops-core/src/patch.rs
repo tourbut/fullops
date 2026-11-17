@@ -334,7 +334,7 @@ mod tests {
         );
 
         // apply_patch: 계약 표본의 Update·Move·문맥 머리줄·End of File·Delete
-        let body = "*** Begin Patch\n*** Environment ID: x\n*** Update File: src/pay/retry.ts\n*** Move to: src/pay/retry_policy.ts\n@@ export function retry()\n const A = 1\n-const MAX = 3\n+const MAX = 5\n const B = 2\n*** End of File\n*** Delete File: src/pay/old_retry.ts\n*** Add File: .fullops-squad/handovers/to_dev.md\n+---\n+key: PAY-12\n+---\n*** End Patch";
+        let body = "*** Begin Patch\n*** Environment ID: x\n*** Update File: src/pay/retry.ts\n*** Move to: src/pay/retry_policy.ts\n@@ export function retry()\n const A = 1\n-const MAX = 3\n+const MAX = 5\n const B = 2\n*** End of File\n*** Delete File: src/pay/old_retry.ts\n*** Add File: .fullops/inbox/to_dev.md\n+---\n+key: PAY-12\n+---\n*** End Patch";
         let patch = ToolCall {
             command: Some(body.into()),
             ..tool(ToolKind::Patch)
@@ -353,7 +353,7 @@ mod tests {
                 ),
                 ("src/pay/old_retry.ts".to_string(), Known::Yes(None)),
                 (
-                    ".fullops-squad/handovers/to_dev.md".to_string(),
+                    ".fullops/inbox/to_dev.md".to_string(),
                     yes("---\nkey: PAY-12\n---\n")
                 ),
             ]
@@ -382,23 +382,20 @@ mod tests {
         let mut same = |p: &Path| p.to_path_buf();
         let mut rel = |p: &str| repo_relative(p, cwd, root, &mut same);
         assert_eq!(rel("a.md").as_deref(), Some("sub/a.md"));
-        assert_eq!(
-            rel("../.fullops-squad/x.md").as_deref(),
-            Some(".fullops-squad/x.md")
-        );
+        assert_eq!(rel("../.fullops/x.md").as_deref(), Some(".fullops/x.md"));
         assert_eq!(rel("/home/dev/repo/src\\a.rs").as_deref(), Some("src/a.rs"));
         assert_eq!(rel("/home/dev/other/a.rs"), None);
         assert_eq!(rel("/home/dev/repo"), None);
         let win = Path::new("C:\\project");
         assert_eq!(
             repo_relative(
-                "C:\\project\\.fullops-squad\\handovers\\to_dev.md",
+                "C:\\project\\.fullops\\inbox\\to_dev.md",
                 win,
                 win,
                 &mut |p| p.to_path_buf()
             )
             .as_deref(),
-            Some(".fullops-squad/handovers/to_dev.md")
+            Some(".fullops/inbox/to_dev.md")
         );
         if cfg!(windows) {
             assert_eq!(
@@ -407,12 +404,11 @@ mod tests {
             );
         }
         // 링크를 거친 경로는 실제 자리로 견준다
-        let mut link = |p: &Path| {
-            PathBuf::from(path_text(p).replace("/repo/hv", "/repo/.fullops-squad/handovers"))
-        };
+        let mut link =
+            |p: &Path| PathBuf::from(path_text(p).replace("/repo/hv", "/repo/.fullops/inbox"));
         assert_eq!(
             repo_relative("../hv/to_dev.md", cwd, root, &mut link).as_deref(),
-            Some(".fullops-squad/handovers/to_dev.md")
+            Some(".fullops/inbox/to_dev.md")
         );
     }
 }

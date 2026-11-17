@@ -4,7 +4,7 @@ origin = "설계 12.2절 P7"
 # 준비: 필수 문서 여섯, 코드, 문서를 커밋한다
 [[step]]
 act = "file"
-path = ".fullops-squad/FULLOPS.md"
+path = ".fullops/guide/FULLOPS.md"
 content = '''
 # FULLOPS.md
 
@@ -13,7 +13,7 @@ content = '''
 
 [[step]]
 act = "file"
-path = ".fullops-squad/project.md"
+path = ".fullops/guide/project.md"
 content = '''
 # project.md
 
@@ -22,7 +22,7 @@ content = '''
 
 [[step]]
 act = "file"
-path = ".fullops-squad/rules/common/README.md"
+path = ".fullops/guide/rules/common/README.md"
 content = '''
 # README.md
 
@@ -31,7 +31,7 @@ content = '''
 
 [[step]]
 act = "file"
-path = ".fullops-squad/rules/common/coding-style.md"
+path = ".fullops/guide/rules/common/coding-style.md"
 content = '''
 # coding-style.md
 
@@ -40,7 +40,7 @@ content = '''
 
 [[step]]
 act = "file"
-path = ".fullops-squad/rules/common/security.md"
+path = ".fullops/guide/rules/common/security.md"
 content = '''
 # security.md
 
@@ -49,7 +49,7 @@ content = '''
 
 [[step]]
 act = "file"
-path = ".fullops-squad/rules/common/testing.md"
+path = ".fullops/guide/rules/common/testing.md"
 content = '''
 # testing.md
 
@@ -112,7 +112,7 @@ expect = { verdict = "pass", flow = "continues" }
 
 [[step]]
 act = "edits_file"
-path = ".fullops-squad/handovers/to_dev.md"
+path = ".fullops/inbox/to_dev.md"
 old = "- [ ] 구체적 작업과 수정할 파일"
 new = """
 - [ ] `retry`의 중복 클릭을 막는다

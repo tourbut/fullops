@@ -1,14 +1,10 @@
-//! 탐색(설계 8.14절): 지문, 보낼 수 있는 경로·글 규칙, 색인 항목, 배치, 분류, 패킷 만들기와 검사. 전부 순수 함수다(묶음 J).
-//! 타입과 시그니처는 설계 10.2절이 정본이다. 다른 묶음이 부르는 것은 `check_packet` 하나다.
+//! 탐색(설계 8.14절): 지문, 보낼 수 있는 경로·글 규칙, 색인 항목, 배치, 분류. 전부 순수 함수다(묶음 J).
+//! 타입과 시그니처는 설계 10.2절이 정본이다.
 
 use crate::frontmatter::parse_front_matter;
 use crate::lint_rules::header_summary;
 use crate::messages::{self, MsgId};
-use crate::model::{
-    DeliverableRow, EXPLORE_V, Known, Packet, PacketCategory, PacketCheck, PacketDecision,
-    PacketDelivered, PacketEvidence, PacketItem, PacketItemStatus, PacketOptions, PacketOutcomes,
-    PacketProducer, PacketUnknown, Refusal, RoleId, Route, SourceBasis, TaskKey, sha256_hex, words,
-};
+use crate::model::{Refusal, RoleId, TaskKey, sha256_hex, words};
 use fancy_regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -193,74 +189,17 @@ pub struct RefusedPath {
     pub reason: String,
 }
 
-/// 경로 하나를 읽은 결과. `Unreadable`의 글은 패킷 `unknown[].reason`이다.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Source {
-    Text { text: String, basis: SourceBasis },
-    Unreadable(&'static str),
-}
-
-/// `build_packet`의 입력. 읽기는 부르는 쪽(`cmd/packet.rs`)이 끝낸다.
-pub struct PacketInput<'a> {
-    pub key: &'a TaskKey,
-    pub role: &'a RoleId,
-    pub round: u32,
-    pub head: &'a str,
-    pub created_at: i64,
-    /// 지시서 파일의 레포 상대 경로와 인박스 글.
-    pub instruction_path: &'a str,
-    pub instruction: &'a str,
-    pub worktree_dirty: bool,
-    /// code와 documents 색인을 합친 것. 잡음 폴더를 거르는 일은 `build_packet`이 한다.
-    pub map: &'a [IndexEntry],
-    /// 파일이 있고 `v == 1`인 것. 낡았는지는 `build_packet`이 가린다.
-    pub find: Option<&'a FindResult>,
-    pub documents_find: Option<&'a FindResult>,
-    pub context: Option<&'a ContextResult>,
-    /// producer 이름 → 결과 파일 바이트의 sha256.
-    pub producer_sha256: &'a BTreeMap<String, String>,
-    /// `--seed`와 미커밋 변경 경로(기록 경로 제외).
-    pub seeds: &'a [String],
-    pub required: &'a [String],
-    pub update_docs: &'a [String],
-    pub route_deliverables: &'a [String],
-    pub decisions: &'a [PacketDecision],
-    /// `packet_source_paths`가 돌려준 경로마다 읽은 결과.
-    pub sources: &'a BTreeMap<String, Source>,
-    pub deliverables: &'a [DeliverableRow],
-}
-
 // ── 상수 ────────────────────────────────────────────────────────
 
 /// 색인 형식의 이름. 다르면 색인을 전부 다시 만든다. 글 규칙이 바뀌면 올린다(옛 규칙으로 남긴 요약을 다시 본다).
 pub const PARSER: &str = "map-v2";
 /// 한 파일에서 읽는 양(바이트).
 pub const MAX_BLOB: usize = 65_536;
-/// 필수 문서(고정 여섯).
-pub const REQUIRED_DOCS: [&str; 6] = [
-    ".fullops-squad/FULLOPS.md",
-    ".fullops-squad/project.md",
-    ".fullops-squad/rules/common/README.md",
-    ".fullops-squad/rules/common/coding-style.md",
-    ".fullops-squad/rules/common/security.md",
-    ".fullops-squad/rules/common/testing.md",
-];
-pub const BLOCK_START: &str = "<!-- fullops-packet:start -->";
-pub const BLOCK_END: &str = "<!-- fullops-packet:end -->";
+pub use crate::layout::REQUIRED_DOCS;
+// 2.1.0에서 패킷을 뗐다. 옛 인박스에 남은 패킷 블록이 지문과 과제 글에 섞이지 않게 표식만 남긴다
+const BLOCK_START: &str = "<!-- fullops-packet:start -->";
+const BLOCK_END: &str = "<!-- fullops-packet:end -->";
 const REPORT_HEADING: &str = "## 완료 보고";
-/// 문자 검색의 지도에서 빼는 폴더. 지난 산출물과 보관 기록은 명시·필수·producer 추천으로만 들어온다.
-const NOISE: [&str; 4] = [
-    "artifacts/",
-    ".fullops-squad/docs/evaluations/",
-    ".fullops-squad/contexts/archive/",
-    ".fullops-squad/handovers/logs/",
-];
-const SEARCH_REASON: &str = "symbol or keyword occurrence";
-/// 심볼에서 빼는 흔한 낱말.
-const COMMON: [&str; 20] = [
-    "Task", "read", "None", "True", "False", "with", "from", "import", "rename", "return",
-    "returns", "update", "callers", "tests", "response", "contract", "and", "add", "the", "API",
-];
 const MODIFIERS: [&str; 10] = [
     "pub",
     "export",
@@ -291,12 +230,6 @@ fn clip(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
-fn push_unique<T: PartialEq>(list: &mut Vec<T>, value: T) {
-    if !list.contains(&value) {
-        list.push(value);
-    }
-}
-
 fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
@@ -304,11 +237,6 @@ fn is_word(c: char) -> bool {
 /// `word`가 낱말로(앞뒤가 낱말 글자가 아니게) 들어 있는가.
 fn has_word(text: &str, word: &str) -> bool {
     bounded(text, word, is_word)
-}
-
-/// 산출물 ID가 글에 나오는가. 한글 조사가 바로 붙는 글("D05를")에서도 찾게 앞뒤의 ASCII 영숫자만 낱말 글자로 본다.
-fn mentions(text: &str, id: &str) -> bool {
-    bounded(text, id, |c| c.is_ascii_alphanumeric())
 }
 
 fn bounded(text: &str, word: &str, is_word: fn(char) -> bool) -> bool {
@@ -340,7 +268,7 @@ pub fn refuse(rule: &'static str, args: &[String], key: &TaskKey, role: &RoleId)
 
 /// 지시서 파일의 레포 상대 경로.
 pub fn instruction_path(role: &RoleId) -> String {
-    format!(".fullops-squad/handovers/to_{role}.md")
+    crate::layout::inbox(role)
 }
 
 /// front matter 뒤의 글. 값의 문법이 틀려도 닫는 `---`까지를 뗀다(지문이 front matter에 기대지 않게 한다).
@@ -359,7 +287,7 @@ fn body(text: &str) -> &str {
     text
 }
 
-/// 패킷 블록과 그 뒤 빈 줄을 뺀다.
+/// 옛 패킷 블록과 그 뒤 빈 줄을 뺀다.
 fn without_block(text: &str) -> String {
     let found = text.find(BLOCK_START).and_then(|start| {
         let end = start + text[start..].find(BLOCK_END)? + BLOCK_END.len();
@@ -400,15 +328,6 @@ pub fn instruction_sha256(inbox_text: &str) -> String {
         out.push('\n');
     }
     sha256_hex(out.trim_end_matches('\n').as_bytes())
-}
-
-/// 패킷 항목의 원문 지문. `is_instruction`이면 지시서 지문, 아니면 CRLF를 LF로 바꾼 글의 sha256이다.
-pub fn source_sha256(text: &str, is_instruction: bool) -> String {
-    if is_instruction {
-        instruction_sha256(text)
-    } else {
-        sha256_hex(text.replace("\r\n", "\n").as_bytes())
-    }
 }
 
 /// 머리 필드 `input_sha256`: `{key, role, round, head, instruction_sha256, options}`를 키 정렬한 JSON의 sha256.
@@ -822,7 +741,7 @@ pub fn triage(
         return (Decision::Keep, None);
     }
     // 지시문이 있는 것이 정상인 문서
-    let trusted = path.starts_with(".fullops-squad/")
+    let trusted = crate::layout::inside(path).is_some()
         || ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md"].contains(&path);
     if signal.injection > 0.7 && !trusted {
         return match whole && signal.evidence < 0.5 {
@@ -837,804 +756,6 @@ pub fn triage(
         return (Decision::SuggestOmit, Some("irrelevant"));
     }
     (Decision::Keep, None)
-}
-
-// ── 패킷 만들기(설계 8.14절 `packet build` 2~11번) ───────────────
-
-fn unknown_of(
-    path: Option<&str>,
-    source: Option<&str>,
-    doc_id: Option<&str>,
-    reason: &str,
-) -> PacketUnknown {
-    PacketUnknown {
-        path: path.map(str::to_string),
-        source: source.map(str::to_string),
-        doc_id: doc_id.map(str::to_string),
-        reason: reason.to_string(),
-    }
-}
-
-fn evidence(
-    method: &str,
-    symbol: Option<&str>,
-    line: Option<usize>,
-    seed: Option<&str>,
-) -> PacketEvidence {
-    PacketEvidence {
-        method: method.to_string(),
-        symbol: symbol.map(str::to_string),
-        line: line.map(|n| n as u32),
-        seed: seed.map(str::to_string),
-    }
-}
-
-fn read_category(path: &str) -> PacketCategory {
-    match path.ends_with(".md") {
-        true => PacketCategory::DocumentRead,
-        false => PacketCategory::ImpactCheck,
-    }
-}
-
-/// find 결과의 후보와 seed 경로.
-fn find_paths(result: Option<&FindResult>) -> impl Iterator<Item = String> + '_ {
-    result.into_iter().flat_map(|f| {
-        f.candidates
-            .iter()
-            .map(|c| &c.path)
-            .chain(&f.seed_paths)
-            .cloned()
-    })
-}
-
-/// 읽을 경로: 지도(잡음 폴더 밖) ∪ 명시 ∪ 필수 ∪ 문서 ∪ 문맥.
-fn source_set(
-    map: &[IndexEntry],
-    find: Option<&FindResult>,
-    documents_find: Option<&FindResult>,
-    context: Option<&ContextResult>,
-    seeds: &[String],
-    required: &[String],
-    instruction_path: &str,
-) -> BTreeSet<String> {
-    map.iter()
-        .filter(|e| e.searchable && !NOISE.iter().any(|n| e.path.starts_with(n)))
-        .map(|e| e.path.clone())
-        .chain(seeds.iter().cloned())
-        .chain(REQUIRED_DOCS.iter().map(|p| p.to_string()))
-        .chain(required.iter().cloned())
-        .chain([instruction_path.to_string()])
-        .chain(find_paths(find))
-        .chain(find_paths(documents_find))
-        .chain(context.into_iter().flat_map(|c| {
-            c.candidates
-                .iter()
-                .map(|c| &c.path)
-                .chain(&c.required_paths)
-                .cloned()
-        }))
-        .collect()
-}
-
-/// `packet build` 4번이 읽을 경로. 부르는 쪽이 이 경로들을 읽어 `PacketInput.sources`를 채운다.
-pub fn packet_source_paths(
-    map: &[IndexEntry],
-    find: Option<&FindResult>,
-    documents_find: Option<&FindResult>,
-    context: Option<&ContextResult>,
-    seeds: &[String],
-    required: &[String],
-    instruction_path: &str,
-) -> Vec<String> {
-    source_set(
-        map,
-        find,
-        documents_find,
-        context,
-        seeds,
-        required,
-        instruction_path,
-    )
-    .into_iter()
-    .collect()
-}
-
-/// `](대상)` 꼴 링크의 대상들.
-fn link_targets(line: &str) -> impl Iterator<Item = &str> {
-    line.split("](").skip(1).filter_map(|rest| {
-        let end = rest.find(|c: char| c == ')' || c.is_whitespace())?;
-        rest[end..].starts_with(')').then_some(&rest[..end])
-    })
-}
-
-/// 문서 `from`의 로컬 링크가 가리키는 레포 상대 경로. 바깥 주소, 문서 안 위치, 레포 밖이면 `None`이다.
-fn link_path(from: &str, target: &str) -> Option<String> {
-    let target = target.split('#').next().unwrap_or_default();
-    let scheme = target
-        .split_once(':')
-        .is_some_and(|(head, _)| !head.is_empty() && head.bytes().all(|b| b.is_ascii_lowercase()));
-    if target.is_empty() || scheme || target.starts_with('/') {
-        return None;
-    }
-    let mut parts: Vec<&str> = from.split('/').collect();
-    parts.pop();
-    for piece in target.split('/') {
-        match piece {
-            "" | "." => {}
-            ".." => {
-                parts.pop()?;
-            }
-            other => parts.push(other),
-        }
-    }
-    Some(parts.join("/"))
-}
-
-struct Items<'a> {
-    map: BTreeMap<String, PacketItem>,
-    required: &'a BTreeSet<String>,
-    sources: &'a BTreeMap<String, Source>,
-    hashes: &'a BTreeMap<&'a str, String>,
-}
-
-impl Items<'_> {
-    fn add(
-        &mut self,
-        path: &str,
-        category: PacketCategory,
-        reason: &str,
-        evidence: Option<PacketEvidence>,
-        doc_id: Option<&str>,
-    ) {
-        let item = self.map.entry(path.to_string()).or_insert_with(|| {
-            let basis = match self.sources.get(path) {
-                Some(Source::Text { basis, .. }) => Some(*basis),
-                _ => None,
-            };
-            PacketItem {
-                path: path.to_string(),
-                categories: Vec::new(),
-                required: self.required.contains(path),
-                optional: false,
-                status: match basis {
-                    Some(_) => PacketItemStatus::Inferred,
-                    None => PacketItemStatus::Unknown,
-                },
-                source_sha256: self.hashes.get(path).cloned(),
-                source_basis: basis,
-                reasons: Vec::new(),
-                evidence: Vec::new(),
-                doc_ids: Vec::new(),
-                decision: None,
-            }
-        });
-        push_unique(&mut item.categories, category);
-        push_unique(&mut item.reasons, reason.to_string());
-        if let Some(evidence) = evidence {
-            push_unique(&mut item.evidence, evidence);
-        }
-        if let Some(id) = doc_id {
-            push_unique(&mut item.doc_ids, id.to_string());
-        }
-    }
-}
-
-/// `packet build` 2~10번(J-03). 작성 글에서 템플릿 줄을 빼지 않는 꼴이다(`build_packet_from`에 빈 템플릿).
-pub fn build_packet(input: &PacketInput) -> Result<Packet, Vec<Refusal>> {
-    build_packet_from(input, "")
-}
-
-/// `build_packet`에 인박스의 내장 템플릿 글을 더 받는다. 작성 글(심볼의 백틱 식별자, 산출물 ID 언급)에서 템플릿 줄을 뺀다.
-pub fn build_packet_from(input: &PacketInput, template: &str) -> Result<Packet, Vec<Refusal>> {
-    let instruction_sha = instruction_sha256(input.instruction);
-    let md = |path: &str| path.ends_with(".md");
-
-    // 2번: 지금 지시서·커밋과 같은 producer만 쓴다
-    let mut unknown = Vec::new();
-    let mut producers = BTreeMap::new();
-    let mut producer_sha256 = BTreeMap::new();
-    let mut note = |name: &str, state: Option<(bool, bool, Option<String>)>| -> bool {
-        let unused = |reason: &str| PacketProducer::Unused {
-            used: false,
-            reason: reason.into(),
-        };
-        let producer = match state {
-            None => unused("absent"),
-            Some((false, ..)) => {
-                unknown.push(unknown_of(None, Some(name), None, "stale"));
-                unused("stale")
-            }
-            Some((true, partial, error)) => {
-                if partial {
-                    unknown.push(unknown_of(None, Some(name), None, "partial"));
-                }
-                if error.is_some() {
-                    unknown.push(unknown_of(None, Some(name), None, "error"));
-                }
-                if let Some(sha) = input.producer_sha256.get(name) {
-                    producer_sha256.insert(name.to_string(), sha.clone());
-                }
-                PacketProducer::Used {
-                    used: true,
-                    partial,
-                    error,
-                }
-            }
-        };
-        let used = matches!(producer, PacketProducer::Used { .. });
-        producers.insert(name.to_string(), producer);
-        used
-    };
-    let fresh = |key: &TaskKey, role: &RoleId, round: u32, head: &str, sha: &str| {
-        key == input.key
-            && role == input.role
-            && round == input.round
-            && head == input.head
-            && sha == instruction_sha
-    };
-    let state_of = |f: &FindResult| {
-        let same = fresh(&f.key, &f.role, f.round, &f.head, &f.instruction_sha256);
-        (same, f.partial, f.error.clone())
-    };
-    let find_used = note("find", input.find.map(state_of));
-    let documents_used = note("documents-find", input.documents_find.map(state_of));
-    let context_used = note(
-        "context",
-        input.context.map(|c| {
-            let same = fresh(&c.key, &c.role, c.round, &c.head, &c.instruction_sha256);
-            (same, false, c.error.clone())
-        }),
-    );
-    let find = input.find.filter(|_| find_used);
-    let documents_find = input.documents_find.filter(|_| documents_used);
-    let context = input.context.filter(|_| context_used);
-
-    // 3번: 묶음
-    let explicit: BTreeSet<String> = input.seeds.iter().cloned().collect();
-    let required: BTreeSet<String> = REQUIRED_DOCS
-        .iter()
-        .map(|p| p.to_string())
-        .chain(input.required.iter().cloned())
-        .chain([input.instruction_path.to_string()])
-        .chain(context.into_iter().flat_map(|c| c.required_paths.clone()))
-        .collect();
-    let update_ids: BTreeSet<&String> = input
-        .update_docs
-        .iter()
-        .chain(input.route_deliverables)
-        .collect();
-    let recommended: BTreeSet<String> = find_paths(find).collect();
-    let mut documents: BTreeSet<String> = find_paths(documents_find).collect();
-    documents.extend(recommended.iter().filter(|p| md(p)).cloned());
-    let contexts: BTreeMap<&str, Decision> = context
-        .into_iter()
-        .flat_map(|c| c.candidates.iter().map(|c| (c.path.as_str(), c.decision)))
-        .collect();
-    let omit = |path: &str| contexts.get(path) == Some(&Decision::SuggestOmit);
-
-    // 4번: 원문. 지문은 지시서 파일만 지시서 지문이다
-    let wanted = source_set(
-        input.map,
-        find,
-        documents_find,
-        context,
-        input.seeds,
-        input.required,
-        input.instruction_path,
-    );
-    let hashes: BTreeMap<&str, String> = input
-        .sources
-        .iter()
-        .filter_map(|(path, source)| match source {
-            Source::Text { text, .. } => Some((
-                path.as_str(),
-                source_sha256(text, path == input.instruction_path),
-            )),
-            Source::Unreadable(_) => None,
-        })
-        .collect();
-    // 지시서는 패킷 블록을 뺀 글을 훑는다(지난 블록의 경로가 근거가 되지 않게 한다)
-    let instruction_text = without_block(input.instruction);
-    let texts: Vec<(&str, &str)> = wanted
-        .iter()
-        .filter_map(|path| match input.sources.get(path) {
-            Some(Source::Text { .. }) if path == input.instruction_path => {
-                Some((path.as_str(), instruction_text.as_str()))
-            }
-            Some(Source::Text { text, .. }) => Some((path.as_str(), text.as_str())),
-            _ => None,
-        })
-        .collect();
-    for path in &wanted {
-        match input.sources.get(path) {
-            Some(Source::Text { .. }) => {}
-            Some(Source::Unreadable(reason)) => {
-                unknown.push(unknown_of(Some(path), None, None, reason))
-            }
-            None => unknown.push(unknown_of(Some(path), None, None, "missing")),
-        }
-    }
-
-    // 5번: 항목
-    let mut items = Items {
-        map: BTreeMap::new(),
-        required: &required,
-        sources: input.sources,
-        hashes: &hashes,
-    };
-    for path in &explicit {
-        let category = match md(path) {
-            true => PacketCategory::DocumentUpdate,
-            false => PacketCategory::DirectEdit,
-        };
-        items.add(path, category, "explicit seed or diff", None, None);
-    }
-    let read: BTreeSet<&str> = required
-        .iter()
-        .chain(&documents)
-        .chain(&recommended)
-        .map(String::as_str)
-        .chain(contexts.keys().copied().filter(|p| !omit(p)))
-        .collect();
-    for path in read {
-        let reason = "required or recommended context";
-        items.add(path, read_category(path), reason, None, None);
-    }
-
-    // 6번: 문자 검색 근거. 호출 관계의 확정 근거가 아니다
-    let authored_text = authored(input.instruction, template);
-    let stop: BTreeSet<String> = input
-        .key
-        .as_str()
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .chain([input.role.as_str()])
-        .map(str::to_lowercase)
-        .collect();
-    let skip = |s: &str| s.is_empty() || COMMON.contains(&s) || stop.contains(&s.to_lowercase());
-    let mut symbols: Vec<&str> = Vec::new();
-    for path in explicit.iter().filter(|p| !md(p)) {
-        let Some(Source::Text { text, .. }) = input.sources.get(path) else {
-            continue;
-        };
-        let names = text
-            .lines()
-            .enumerate()
-            .filter_map(|(n, line)| Some((n + 1, definition_name(line).filter(|s| !skip(s))?)));
-        for (line, name) in names.take(64) {
-            let found = evidence("definition", Some(name), Some(line), Some(path));
-            let category = PacketCategory::DirectEdit;
-            items.add(path, category, "seed definition", Some(found), None);
-            push_unique(&mut symbols, name);
-        }
-    }
-    let title = body(input.instruction)
-        .lines()
-        .find(|line| line.starts_with("# "))
-        .unwrap_or_default();
-    let named = |s: &&str| s.contains('_') && identifiers(s, 1).next() == Some(*s);
-    let terms: BTreeSet<&str> = identifiers(title, 4)
-        .chain(backticked(&authored_text).into_iter().filter(named))
-        .filter(|s| !skip(s))
-        .collect();
-    for term in terms {
-        push_unique(&mut symbols, term);
-    }
-    symbols.truncate(64);
-    // 레포 전체에 깔린 이름은 근거가 아니다
-    let present: Vec<Vec<&str>> = texts
-        .iter()
-        .map(|(_, text)| {
-            symbols
-                .iter()
-                .copied()
-                .filter(|s| has_word(text, s))
-                .collect()
-        })
-        .collect();
-    let limit = 25.max(texts.len() / 10);
-    let common = |symbol: &str| present.iter().filter(|p| p.contains(&symbol)).count() > limit;
-    let ubiquitous: BTreeSet<&str> = symbols.iter().copied().filter(|s| common(s)).collect();
-    for ((path, text), found) in texts.iter().zip(&present) {
-        let found: Vec<&str> = match explicit.contains(*path) {
-            true => Vec::new(),
-            false => found
-                .iter()
-                .copied()
-                .filter(|s| !ubiquitous.contains(s))
-                .collect(),
-        };
-        if found.is_empty() && !md(path) {
-            continue;
-        }
-        for (n, line) in text.lines().enumerate() {
-            for symbol in found.iter().filter(|s| has_word(line, s)).take(4) {
-                let found = evidence("string-search", Some(symbol), Some(n + 1), None);
-                items.add(path, read_category(path), SEARCH_REASON, Some(found), None);
-            }
-            let seeds = link_targets(line)
-                .filter(|_| md(path))
-                .filter_map(|target| link_path(path, target))
-                .filter(|seed| explicit.contains(seed));
-            for seed in seeds {
-                let found = evidence("markdown-link", None, Some(n + 1), Some(&seed));
-                let category = PacketCategory::DocumentRead;
-                items.add(path, category, "local link to seed", Some(found), None);
-            }
-        }
-    }
-
-    // 7번: 산출물 인덱스
-    for row in input.deliverables {
-        let update = update_ids.contains(&row.id);
-        for source in &row.sources {
-            let found = Some(evidence("deliverable-index", None, None, None));
-            if update {
-                let category = PacketCategory::DocumentUpdate;
-                items.add(source, category, "deliverable update", found, Some(&row.id));
-            } else if items.map.contains_key(source) || mentions(&authored_text, &row.id) {
-                let category = PacketCategory::DocumentRead;
-                let reason = "deliverable reference";
-                items.add(source, category, reason, found, Some(&row.id));
-            }
-        }
-    }
-    let sourced = |id: &str| {
-        input
-            .deliverables
-            .iter()
-            .any(|row| row.id == id && !row.sources.is_empty())
-    };
-    for id in update_ids.iter().filter(|id| !sourced(id)) {
-        unknown.push(unknown_of(None, None, Some(id), "no source"));
-    }
-
-    // 8번: 선택 항목과 context의 판정
-    for (path, decision) in &contexts {
-        if omit(path) && !items.map.contains_key(*path) {
-            items.add(path, read_category(path), "optional context", None, None);
-            if let Some(item) = items.map.get_mut(*path) {
-                item.optional = true;
-            }
-        }
-        if let Some(item) = items.map.get_mut(*path) {
-            item.decision = Some(*decision);
-        }
-    }
-
-    // 9번: 의견. 항목 목록은 바꾸지 않는다
-    let refusals: Vec<Refusal> = input
-        .decisions
-        .iter()
-        .filter_map(|d| {
-            let why = match items.map.get(&d.path) {
-                None => "패킷에 없는 경로다",
-                Some(_) if !["add", "exclude", "change"].contains(&d.action.as_str()) => {
-                    "action이 add·exclude·change가 아니다"
-                }
-                Some(_) if d.reason.trim().is_empty() => "reason이 비었다",
-                Some(item) if d.action == "exclude" && item.required => {
-                    "필수 항목은 exclude할 수 없다"
-                }
-                Some(_) => return None,
-            };
-            let args = [format!("`{}` {why}", d.path)];
-            Some(refuse("J-03", &args, input.key, input.role))
-        })
-        .collect();
-    if !refusals.is_empty() {
-        return Err(refusals);
-    }
-
-    // 10번: 전달 목록
-    let mut items: Vec<PacketItem> = items.map.into_values().collect();
-    items.sort_by(|a, b| {
-        (a.optional, !a.required, &a.path).cmp(&(b.optional, !b.required, &b.path))
-    });
-    let mut primary: Vec<&PacketItem> = items
-        .iter()
-        .filter(|i| !i.required && !i.optional)
-        .collect();
-    primary.sort_by_key(|i| {
-        (
-            i.reasons == [SEARCH_REASON],
-            std::cmp::Reverse(i.evidence.len()),
-            &i.path,
-        )
-    });
-    let mut context_paths: Vec<String> = primary.iter().map(|i| i.path.clone()).collect();
-    let remaining_context_paths = context_paths.split_off(context_paths.len().min(20));
-    let edits = [PacketCategory::DirectEdit, PacketCategory::DocumentUpdate];
-    let delivered = items
-        .iter()
-        .filter(|i| {
-            !i.optional
-                && (i.required
-                    || context_paths.contains(&i.path)
-                    || i.categories.iter().any(|c| edits.contains(c)))
-        })
-        .flat_map(|i| {
-            i.categories.iter().map(|category| PacketDelivered {
-                path: i.path.clone(),
-                category: *category,
-            })
-        })
-        .collect();
-
-    let source_hashes: BTreeMap<&str, Option<&String>> = input
-        .sources
-        .keys()
-        .map(|path| (path.as_str(), hashes.get(path.as_str())))
-        .collect();
-    let options = PacketOptions {
-        seeds: explicit.into_iter().collect(),
-        required: required.iter().cloned().collect(),
-        update_docs: update_ids.into_iter().cloned().collect(),
-        decisions: input.decisions.to_vec(),
-        sources_sha256: sha256_hex(
-            serde_json::to_string(&source_hashes)
-                .unwrap_or_default()
-                .as_bytes(),
-        ),
-        producer_sha256,
-    };
-    Ok(Packet {
-        v: EXPLORE_V,
-        key: input.key.clone(),
-        role: input.role.clone(),
-        round: input.round,
-        head: input.head.to_string(),
-        input_sha256: input_sha256(
-            input.key,
-            input.role,
-            input.round,
-            input.head,
-            &instruction_sha,
-            &options,
-        ),
-        instruction_sha256: instruction_sha,
-        created_at: input.created_at,
-        worktree_dirty: input.worktree_dirty,
-        partial: !unknown.is_empty(),
-        optional_context_paths: items
-            .iter()
-            .filter(|i| i.optional)
-            .map(|i| i.path.clone())
-            .collect(),
-        required_paths: options.required.clone(),
-        options,
-        items,
-        delivered,
-        context_paths,
-        remaining_context_paths,
-        unknown,
-        producers,
-        decisions: input.decisions.to_vec(),
-    })
-}
-
-/// 지시서에 넣는 패킷 블록(설계 8.14절 `packet build` 11번). 목록 줄은 `delivered`의 경로마다 하나다.
-pub fn packet_block(packet: &Packet, packet_path: &str) -> String {
-    let mut lines = vec![
-        BLOCK_START.to_string(),
-        "### 탐색 근거와 읽을 구간".to_string(),
-        String::new(),
-        format!(
-            "정본: `{packet_path}` / SHA `{}` / partial={}",
-            packet.head, packet.partial
-        ),
-    ];
-    let paths: BTreeSet<&str> = packet.delivered.iter().map(|d| d.path.as_str()).collect();
-    for item in packet
-        .items
-        .iter()
-        .filter(|i| paths.contains(i.path.as_str()))
-    {
-        let categories: Vec<&str> = item.categories.iter().map(|c| c.as_str()).collect();
-        let found: BTreeSet<u32> = item.evidence.iter().filter_map(|e| e.line).collect();
-        // 근거 줄이 많으면 지시서가 길어지므로 앞 12개만 적는다. 전체는 정본에 있다
-        let mut spans: Vec<String> = found.iter().take(12).map(u32::to_string).collect();
-        if found.len() > 12 {
-            spans.push("…".into());
-        }
-        lines.push(format!(
-            "- `{}` ({}) · 줄 {} · {}{}{}",
-            item.path,
-            categories.join(", "),
-            match spans.is_empty() {
-                true => "전체".to_string(),
-                false => spans.join(", "),
-            },
-            item.status,
-            if item.required { " · 필수" } else { "" },
-            item.decision.map(|d| format!(" · {d}")).unwrap_or_default(),
-        ));
-    }
-    lines.push(format!(
-        "나머지 참조 후보 {}건은 정본의 remaining_context_paths에 있다. 완료 검사는 위 목록만 요구한다.",
-        packet.remaining_context_paths.len()
-    ));
-    for d in &packet.decisions {
-        lines.push(format!(
-            "- 의견(원래 추천 유지): `{}` {} — {}",
-            d.path, d.action, d.reason
-        ));
-    }
-    if !packet.unknown.is_empty() {
-        let first: Vec<String> = packet
-            .unknown
-            .iter()
-            .take(5)
-            .map(|u| {
-                let what = u.path.as_ref().or(u.source.as_ref()).or(u.doc_id.as_ref());
-                format!("{}({})", what.map_or("-", String::as_str), u.reason)
-            })
-            .collect();
-        lines.push(format!(
-            "미확인 {}건: {}. 정본의 unknown을 확인한다.",
-            packet.unknown.len(),
-            first.join(", ")
-        ));
-    }
-    lines.push(BLOCK_END.to_string());
-    lines.join("\n")
-}
-
-/// 지시서의 `## 완료 보고` 줄 바로 앞에 블록을 넣는다(있던 블록은 바꾼다). 그 줄이 없으면 끝에 붙인다.
-pub fn with_block(inbox_text: &str, block: &str) -> String {
-    let text = without_block(inbox_text);
-    let mut at = 0;
-    for line in text.split_inclusive('\n') {
-        if line.trim_end() == REPORT_HEADING {
-            return format!("{}{block}\n\n{}", &text[..at], &text[at..]);
-        }
-        at += line.len();
-    }
-    format!("{}\n\n{block}\n", text.trim_end())
-}
-
-// ── 패킷 검사(설계 8.14절 `check_packet`) ────────────────────────
-
-/// 문구에 싣는 목록. 앞 8건만 적는다.
-fn listed(items: &[String]) -> String {
-    let more = match items.len() > 8 {
-        true => format!(" 외 {}건", items.len() - 8),
-        false => String::new(),
-    };
-    let first: Vec<&str> = items.iter().take(8).map(String::as_str).collect();
-    format!("{}{more}", first.join(", "))
-}
-
-/// 패킷 검사(J-10~J-17). 패킷 조건(패킷 파일이 있고 `v == 1`이다, 또는 route의 `requires_packet`이 참이다)이 거짓이면 빈 목록이다.
-/// `is_ancestor`는 패킷의 `head`가 검사 커밋의 조상인지, `read_text`는 경로의 지금 글(`None`은 파일 없음)이다.
-/// 지문은 이 안에서 `source_sha256`으로 구한다. 지시서 파일 항목은 `instruction`의 글로 구하고 `read_text`를 부르지 않는다.
-/// 모르는 사실(`Unknown`, `instruction`이 없음)은 걸리지 않은 것으로 본다.
-#[allow(clippy::too_many_arguments)]
-pub fn check_packet(
-    mode: PacketCheck,
-    route: Option<&Route>,
-    packet: Option<&Packet>,
-    outcomes: Option<&PacketOutcomes>,
-    instruction: Option<&str>,
-    key: &TaskKey,
-    role: &RoleId,
-    round: u32,
-    is_ancestor: &mut dyn FnMut(&str) -> Known<bool>,
-    read_text: &mut dyn FnMut(&str) -> Known<Option<String>>,
-) -> Vec<Refusal> {
-    let refuse = |rule: &'static str, arg: String| refuse(rule, &[arg], key, role);
-    let Some(packet) = packet else {
-        return match route.is_some_and(|r| r.requires_packet) {
-            true => vec![refuse("J-17", key.to_string())],
-            false => Vec::new(),
-        };
-    };
-    let now = instruction.map(instruction_sha256);
-    let differs: Vec<&str> = [
-        ("key", &packet.key != key),
-        ("role", &packet.role != role),
-        ("round", packet.round != round),
-        (
-            "instruction_sha256",
-            now.as_ref()
-                .is_some_and(|sha| *sha != packet.instruction_sha256),
-        ),
-    ]
-    .iter()
-    .filter_map(|(name, differs)| differs.then_some(*name))
-    .collect();
-    if !differs.is_empty() {
-        return vec![refuse("J-10", differs.join("·"))];
-    }
-    let mut out = Vec::new();
-    let stale = is_ancestor(&packet.head) == Known::Yes(false);
-    match mode {
-        PacketCheck::Delivery => {
-            if stale {
-                out.push(refuse("J-11", clip(&packet.head, 12)));
-            }
-            let inbox = instruction_path(role);
-            let mut moved = Vec::new();
-            for item in packet
-                .items
-                .iter()
-                .filter(|i| !i.optional && (i.required || i.status == PacketItemStatus::Inferred))
-            {
-                let sha = match item.path == inbox {
-                    true => match &now {
-                        Some(sha) => Known::Yes(Some(sha.clone())),
-                        None => Known::Unknown("instruction"),
-                    },
-                    false => read_text(&item.path).map(|t| t.map(|t| source_sha256(&t, false))),
-                };
-                match sha {
-                    // 만들 때 읽지 못한 항목(없던 필수 문서 등)은 패킷의 unknown에 이미 있다. 지금도 없다고 배정을 막지 않는다
-                    Known::Yes(None) if item.source_sha256.is_some() => {
-                        moved.push(format!("`{}`(없음)", item.path))
-                    }
-                    Known::Yes(Some(sha))
-                        if item.source_sha256.as_ref().is_some_and(|made| *made != sha) =>
-                    {
-                        moved.push(format!("`{}`", item.path))
-                    }
-                    _ => {}
-                }
-            }
-            if !moved.is_empty() {
-                out.push(refuse("J-12", listed(&moved)));
-            }
-        }
-        PacketCheck::Completion => {
-            if stale {
-                out.push(refuse("J-13", clip(&packet.head, 12)));
-            }
-            let Some(outcomes) = outcomes else {
-                out.push(refuse("J-14", "파일이 없거나 v가 1이 아니다".into()));
-                return out;
-            };
-            if outcomes.packet_input_sha256 != packet.input_sha256 || outcomes.round != packet.round
-            {
-                let why = "packet_input_sha256 또는 round가 패킷과 다르다";
-                out.push(refuse("J-14", why.into()));
-                return out;
-            }
-            let allowed: BTreeSet<(&str, PacketCategory)> = packet
-                .items
-                .iter()
-                .filter(|i| !i.optional)
-                .flat_map(|i| i.categories.iter().map(|c| (i.path.as_str(), *c)))
-                .collect();
-            let mut seen = BTreeSet::new();
-            let mut wrong = Vec::new();
-            for row in &outcomes.items {
-                let pair = (row.path.as_str(), row.category);
-                let why = if !seen.insert(pair) {
-                    "두 번 있다"
-                } else if !allowed.contains(&pair) {
-                    "패킷의 항목이 아니다"
-                } else if !["completed", "no_change"].contains(&row.status.as_str()) {
-                    "status가 completed·no_change가 아니다"
-                } else if row.reason.trim().is_empty() {
-                    "reason이 비었다"
-                } else {
-                    continue;
-                };
-                wrong.push(format!("`{}` {} {why}", row.path, row.category));
-            }
-            let missing = packet
-                .delivered
-                .iter()
-                .filter(|d| !seen.contains(&(d.path.as_str(), d.category)))
-                .map(|d| format!("`{}` {} 빠졌다", d.path, d.category));
-            wrong.extend(missing);
-            if !wrong.is_empty() {
-                out.push(refuse("J-15", listed(&wrong)));
-            }
-            if packet.partial && outcomes.uncertainty_review.trim().is_empty() {
-                out.push(refuse("J-16", packet.unknown.len().to_string()));
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -1656,18 +777,12 @@ mod tests {
             INBOX.replace("브랜치 / SHA", "fullops/dev / 4f0c1a2"),
             INBOX.replace('\n', "\r\n"),
             INBOX.replace("버튼을 고친다\n", "버튼을 고친다 \t\n"),
-            with_block(INBOX, BLOCK),
+            // 옛 인박스(2.0.x)에 남은 패킷 블록
+            INBOX.replace("## 완료 보고", &format!("{BLOCK}\n\n## 완료 보고")),
         ];
         for text in &same {
             assert_eq!(instruction_sha256(text), base, "{text}");
         }
-        // 블록은 완료 보고 바로 앞에 들어가고, 다시 넣어도 글이 같다
-        assert!(same[5].contains(&format!("{BLOCK}\n\n## 완료 보고\n")));
-        assert_eq!(with_block(&same[5], BLOCK), same[5]);
-        let no_report = INBOX.split("## 완료 보고").next().unwrap();
-        let appended = with_block(no_report, BLOCK);
-        assert_eq!(with_block(&appended, BLOCK), appended);
-        assert_eq!(instruction_sha256(&appended), base);
         for text in [
             INBOX.replace("버튼을 고친다", "버튼을 지운다"),
             INBOX.replace("- [ ] 버튼", "[x] 버튼"),
@@ -1675,8 +790,6 @@ mod tests {
         ] {
             assert_ne!(instruction_sha256(&text), base, "{text}");
         }
-        assert_eq!(source_sha256(INBOX, true), base);
-        assert_eq!(source_sha256("a\r\nb", false), source_sha256("a\nb", false));
         // input_sha256은 키 순서로 쓴 JSON에 기댄다
         let unordered = serde_json::json!({ "b": 1, "a": 2 }).to_string();
         assert_eq!(unordered, r#"{"a":2,"b":1}"#);
@@ -1742,7 +855,7 @@ mod tests {
             ".gitignore",
             "docs/secretary.md",
             "src/pay/retry.rs",
-            ".fullops-squad/project.md",
+            ".fullops/guide/project.md",
             "keys/id_rsa_notes.md",
         ] {
             assert!(sendable_path(path), "{path}");
@@ -1870,7 +983,7 @@ mod tests {
                 s(0.5, 0.4, 0.9, 0.8),
                 true,
                 false,
-                ".fullops-squad/rules/a.md",
+                ".fullops/guide/rules/a.md",
                 conflict,
             ),
             (s(0.5, 0.4, 0.0, 0.8), true, false, "README.md", keep),
