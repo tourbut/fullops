@@ -1,7 +1,7 @@
 {
   "name": "fullops",
   "private": true,
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "npx --yes github:tourbut/fullops install: 배포본의 fullops 바이너리를 골라 검증하고 fullops install에 넘기는 실행기",
   "bin": {
     "fullops": "npx/fullops.cjs"
