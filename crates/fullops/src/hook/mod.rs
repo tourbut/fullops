@@ -403,10 +403,23 @@ fn handle(args: &HookArgs, started: Instant) -> Result<(), &'static str> {
     // 활성 표식이 없으면 통과하고 끝낸다(추적도 쓰지 않는다). 새 세션의 caveman 주입(S-06)만은 레포를 가리지 않는다
     let Some(repo) = fullops_store::discover(&input.cwd).map_err(|_| "io")? else {
         if input.event == EventKind::SessionStart {
+            let caps = args.host.caps();
             let read = |name: &str| facts_real::RealFacts::skill_of(host, name);
-            if let Some(skill) = start_skill(&input, args.host.caps(), read) {
-                let text = messages::hook::session_context(&Default::default(), Some(&skill));
-                emit(&args.host.encode(input.event, &Verdict::Context(text)));
+            let skill = start_skill(&input, caps, read);
+            // 옛 자리 레포(설계 13.6절): 막지 않고 옮기라는 안내만 낸다. 모델에게 갈 수 있으면 문맥으로, 아니면 사용자 경고로
+            let legacy = fullops_store::legacy_root(&input.cwd)
+                .map(|_| messages::warn(messages::LEGACY_REPO));
+            let context = || messages::hook::session_context(&Default::default(), skill.as_ref());
+            let verdict = match legacy {
+                Some(notice) if caps.context_at_start && skill.is_some() => {
+                    Some(Verdict::Context(format!("{notice}\n\n{}", context())))
+                }
+                Some(notice) if caps.context_at_start => Some(Verdict::Context(notice)),
+                Some(_) => Some(Verdict::Warn(messages::LEGACY_REPO.to_string())),
+                None => skill.is_some().then(|| Verdict::Context(context())),
+            };
+            if let Some(verdict) = verdict {
+                emit(&args.host.encode(input.event, &verdict));
             }
         }
         return Ok(());

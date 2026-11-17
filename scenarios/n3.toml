@@ -1,13 +1,13 @@
-name = "Python 레포에서 migrate → 판정 확인 → --rollback"
+name = "Python 레포에서 migrate(전환과 자리 옮김) → 판정 확인 → 자리 옮김 revert → --rollback"
 origin = "12.2 N3"
 
 [setup]
 roles = { dev = "worker", architecture = "design" }
 
-# Python판(1.24.0)을 쓰던 레포로 만든다: 새 표식을 지우고 fullops.json과 라우팅 기준을 둔다
+# Python판(1.24.0)을 쓰던 레포로 만든다: 새 자리의 레포 폴더를 지우고 옛 자리에 fullops.json과 라우팅 기준을 둔다
 [[step]]
 act = "git"
-args = ["rm", "-q", "--ignore-unmatch", ".fullops-squad/fullops.toml"]
+args = ["rm", "-q", "-r", "--ignore-unmatch", ".fullops"]
 [[step]]
 act = "file"
 path = ".fullops-squad/fullops.json"
@@ -58,15 +58,12 @@ act = "runs_fullops"
 raw = true
 args = ["migrate", "--from-python", "--dry-run"]
 expect = { verdict = "pass", exit = 0, escape = "아무것도 바꾸지 않았다" }
-# 전환: fullops.toml을 만들고 fullops.json의 이름을 바꾼다. 커밋은 사람이 한다
+# 전환: fullops.toml을 만들고 fullops.json의 이름을 바꿔 커밋한 뒤, 같은 실행에서 `.fullops/` 자리로 옮겨 커밋한다(13.6절)
 [[step]]
 act = "runs_fullops"
 raw = true
 args = ["migrate", "--from-python"]
 expect = { verdict = "pass", exit = 0, escape = "읽지 못한 표식 줄" }
-[[step]]
-act = "commits"
-message = "fullops로 전환"
 # 판정 확인: 전환한 레포에서는 새 판의 hook만 판정한다(T-01). Python판은 자기 표식이 없어 통과를 낸다(`py`는 py 구동기의 판정이다)
 [[step]]
 act = "runs_shell"
@@ -79,6 +76,26 @@ act = "runs_fullops"
 raw = true
 args = ["migrate", "--from-python"]
 expect = { verdict = "deny", exit = 2, escape = "Python판 표식" }
+# 새 자리에서는 되돌리지 않는다: 자리 옮김 커밋을 먼저 되돌리라고 거절한다
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["migrate", "--rollback"]
+expect = { verdict = "deny", exit = 2, escape = "git revert" }
+[[step]]
+act = "git"
+args = ["revert", "--no-edit", "HEAD"]
+# 옛 자리의 2.x 레포는 비활성이다: hook은 막지 않고 명령은 옮기라고 거절한다
+[[step]]
+act = "runs_shell"
+command = "orca orchestration worker-start --spec \"A-1 구현\""
+py = "pass"
+expect = { verdict = "pass", flow = "continues" }
+[[step]]
+act = "runs_fullops"
+raw = true
+args = ["plan", "list"]
+expect = { verdict = "deny", exit = 2, rule = "layout", escape = "fullops migrate --layout" }
 # 되돌리기: 전환 뒤 열려 있는 결정과 보류를 화면에 낸다
 [[step]]
 act = "runs_fullops"
