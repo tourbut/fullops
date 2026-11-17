@@ -399,7 +399,6 @@ fn cli_follows_common_contract() {
         "route",
         "find",
         "context",
-        "packet",
         "task",
         "plan",
         "dispatch",

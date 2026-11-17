@@ -1,5 +1,5 @@
 //! 리뷰·통합 명령(`merge`의 M, `review`, `hold`·`resume`·`settle`, `sync`, `decision`, `gc`)의 문구. 묶음 E가 채운다. 다른 묶음은 이 파일을 고치지 않는다(설계 18.2절).
-//! 설계가 ID를 주지 않은 거절에는 이 파일이 ID를 붙였다: `RV-01`~`RV-10`은 `review check`의 실패 항목 번호(8.9절),
+//! 설계가 ID를 주지 않은 거절에는 이 파일이 ID를 붙였다: `RV-01`~`RV-09`는 `review check`의 실패 항목 번호(8.9절),
 //! `RV-00`은 그 밖의 `review` 거절, `HD`는 `resume`·`completion set-sha`, `DC`는 `decision answer`(8.10절)다.
 
 use crate::model::Refusal;

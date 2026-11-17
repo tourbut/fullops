@@ -1181,7 +1181,7 @@ fn route_rules_and_tuple_records() {
         ),
         (json!("direct"), json!("manual"), json!(["D03"]))
     );
-    assert_eq!(made["requires_packet"], false);
+    assert!(made["requires_packet"].is_null());
     // 기록이 있으면 호출하지 않고 기존 기록을 낸다
     let kept = out(&run(
         &lead,
@@ -1261,7 +1261,8 @@ fn route_rules_and_tuple_records() {
         json!({"agent": "antigravity", "model": "m", "effort": "high", "why": "리뷰"})
     );
 
-    // 1.24.0 기록에서 켜져 있던 requires_packet만 옮기고, 재분류는 값을 잇는다
+    // 2.1.0에서 패킷을 뗐다. 1.24.0 기록의 requires_packet은 옮기지 않고,
+    // 그 키가 남은 2.0.x의 route 기록도 읽혀 재분류가 이어진다(키는 버린다)
     sb.write(
         &lead.join(".fullops-squad/docs/evaluations/jev/P-6-route.json"),
         "{\"requires_packet\": true}",
@@ -1280,7 +1281,11 @@ fn route_rules_and_tuple_records() {
             "--json",
         ],
     ));
-    assert_eq!(moved["requires_packet"], true);
+    assert!(moved["requires_packet"].is_null());
+    let record = lead.join(".fullops-squad/routes/P-6.json");
+    let mut old: Value = serde_json::from_str(&read(&record)).unwrap();
+    old["requires_packet"] = json!(true);
+    sb.write(&record, &old.to_string());
     let again = out(&run(
         &lead,
         &[
@@ -1300,7 +1305,7 @@ fn route_rules_and_tuple_records() {
             again["class"].clone(),
             again["history"][0]["class"].clone()
         ),
-        (json!(true), json!("unresolved"), json!("direct"))
+        (Value::Null, json!("unresolved"), json!("direct"))
     );
 }
 
@@ -1348,7 +1353,7 @@ fn task_new_reopen_and_recover() {
         &dev,
         &["task", "recover", "--role", "dev", "--key", "A-1", "--json"],
     ));
-    assert!(recovered["wip"].is_string() && recovered["packet"].is_null());
+    assert!(recovered["wip"].is_string());
     // 끊긴 worker의 배정을 정산해 같은 배정을 다시 낼 수 있게 한다(D-10)
     assert_eq!(state(sb)["dispatches"][0]["settled"]["how"], "lost");
     assert_eq!(
@@ -2244,7 +2249,7 @@ fn dispatch_rerun_after_success_starts_no_second_worker() {
     assert_eq!(calls(&d.sb, "worker-start").len(), 3);
 }
 
-/// R4-5: 읽을 수 없는 인박스를 '없음'으로 보고 R-04·R-10·R-06을 건너뛰지 않는다.
+/// R4-5: 읽을 수 없는 인박스를 '없음'으로 보고 R-04·R-06을 건너뛰지 않는다.
 #[test]
 fn done_refuses_an_inbox_it_cannot_read() {
     let mut d = Driver::new(&Setup::default());
@@ -2271,24 +2276,10 @@ fn done_refuses_an_inbox_it_cannot_read() {
         "[[step]]\nact = \"worker_finishes\"\nrole = \"dev\"\nfailed = \"인박스를 읽을 수 없다\"\nexpect = { verdict = \"pass\" }\n",
     );
 
-    // 읽지 못한 분류 기록도 '없음'이 아니다: 패킷 검사를 건너뛰지 않고, 재분류가 기록을 덮어쓰지 않는다
+    // 읽지 못한 분류 기록도 '없음'이 아니다: 재분류가 기록을 덮어쓰지 않는다
     let lead = d.sb.path("lead");
     let route = lead.join(".fullops-squad/routes/A-1.json");
     d.sb.write(&route, "{ 쓰다 만");
-    let checked =
-        d.sb.cli(&lead, &["packet", "check", "A-1", "--role", "dev"]);
-    assert_eq!(
-        checked.code,
-        Some(2),
-        "{}{}",
-        checked.stdout,
-        checked.stderr
-    );
-    assert!(
-        checked.stderr.contains("FullOps[packet]"),
-        "{}",
-        checked.stderr
-    );
     let rerouted = d.sb.cli(
         &lead,
         &[

@@ -117,20 +117,6 @@ impl Repo {
             .join(head.short(12))
     }
 
-    /// `docs/evaluations/jev/` (탐색 결과와 패킷, 설계 6.1.5절).
-    pub fn explore_dir(&self) -> PathBuf {
-        self.squad().join("docs").join("evaluations").join("jev")
-    }
-    /// `<KEY>-packet.json`.
-    pub fn packet_path(&self, key: &TaskKey) -> PathBuf {
-        self.explore_dir().join(format!("{key}-packet.json"))
-    }
-    /// `<KEY>-packet-outcomes.json`.
-    pub fn packet_outcomes_path(&self, key: &TaskKey) -> PathBuf {
-        self.explore_dir()
-            .join(format!("{key}-packet-outcomes.json"))
-    }
-
     /// `<git-common-dir>/fullops/` (모든 워크트리가 공유, 설계 6.2절).
     pub fn shared(&self) -> PathBuf {
         self.common_dir.join("fullops")
@@ -143,6 +129,10 @@ impl Repo {
     }
     pub fn archive_path(&self) -> PathBuf {
         self.shared().join("archive.jsonl")
+    }
+    /// `explore/` (`find`·`context`의 결과와 덮어쓴 사본 `history/`, 설계 6.2절). 커밋되지 않는다.
+    pub fn explore_dir(&self) -> PathBuf {
+        self.shared().join("explore")
     }
     pub fn turns_path(&self) -> PathBuf {
         self.shared().join("turns.jsonl")

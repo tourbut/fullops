@@ -895,3 +895,36 @@ hook 규칙 표(`RULES`)는 34개가 된다: 뼈대의 32개에 S-06과 T-13을 
 | 비교 반박: 하위 폴더 cwd의 `add -A`·`$D` 등이 T-09를 지남(위 수정의 회귀) | high | 레포 전체 표식을 `.`에서 `:/`로 바꾸고 `stage`, `--pathspec-from-file`, 풀리지 않은 확장, 경로 없는 add를 레포 전체로 본다 | 설계 7.4 9번, 7.5 T-09 |
 | 비교 반박: 날것 `orchestration dispatch`(`--inject` 없음)가 분류 안 된 Task를 배정 | medium | `OrcaWorkerStart`로 분류해 T-01(`--dry-run`만 통과). DF-28의 근거를 고침 | 설계 7.4 8번, 7.5 T-01, 11.1, 12.2 C5, 12.3 DF-1·DF-28, contracts/orca.md 2.9 |
 | 비교 반박: py 구동기의 `fullops <sub>` 지름길이 1.24.0 판정을 가림, 판정이 같은데 붙은 `df` | low | 지름길을 지우고 a3·a4 6단계에 DF-26, p2 30·r4 14의 `df`를 지우고 r4 18을 DF-33으로 | 설계 16.1(비교), 12.2 A3·A4 |
+
+## 9. 2.1.0: 패킷 기능을 뗐다 (2026-11-17)
+
+레포 주인이 정했다. 이유는 둘이다. `<KEY>-packet.json`은 과제당 1~4MB이고 worker는 항목마다 `<KEY>-packet-outcomes.json`을 써야 해서 토큰만 쓴다. 그리고 새 판에는 패킷을 새로 켜는 길이 없었다(1.24.0의 `requires_packet`만 이어받았다). 설계 3절의 "탐색 패킷은 선택" 결정은 이것으로 거두었다.
+
+### 9.1 뗀 것
+
+| 무엇을 | 내용 | 절 |
+|---|---|---|
+| 명령 | `fullops packet build\|check`와 `cmd/packet.rs`, 명령 표의 줄 | 8.2, 8.14 |
+| 검사 | `check_packet`(`PacketCheck::{Delivery, Completion}`)과 부르던 세 곳: `dispatch`의 D-12, `done`의 R-10, `review check`의 10번(`RV-10`). 번호는 다시 쓰지 않는다. `review check`의 항목은 1~9번이다 | 8.5, 8.7, 8.9 |
+| 거절 ID | J-03과 J-10~J-17, 단계 이름 `FullOps[packet]`. J-01·J-02·J-04는 `find`·`context`의 것으로 남는다 | 8.1, 8.14 |
+| 타입과 함수 | `Packet`·`PacketOutcomes`·`PacketCategory`·`PacketCheck`와 딸린 타입, `PacketInput`·`Source`·`SourceBasis`, `build_packet`·`build_packet_from`·`packet_block`·`with_block`·`packet_source_paths`·`source_sha256`, `parse_packet`·`parse_packet_outcomes`, `read_packet`·`read_packet_outcomes`, `rebuild_packet`, `Repo::packet_path`·`packet_outcomes_path` | 5, 10.2 |
+| `Route.requires_packet` | 필드와, `route`가 1.24.0의 `docs/evaluations/jev/<KEY>-route.json`에서 그 값을 옮기던 코드, `migrate` 보고서의 "requires_packet이 켜진 옛 route 기록" 줄. 이미 커밋된 route 기록에 그 키가 남아 있어도 읽힌다(`Route`는 모르는 필드를 거절하지 않는다. 시험이 고정한다). 다음에 쓸 때 키가 사라진다 | 6.1.4, 8.3, 13.2 |
+| `dispatch` | spec의 `; Packet: …` 필드, 준비 커밋에 `docs/evaluations/jev/` 파일을 넣던 것 | 8.5 |
+| `task recover` | 패킷을 다시 만들고 `패킷 갱신` 커밋을 하던 단계. 출력과 JSON의 `packet` 필드 | 8.4 |
+| 인박스의 패킷 블록 | 쓰는 코드(`--write-inbox`). `instruction_sha256`이 `<!-- fullops-packet:start -->`~`end` 블록을 빼고 계산하는 규칙은 남겼다: 2.0.x가 쓴 인박스가 남아 있을 때 지문과 과제 글이 달라지지 않게 한다 | 6.1.5 |
+| 시나리오 | P1, P3~P6, P12, P14(파일도 지웠다). P2와 P13은 `find`·`context`만으로 고쳐 남겼다 | 12.2 |
+| 스킬 | `fullops-work`의 패킷·처리 기록 안내 | 11.3 |
+
+### 9.2 탐색 결과의 자리
+
+`find`·`context`는 남는다. 결과 파일(`<KEY>-find.json`, `<KEY>-documents-find.json`, `<KEY>-context.json`)과 덮어쓰기 전 사본(`history/`)은 커밋되는 `.fullops-squad/docs/evaluations/jev/`가 아니라 Git 공용 디렉터리 `<git-common-dir>/fullops/explore/`에 쓰고 읽는다(`Repo::explore_dir`). 모든 워크트리가 같은 파일을 보고 커밋되지 않는다.
+
+| 따라 바뀐 것 | 내용 | 절 |
+|---|---|---|
+| 준비 커밋 | 탐색 결과를 넣지 않는다. worker는 공용 디렉터리의 같은 파일을 본다 | 8.5 |
+| 내장 `.gitignore` | `docs/evaluations/jev/history/` 줄을 뺐다. `assets::GITIGNORE_LINES`는 비었고 `migrate`가 `.gitignore`에 더하는 줄이 없다. `upgrade`의 필수 적용 `explore-history-ignore`도 뺐다 | 6.1, 10.6 |
+| 출력의 경로 | 원본 체크아웃에서는 `.git/fullops/explore/<파일>`, 역할 워크트리에서는 절대 경로다(레포 밖이라 상대 경로로 줄이지 않는다) | 8.14 |
+| 워크트리 사이의 재사용 | 결과가 워크트리마다 따로가 아니므로, lead 체크아웃에서 만든 결과가 있는 키를 역할 워크트리에서 다시 돌리면 `head`가 달라 J-04(`--force`)다 | 8.14 |
+| 이미 커밋된 파일 | `.fullops-squad/docs/evaluations/jev/`의 옛 탐색 결과·패킷·처리 기록은 지우지 않고 읽지도 않는다. 레포의 `.gitignore`에 남은 `docs/evaluations/jev/history/` 줄은 해가 없다 | 6.1, 13.2 |
+
+`.fullops-squad`라는 폴더 이름과 나머지 경로는 이 판에서 바꾸지 않았다.

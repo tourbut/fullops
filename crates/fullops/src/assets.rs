@@ -182,7 +182,8 @@ pub const REPO_DIRS: &[&str] = &[
 ];
 
 /// `.fullops-squad/.gitignore`에 있어야 하는 줄. `init`의 템플릿에 있고 `migrate`가 없으면 더한다.
-pub const GITIGNORE_LINES: &[&str] = &["docs/evaluations/jev/history/"];
+/// 2.1.0부터 비었다(탐색 결과가 Git 공용 디렉터리로 가서 `docs/evaluations/jev/history/` 줄이 필요 없다).
+pub const GITIGNORE_LINES: &[&str] = &[];
 
 /// 엔트리 문서(`AGENTS.md`·`CLAUDE.md`·`GEMINI.md`)의 관리 블록. 셋 다 같은 글이다(설계 10.6절).
 pub const MANAGED_BLOCK: &str = include_str!("../assets/managed-block.md");

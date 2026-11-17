@@ -29,7 +29,7 @@ dev 모드 주 담당의 직접 작업도 같은 기준을 넘으면 다른 세�
 4. 리뷰어는 요구사항·설계·지시서의 완료 기준(인박스에 없으면 `handovers/logs/`에서 키로 찾는다), `rules/common/`의 규칙, `targets.json`의 경로별 규칙 문장을 읽고 `merge_base`와 `head` 사이의 diff를 검토한다. 내부 코드는 관련 파일을 직접 읽고, 외부 SDK 근거는 Context7로 확인한다.
 5. 리뷰어는 lead 체크아웃의 리뷰 폴더에 결과를 쓴다. `result.json`의 모든 파일에 `review_status`(`reviewed` 또는 `skipped`)를 적고 `skipped`에는 `reason`을 적는다. `reviewer_session`에 자기 세션 ID를, `conclusion`에 `accept` 또는 `reject`를 적는다. finding마다 `path`, `content`, `severity`(`critical`·`high`·`medium`·`low`), `resolved`, 줄 범위를 적는다. `report.md`에는 적용한 규칙과 기준 커밋, 예외, 검증 근거, 검토 결론을 적는다.
 6. 리뷰어는 Orca preamble의 `worker_done`을 한 번 보낸다. 본문은 `[리뷰] <KEY> | SHA <head> | 결론 accept|reject | high <n>`이다. 리뷰어는 `fullops done`을 쓰지 않는다.
-7. lead가 `fullops wait --run <R>`로 보고를 받고 `fullops review check <KEY>`를 실행한다. 기록이 대상 목록과 맞는지, 리뷰어와 구현자의 세션이 다른지, snapshot이 깨끗한지, 미해결 critical·high가 없는지, lint 증거가 그 SHA를 덮는지, 패킷이 있는 과제는 처리 기록이 있는지를 본다. 통과하고 결론이 `accept`면 `accepted.json`이 생긴다.
+7. lead가 `fullops wait --run <R>`로 보고를 받고 `fullops review check <KEY>`를 실행한다. 기록이 대상 목록과 맞는지, 리뷰어와 구현자의 세션이 다른지, snapshot이 깨끗한지, 미해결 critical·high가 없는지, lint 증거가 그 SHA를 덮는지를 본다. 통과하고 결론이 `accept`면 `accepted.json`이 생긴다.
 8. 수락이면 `fullops merge <KEY>`가 통과하고 리뷰 보고의 처리 표시와 snapshot 정리도 함께 한다. 거절이거나 미해결 critical·high가 있으면 수정 배정으로 간다: `fullops task reopen` 뒤 `fullops dispatch <KEY> --purpose fix`. 수정 커밋 뒤에는 새 SHA로 다시 리뷰한다(이전 SHA의 리뷰로는 병합되지 않는다).
 
 ## 리뷰 정책

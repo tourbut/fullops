@@ -1163,7 +1163,7 @@ fn n3_migrate_round_trip() {
             assert!(!result.output.contains("이 줄은 라우팅 기준이 아니다"));
             let delegation = std::fs::read_to_string(squad.join("rules/delegation.md")).unwrap();
             assert!(delegation.contains("이 레포가 고쳐 쓴 규칙이다"));
-            // 관리 블록 셋, .gitignore 줄, 없는 템플릿, 빈 인박스 파일
+            // 관리 블록 셋, 없던 .gitignore, 없는 템플릿, 빈 인박스 파일
             let agents = std::fs::read_to_string(lead.join("AGENTS.md")).unwrap();
             assert!(agents.contains("<!-- fullops:start -->") && agents.contains("fullops status"));
             assert!(!agents.contains("fullops-squad:start") && agents.starts_with("# 안내"));
@@ -1172,7 +1172,7 @@ fn n3_migrate_round_trip() {
                 assert!(text.contains("<!-- fullops:start -->"), "{name}");
             }
             let ignore = std::fs::read_to_string(squad.join(".gitignore")).unwrap();
-            assert!(ignore.lines().any(|l| l == "docs/evaluations/jev/history/"));
+            assert!(ignore.lines().any(|l| l == "local/") && !ignore.contains("jev"));
             assert!(squad.join("FULLOPS.md").is_file() && squad.join("lint/lint.json").is_file());
             assert!(!squad.join("handovers/to_dev.md").exists());
             // 상태: 열린 결정과 보류만 가져왔고, 선행 과제는 끝난 것으로 들어갔다
@@ -1463,7 +1463,8 @@ fn migrate_replaces_stock_templates_and_reports_python_commands() {
 
     assert_eq!(
         std::fs::read_to_string(squad.join(".gitignore")).unwrap(),
-        "*.log\ndocs/evaluations/jev/history/\n"
+        "*.log",
+        "2.1.0부터 전환이 .gitignore에 더하는 줄이 없다"
     );
 
     commit_all(sb, &lead, "전환");

@@ -1,5 +1,5 @@
 //! `fullops find`: 지시서에 맞는 코드·문서 후보를 찾는다(설계 8.14절). 추천이고 게이트가 아니다(묶음 J).
-//! 탐색 명령 셋(`find`·`context`·`packet`)이 함께 쓰는 것(지시서 읽기, Jev 조건, 색인, 재사용과 덮어쓰기)도 여기에 둔다.
+//! 탐색 명령 둘(`find`·`context`)이 함께 쓰는 것(지시서 읽기, Jev 조건, 색인, 재사용과 덮어쓰기)도 여기에 둔다.
 
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
@@ -180,7 +180,7 @@ pub(super) fn path_refusal(repo: &Repo, rel: &str) -> Option<&'static str> {
     }
 }
 
-/// 결과와 문구에 적는 레포 상대 경로.
+/// 결과와 문구에 적는 경로. 레포 안이면 상대 경로, 밖이면(역할 워크트리에서 본 Git 공용 디렉터리) 절대 경로다.
 pub(super) fn shown(repo: &Repo, path: &Path) -> String {
     path_text(path.strip_prefix(&repo.root).unwrap_or(path))
 }
