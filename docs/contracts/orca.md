@@ -33,7 +33,7 @@
 설계 9.2절의 "`{"ok":true,"result":…}` 형태를 읽는다"는 맞다. 읽을 것은 `--full` 없는 평면 형태다.
 
 - ID의 형태는 `<머리말>_<16진수 12자>`다(SRV의 ID 함수). Run은 `run_…`, Task는 `task_…`, **Dispatch는 `ctx_…`**, 메시지는 `msg_…`, 전달은 `delivery_…`다. 터미널 핸들은 `term_<UUID>`다(ENV의 값 모양). 채팅 방식 worker의 핸들은 `structworker_…`로 시작한다(CLI `shared/orchestration/workers/structured-worker-handle.js`).
-- 변경 명령에는 `--retry-request <id>`가 있다. 결과를 모르게 된 요청을 같은 ID로 다시 보내면 다시 실행하지 않고 기록된 결과를 돌려준다. `orchestration request-show --request <id>`는 그 요청이 반영됐는지를 읽기만 한다(HELP).
+- 변경 명령에는 `--retry-request <id>`가 있다. Orca 1.4.261의 `worker-start`는 UUID 꼴이 아닌 값을 `invalid_argument`("--retry-request must be the UUID Orca reported for the original request")로 거절한다. 처음 보내는 UUID v4는 받는다(2026-11-17 jevpet 배정에서 확인). 그래서 `fullops dispatch`는 요청 ID를 UUID v4 꼴로 만든다(2.0.2까지는 `req_` + 16진수 16자). 결과를 모르게 된 요청을 같은 ID로 다시 보내면 다시 실행하지 않고 기록된 결과를 돌려준다. `orchestration request-show --request <id>`는 그 요청이 반영됐는지를 읽기만 한다(HELP).
 
 ## 2. 명령별 인자와 응답 (M3)
 

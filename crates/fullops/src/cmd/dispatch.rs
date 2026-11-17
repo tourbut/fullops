@@ -454,9 +454,20 @@ fn lint_level_in(inbox: &str) -> Option<TestLevel> {
         .max()
 }
 
+/// `worker-start --retry-request`의 값. Orca 1.4.261부터 UUID 꼴만 받는다(그 전에는 아무 글자나 받았다).
 fn new_request() -> String {
     let seed = format!("{:?}{}", std::time::SystemTime::now(), std::process::id());
-    format!("req_{}", &sha256_hex(seed.as_bytes())[..16])
+    let h = sha256_hex(seed.as_bytes());
+    // UUID v4 꼴: 버전 자리는 4, 변형 자리는 8~b
+    let variant = ["8", "9", "a", "b"][usize::from(h.as_bytes()[16]) % 4];
+    format!(
+        "{}-{}-4{}-{variant}{}-{}",
+        &h[..8],
+        &h[8..12],
+        &h[13..16],
+        &h[17..20],
+        &h[20..32]
+    )
 }
 
 struct Options {
