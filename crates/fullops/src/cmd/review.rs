@@ -8,8 +8,8 @@ use fullops_core::lint_rules::config_sha256;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
     Accepted, Completion, Config, HeadRef, Known, LintResult, Need, NeedAction, PacketCheck,
-    Refusal, RoleId, RoleKind, RunOwner, Sha, Snapshot, SnapshotHold, SnapshotState, State,
-    TaskKey, Waiver, WorkOutcome, parse_packet, parse_packet_outcomes, path_text, same_path,
+    Purpose, Refusal, RoleId, RoleKind, RunOwner, Sha, Snapshot, SnapshotHold, SnapshotState,
+    State, TaskKey, Waiver, WorkOutcome, parse_packet, parse_packet_outcomes, path_text, same_path,
     sha256_hex,
 };
 use fullops_core::review::{
@@ -558,7 +558,7 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         read(&dir.join("targets.json")),
         read(&dir.join("result.json")),
     );
-    let (Some(targets), Some(result)) = files else {
+    let (Some(targets), Some(mut result)) = files else {
         return Err(refused(
             "RV-00",
             "norecord",
@@ -583,6 +583,27 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         Some(snapshot) => snapshot.implementer_session.clone(),
         None => result.implementer_session.clone(),
     };
+    // 리뷰어가 자기 세션을 적지 않았으면 그 snapshot에 배정된 리뷰 worker의 세션(배정 기록)을 쓴다
+    if result
+        .reviewer_session
+        .as_deref()
+        .is_none_or(|s| s.trim().is_empty())
+    {
+        result.reviewer_session = snapshot.and_then(|snap| {
+            state
+                .dispatches
+                .iter()
+                .filter(|d| {
+                    d.key == key
+                        && d.purpose == Purpose::Review
+                        && same_path(&d.worktree, &snap.path)
+                })
+                .max_by_key(|d| d.started_at)?
+                .bound_session
+                .as_ref()
+                .map(|s| s.to_string())
+        });
+    }
     for (item, why) in check_result(&targets, &result, implementer.as_deref()) {
         fail(item as usize, &why);
     }

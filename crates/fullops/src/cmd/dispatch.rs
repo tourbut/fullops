@@ -1053,11 +1053,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     };
 
     // 9. 상태 쓰기
-    // worker의 첫 프롬프트 hook이 이 기록보다 먼저 돌면 세션 파일에만 묶인다(그 hook은 예약 ID밖에 못 본다)
-    let early = fullops_store::discover(&target)
-        .ok()
-        .flatten()
-        .and_then(|r| bound_session_in(&r, &started.dispatch));
+    let worker_repo = fullops_store::discover(&target).ok().flatten();
     let coordinator = ctx.update_state(None, |s| {
         add_run(s);
         // 예약 기록이 그 사이에 정리됐으면 다시 만든다
@@ -1073,7 +1069,11 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
             d.task_id = Some(started.task.clone());
             d.terminal = started.terminal.clone();
             d.run = started.run.clone();
-            d.bound_session = early.clone();
+            // worker의 첫 프롬프트 hook이 이보다 먼저 돌면 세션 파일에만 묶인다(그 hook은 예약 ID밖에 못 본다).
+            // 잠금 안에서 찾아야 hook의 state 쓰기와 엇갈려도 빠지지 않는다
+            d.bound_session = worker_repo
+                .as_ref()
+                .and_then(|r| bound_session_in(r, &d.id));
         }
         if !req.sub {
             let counters = s.tasks.entry(key.clone()).or_default();

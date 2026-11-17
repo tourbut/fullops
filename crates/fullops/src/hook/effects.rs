@@ -293,7 +293,13 @@ pub fn after_output(facts: &mut RealFacts, effects: &[Effect], errors: &mut Vec<
     for effect in effects {
         match effect {
             Effect::BindDispatch { id, .. } => {
-                if in_state(facts, id) {
+                // 예약 중인 배정이 있으면 `dispatch`가 이 hook과 겹쳐 진짜 ID를 쓰는 중일 수 있다.
+                // 앞서 읽은 state가 낡았을 수 있으니 잠금 안에서 다시 찾는다(apply)
+                let pending = facts
+                    .state()
+                    .yes()
+                    .is_some_and(|s| s.dispatches.iter().any(|d| d.is_reservation()));
+                if pending || in_state(facts, id) {
                     writes.push(Write::Bound(id.clone()));
                 }
             }
