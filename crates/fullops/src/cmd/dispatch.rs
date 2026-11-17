@@ -454,6 +454,21 @@ fn lint_level_in(inbox: &str) -> Option<TestLevel> {
         .max()
 }
 
+/// 그 워크트리에서 이 dispatch에 묶인 세션.
+fn bound_session_in(repo: &Repo, id: &DispatchId) -> Option<fullops_core::model::SessionId> {
+    std::fs::read_dir(repo.local().join("sessions"))
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
+        .filter_map(|e| {
+            fullops_store::read_json::<Session>(&e.path())
+                .yes()
+                .flatten()
+        })
+        .find(|s| s.dispatch.as_ref().is_some_and(|d| &d.id == id))
+        .map(|s| s.sid)
+}
+
 /// `worker-start --retry-request`의 값. Orca 1.4.261부터 UUID 꼴만 받는다(그 전에는 아무 글자나 받았다).
 fn new_request() -> String {
     let seed = format!("{:?}{}", std::time::SystemTime::now(), std::process::id());
@@ -1038,6 +1053,11 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     };
 
     // 9. 상태 쓰기
+    // worker의 첫 프롬프트 hook이 이 기록보다 먼저 돌면 세션 파일에만 묶인다(그 hook은 예약 ID밖에 못 본다)
+    let early = fullops_store::discover(&target)
+        .ok()
+        .flatten()
+        .and_then(|r| bound_session_in(&r, &started.dispatch));
     let coordinator = ctx.update_state(None, |s| {
         add_run(s);
         // 예약 기록이 그 사이에 정리됐으면 다시 만든다
@@ -1053,6 +1073,7 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
             d.task_id = Some(started.task.clone());
             d.terminal = started.terminal.clone();
             d.run = started.run.clone();
+            d.bound_session = early.clone();
         }
         if !req.sub {
             let counters = s.tasks.entry(key.clone()).or_default();
