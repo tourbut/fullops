@@ -23,13 +23,13 @@ dev 모드 주 담당의 직접 작업도 같은 기준을 넘으면 다른 세�
 
 ## 리뷰 절차
 
-1. lead가 `fullops review snapshot <KEY>`를 실행한다. 보고 SHA의 읽기 전용 사본(detached 워크트리)과 리뷰 폴더 `.fullops-squad/reviews/<KEY>/<head 12자>/`가 생긴다. 폴더에는 대상 목록 `targets.json`, 결과 뼈대 `result.json`, 보고서 틀 `report.md`, 찾을 수 있으면 구현자의 lint 결과 사본 `lint.json`이 들어간다. 대상과 경로별 규칙은 `.fullops-squad/review/rule.json`에서 계산한다.
+1. lead가 `fullops review snapshot <KEY>`를 실행한다. 보고 SHA의 읽기 전용 사본(detached 워크트리)과 리뷰 폴더 `.fullops/tasks/<KEY>/reviews/<head 12자>/`가 생긴다. 폴더에는 대상 목록 `targets.json`, 결과 뼈대 `result.json`, 보고서 틀 `report.md`, 찾을 수 있으면 구현자의 lint 결과 사본 `lint.json`이 들어간다. 대상과 경로별 규칙은 `.fullops/config/review.json`에서 계산한다.
 2. lead가 리뷰어 모델을 기록하고 배정한다: `fullops route <KEY> --tuple-only --role reviewer --agent <CLI> --model <모델> --effort <effort>` 뒤 `fullops dispatch <KEY> --purpose review --sha <40자 SHA>`. 리뷰어는 구현자와 다른 세션이어야 한다. 구현자의 터미널을 `--terminal`로 주면 거절된다.
 3. 리뷰어는 spec의 `Review SHA`와 `Review folder`를 확인하고 snapshot만 읽는다. lint와 테스트를 다시 돌리지 않고, 구현자 워크트리에 파일을 만들거나 고치지 않는다. 증거가 부족하면 수정 요청 finding으로 남긴다.
-4. 리뷰어는 요구사항·설계·지시서의 완료 기준(인박스에 없으면 `handovers/logs/`에서 키로 찾는다), `rules/common/`의 규칙, `targets.json`의 경로별 규칙 문장을 읽고 `merge_base`와 `head` 사이의 diff를 검토한다. 내부 코드는 관련 파일을 직접 읽고, 외부 SDK 근거는 Context7로 확인한다.
+4. 리뷰어는 요구사항·설계·지시서의 완료 기준(인박스에 없으면 `.fullops/tasks/<KEY>/`의 끝난 지시서 `<역할>.r<차수>.md`에서 찾는다), `.fullops/guide/rules/common/`의 규칙, `targets.json`의 경로별 규칙 문장을 읽고 `merge_base`와 `head` 사이의 diff를 검토한다. 내부 코드는 관련 파일을 직접 읽고, 외부 SDK 근거는 Context7로 확인한다.
 5. 리뷰어는 lead 체크아웃의 리뷰 폴더에 결과를 쓴다. `result.json`의 모든 파일에 `review_status`(`reviewed` 또는 `skipped`)를 적고 `skipped`에는 `reason`을 적는다. `reviewer_session`에 자기 세션 ID를, `conclusion`에 `accept` 또는 `reject`를 적는다. finding마다 `path`, `content`, `severity`(`critical`·`high`·`medium`·`low`), `resolved`, 줄 범위를 적는다. `report.md`에는 적용한 규칙과 기준 커밋, 예외, 검증 근거, 검토 결론을 적는다.
 6. 리뷰어는 Orca preamble의 `worker_done`을 한 번 보낸다. 본문은 `[리뷰] <KEY> | SHA <head> | 결론 accept|reject | high <n>`이다. 리뷰어는 `fullops done`을 쓰지 않는다.
-7. lead가 `fullops wait --run <R>`로 보고를 받고 `fullops review check <KEY>`를 실행한다. 기록이 대상 목록과 맞는지, 리뷰어와 구현자의 세션이 다른지, snapshot이 깨끗한지, 미해결 critical·high가 없는지, lint 증거가 그 SHA를 덮는지, 패킷이 있는 과제는 처리 기록이 있는지를 본다. 통과하고 결론이 `accept`면 `accepted.json`이 생긴다.
+7. lead가 `fullops wait --run <R>`로 보고를 받고 `fullops review check <KEY>`를 실행한다. 기록이 대상 목록과 맞는지, 리뷰어와 구현자의 세션이 다른지, snapshot이 깨끗한지, 미해결 critical·high가 없는지, lint 증거가 그 SHA를 덮는지를 본다. 통과하고 결론이 `accept`면 `accepted.json`이 생긴다.
 8. 수락이면 `fullops merge <KEY>`가 통과하고 리뷰 보고의 처리 표시와 snapshot 정리도 함께 한다. 거절이거나 미해결 critical·high가 있으면 수정 배정으로 간다: `fullops task reopen` 뒤 `fullops dispatch <KEY> --purpose fix`. 수정 커밋 뒤에는 새 SHA로 다시 리뷰한다(이전 SHA의 리뷰로는 병합되지 않는다).
 
 ## 리뷰 정책
@@ -39,7 +39,7 @@ dev 모드 주 담당의 직접 작업도 같은 기준을 넘으면 다른 세�
 한 세션에서 세 관점으로 읽는다. 관점마다 검토자를 따로 띄우지 않는다. finding의 `content` 앞에 `[버그]`·`[보안]`·`[준수]` 또는 `[nit]`을 하나 붙인다.
 
 - 버그: 논리 오류, 경계 조건, 회귀. 성능·시험 공백·유지보수성 지적도 여기에 적는다.
-- 보안: `rules/common/security.md`.
+- 보안: `.fullops/guide/rules/common/security.md`.
 - 준수: 지시서의 완료 기준과 증명 방법, 요구사항·설계 정본, UI 디자인 정본을 diff와 대조한다. 완료 보고와 검증 기록이 사실과 맞는지도 본다.
 
 심각도와 처분:
