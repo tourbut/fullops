@@ -148,10 +148,19 @@ pub fn check_dispatch(req: &DispatchRequest, facts: &mut dyn Facts) -> Vec<Refus
         };
         out.push(refusal("D-09", &[], &escape, 2));
     }
-    // D-14: 후보 목록 밖의 tuple은 근거가 있어야 받는다. 하위 배정의 tuple은 호출자가 정한다
+    // D-14: 후보 목록 밖의 tuple은 근거가 있어야 받는다. 하위 배정의 tuple은 호출자가 정한다.
+    // route가 근거와 함께 이미 받은 같은 tuple이면 그 근거로 충분하다
+    let accepted = |slot: &str, tuple: &ModelTuple, facts: &mut dyn Facts| {
+        facts.route(&req.key).yes().flatten().is_some_and(|r| {
+            r.tuples
+                .get(slot)
+                .is_some_and(|t| t.tuple() == *tuple && !t.why.trim().is_empty())
+        })
+    };
     if let (false, Some(tuple), Some(slot)) = (req.sub, &req.tuple, &slot)
         && req.why.as_deref().is_none_or(|w| w.trim().is_empty())
         && let Some(list) = config.off_list(slot, tuple)
+        && !accepted(slot, tuple, facts)
     {
         out.push(refusal(
             "D-14",

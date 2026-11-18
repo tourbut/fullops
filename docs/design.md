@@ -1270,7 +1270,7 @@ fullops route <KEY> --tuple-only --role <역할|reviewer> --agent … --model �
    - 폴백: legacy는 `design`, split은 `unresolved`. `decided_by = "fallback"`이고 stderr에 한 줄 경고를 낸다.
    - 산출물: 확률 0.5 이상을 높은 순으로 최대 3개.
    - 임계값은 1.24.0과 같게 둔다(결과 비교 때문).
-7. tuple 플래그는 셋 다 주거나 다 안 준다(RT-05). 주면 `tuples[<역할>]`에 기록한다. 그 자리에 `[models]` 후보가 있는데 목록 밖이고 `--why`가 없으면 거절한다(RT-06. 2.2.0). `--role`을 주면 분류 전에, 아니면 분류 뒤 기록 전에 본다.
+7. tuple 플래그는 셋 다 주거나 다 안 준다(RT-05). 주면 `tuples[<역할>]`에 기록한다. 그 자리에 `[models]` 후보가 있는데 목록 밖이고 `--why`가 없으면 거절한다(RT-06. 2.2.0). tuple을 실제로 기록하는 자리에서만 본다(`--tuple-only`의 그 자리, 분류 뒤 정해진 역할). 미정 분류나 `--force` 없는 기존 기록처럼 tuple을 기록하지 않으면 보지 않는다.
 8. `--tuple-only`는 호출 없이 `tuples`만 쓴다. 기록이 없으면 `class = "untracked"`로 만든다.
 9. (2.1.0에서 뗐다(`docs/design-changes.md` 9절): `requires_packet`을 정하던 단계다.)
 10. 파일을 쓰고(커밋하지 않는다) 세션 파일의 `routed`에 키를 더한다.
@@ -1358,7 +1358,7 @@ fullops dispatch <KEY> [--role <R>] [--purpose build|fix|review|research] [--run
 | D-10 | R에 `settled`가 없는 다른 키의 dispatch가 있다 | 같은 키 | 그 과제가 끝난 뒤 배정하거나 `fullops plan add`로 대기 |
 | D-11 | 아래 4단계의 동기화 뒤에도 대상 브랜치 tip이 `refs/heads/<base>`와 통합 기준 ref를 조상으로 가지지 않는다 | Review | `fullops sync --role <R>`. 원격이 앞서 있으면 `fullops settle`로 fetch한 뒤 다시 |
 | D-12 | 2.1.0에서 뗐다(`docs/design-changes.md` 9절). 배정 때의 패킷 검사(`check_packet(Delivery)`)였다. 번호는 다시 쓰지 않는다 | - | - |
-| D-14 | 플래그로 준 tuple이 그 자리의 `[models]` 후보에 없고 `--why`가 없다(2.2.0) | 하위 배정, 후보가 없는 자리 | 후보에서 고르거나, 사용자가 정한 조합이면 `--why "<근거>"` |
+| D-14 | 플래그로 준 tuple이 그 자리의 `[models]` 후보에 없고 `--why`가 없다(2.2.0) | 하위 배정, 후보가 없는 자리, route가 같은 tuple을 근거(`why`)와 함께 기록한 자리 | 후보에서 고르거나, 사용자가 정한 조합이면 `--why "<근거>"` |
 | D-13 | 하위 배정인데 아래 (a)~(d) 중 하나다 | - | (a) 직접 처리하거나 호스트 서브에이전트를 쓴다 (b) 다른 역할과 다른 과제는 `fullops done --followup "<역할>: <글>"`로 lead에게 넘긴다 (c) `--brief "<맡길 파일 묶음과 완료 조건>"` (d) 그 인자를 뺀다 |
 
 D-08: 선택형 위임은 (1) 호출자가 dispatch 받은 세션이거나(하위 배정) (2) 호출자가 dev 모드 lead이거나 (3) 목적이 Research이거나 필수 리뷰가 아닌 Review인 배정이다. `parallel`이 `off`면 거절. `read`면 Review·Research만 허용하고 spec에 `Read only: true`를 넣는다. `on`·`ultra`는 통과다.
@@ -3350,9 +3350,9 @@ Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 2.1.x까지 모델 후보는 `guide/orca-agents.md`의 `## 모델 후보` 절에 있었다. 2.2.0은 `fullops.toml`의 `[models]`에 둔다(6.1.1절). lead 체크아웃에서 실행한다.
 
 1. 후보 줄을 읽는다: 그 절 안이고 코드 블록 밖인 `` - `<자리>` `<agent>` `<model>` `<effort>`: <설명> ``. `agy`는 `antigravity`로 적는다. 자리가 등록 역할도 `reviewer`도 아니거나, agent를 모르거나, 형식이 다른 줄은 옮기지 않고 보고서에 낸다.
-2. 전제: `fullops.toml`에 `[models]`가 없고, `fullops.toml`과 `guide/orca-agents.md`에 커밋하지 않은 변경이 없다. 어기면 `FullOps[migrate]`(종료 코드 2). `orca-agents.md`가 없으면 할 일이 없다(종료 코드 0).
+2. 전제: lead 체크아웃이다. `fullops.toml`에 `[models]`가 없고, `fullops.toml`과 `guide/orca-agents.md`에 커밋하지 않은 변경이 없다. 어기면 `FullOps[migrate]`(종료 코드 2). `orca-agents.md`가 없거나 코드 블록 밖에 `## 모델 후보` 절이 없으면 할 일이 없다(종료 코드 0. 그래서 다시 실행해도 된다).
 3. `fullops.toml` 끝에 `[models]`를 더하고 검증을 다시 돌린다(통과하지 않으면 쓰지 않는다).
-4. `orca-agents.md`: 후보 절을 뺀 나머지를 옛 기본 템플릿(1.24.0, 2.0.0~2.1.x)과 견준다. front matter, 운영 모드 블록, 배정표의 행, `## 라우팅 기준`의 `- ` 줄(기계 값은 `[roles]`·`routing`에 있다)은 견주지 않는다. 같으면 파일을 지우고, 다르면(사람이 적은 절이 있으면) 후보 절만 빼고 남긴다. 남은 글을 다른 문서로 옮기지 않는다(사람이 정한다).
+4. `orca-agents.md`: 후보 절(코드 블록 밖의 `## 모델 후보`부터 코드 블록 밖의 다음 `# `·`## ` 제목 앞까지)에서 옮긴 줄만 뺀다. 남은 줄이 옛 템플릿의 설명·형식 예시 그대로면 절을 지우고, 그 밖의 줄(옮기지 못한 후보 줄, 사람이 적은 글)이 있으면 제목만 `## 옮기지 못한 모델 후보 글`로 바꿔 그대로 둔다. 그 뒤 파일 전체를 옛 기본 템플릿(1.24.0, 2.0.0~2.1.x)과 견준다(front matter, 운영 모드 블록, CRLF, 겹친 빈 줄만 빼고. 배정표의 행과 라우팅 줄도 사람이 적은 값이라 견준다). 같으면 파일을 지우고, 다르면 남긴다. 남은 글을 다른 문서로 옮기지 않는다(사람이 정한다). 1.24.0에서 오는 `migrate --from-python`이 남긴 파일에 Python판 명령이 있으면 다른 문서처럼 보고서에 낸다.
 5. 커밋 하나 `fullops: 모델 후보를 fullops.toml로 옮김`. push하지 않는다. 역할 워크트리는 다음 동기화로 따라온다(`[models]`는 lead 체크아웃에서만 읽는다).
 
 `--dry-run`은 옮길 후보 수(자리별), 옮기지 않을 줄, `orca-agents.md`를 지울지 남길지를 낸다. `migrate --from-python`은 1.24.0의 `orca-agents.md`에서 같은 줄을 읽어 새 `fullops.toml`에 `[models]`로 넣고, 같은 4번 규칙으로 그 파일을 지우거나 후보 절만 뺀다. 되돌리기는 그 커밋의 `git revert`다.

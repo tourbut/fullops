@@ -36,7 +36,7 @@ fn migrate_models_moves_candidates_and_removes_the_stock_guide() {
     let guide = lead.join(".fullops/guide/orca-agents.md");
     let filled = OLD_GUIDE.replace(
         "## 모델 후보\n",
-        "## 모델 후보\n\n- `architecture` `claude` `claude-opus-5-5` `high`: 설계\n- `dev` `claude` `claude-sonnet-5-5` `medium`: 일반 구현\n- `dev` `agy` `gemini-3` `high`: 큰 구현\n- `qa` `claude` `m` `low`: 없는 역할\n",
+        "## 모델 후보\n\n- `architecture` `claude` `claude-opus-5-5` `high`: 설계\n- `dev` `claude` `claude-sonnet-5-5` `medium`: 일반 구현\n- `dev` `agy` `gemini-3` `high`: 큰 구현\n",
     );
     sb.write(&guide, &filled);
     sb.git_ok(&lead, &["add", "-A"]);
@@ -46,12 +46,17 @@ fn migrate_models_moves_candidates_and_removes_the_stock_guide() {
     let dry = sb.cli(&lead, &["migrate", "--models", "--dry-run"]);
     assert_eq!(dry.code, Some(0), "{}{}", dry.stdout, dry.stderr);
     assert!(
-        dry.stdout.contains("모델 후보 3개") && dry.stdout.contains("qa"),
+        dry.stdout.contains("모델 후보 3개") && dry.stdout.contains("지운다"),
         "{}",
         dry.stdout
     );
     assert_eq!(sb.git_ok(&lead, &["rev-parse", "HEAD"]), before);
     assert!(guide.is_file());
+    // 역할 워크트리에서는 하지 않는다(커밋이 역할 브랜치에 남는다)
+    refused(
+        &sb.cli(&sb.path("dev"), &["migrate", "--models"]),
+        "migrate",
+    );
 
     let run = sb.cli(&lead, &["migrate", "--models"]);
     assert_eq!(run.code, Some(0), "{}{}", run.stdout, run.stderr);
@@ -67,7 +72,7 @@ fn migrate_models_moves_candidates_and_removes_the_stock_guide() {
     assert_eq!(dev.len(), 2);
     assert_eq!(dev[1]["agent"].as_str(), Some("antigravity"));
     assert_eq!(dev[0]["about"].as_str(), Some("일반 구현"));
-    assert!(toml["models"].get("qa").is_none());
+    assert_eq!(toml["models"]["architecture"].as_array().unwrap().len(), 1);
 
     // 다시 실행하면 할 일이 없다
     let again = sb.cli(&lead, &["migrate", "--models"]);
@@ -122,6 +127,35 @@ fn route_and_dispatch_use_the_candidates() {
     assert!(!lead.join(".fullops/tasks/M-1/route.json").exists());
     let with_why = [&off[..], &["--why", "사용자 지정"]].concat();
     assert_eq!(route("M-1", &with_why).code, Some(0));
+    // route가 근거와 함께 받은 tuple은 dispatch에서 같은 플래그로 다시 줘도 된다
+    let again = sb.cli(
+        &lead,
+        &[
+            &["dispatch", "M-1", "--role", "architecture", "--dry-run"][..],
+            &off,
+        ]
+        .concat(),
+    );
+    assert_eq!(again.code, Some(0), "{}{}", again.stdout, again.stderr);
+    // 기록하지 않을 tuple(미정 분류)은 보지 않는다
+    let unresolved = sb.cli(
+        &lead,
+        &[
+            &[
+                "route",
+                "M-4",
+                "--request",
+                "모호",
+                "--class",
+                "unresolved",
+                "--role",
+                "dev",
+            ][..],
+            &off,
+        ]
+        .concat(),
+    );
+    assert_eq!(unresolved.code, Some(0), "{}", unresolved.stderr);
 
     // 후보가 하나인 자리는 모델을 주지 않아도 그 후보로 배정한다
     assert_eq!(route("M-2", &[]).code, Some(0));

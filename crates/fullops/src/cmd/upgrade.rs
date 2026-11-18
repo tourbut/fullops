@@ -45,11 +45,7 @@ const REQUIRED: &[RequiredApply] = &[
     RequiredApply {
         since: "2.2.0",
         id: "models",
-        check: |root| {
-            !read(root, &layout::guide("orca-agents.md"))
-                .lines()
-                .any(|l| l.trim_end() == "## 모델 후보")
-        },
+        check: |root| !super::models::has_section(&read(root, &layout::guide("orca-agents.md"))),
         hint: "모델 후보가 아직 `.fullops/guide/orca-agents.md`에 있다. lead 체크아웃에서 `fullops migrate --models --dry-run`으로 본 뒤 `fullops migrate --models`로 `fullops.toml`의 `[models]`에 옮긴다.",
     },
 ];

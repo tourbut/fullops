@@ -475,8 +475,20 @@ fn plan_changes(
     // 모델 후보는 `[models]`로 갔다(2.2.0): 후보 절을 빼고, 나머지가 기본 글이면 파일을 지운다
     let agents = ".fullops-squad/orca-agents.md";
     if let Some(Some(before)) = read(agents) {
-        let after = models::leftover(&before);
+        let roles: Vec<RoleId> = old["roles"]
+            .as_object()
+            .into_iter()
+            .flat_map(|r| r.keys())
+            .filter_map(|id| RoleId::new(id.as_str()).ok())
+            .collect();
+        let parsed = models::parse(&before, &models::slots(roles.iter()));
+        let after = models::leftover(&before, &parsed);
         let gone = after.is_none();
+        // 남긴 글에 Python판 명령이 있으면 다른 문서처럼 알린다
+        let lines = after.as_deref().map(python_lines).unwrap_or_default();
+        if !lines.is_empty() {
+            python.push(format!("{agents} {}번 줄", lines.join(", ")));
+        }
         if after.as_ref() != Some(&before) {
             let change = Change {
                 rel: agents.to_string(),
@@ -487,7 +499,7 @@ fn plan_changes(
                 report.push(if gone {
                     format!("`{agents}`는 기본 글이라 지운다. 모델 후보는 `fullops.toml`의 `[models]`로 옮겼다.")
                 } else {
-                    format!("`{agents}`에서 모델 후보 절만 뺐다(`[models]`로 옮겼다). 나머지 글은 사람이 적은 것이라 남겼다.")
+                    format!("`{agents}`에서 옮긴 모델 후보 줄을 뺐다(`[models]`로 옮겼다). 나머지 글은 사람이 적은 것이라 남겼다(옮기지 못한 후보 절의 글은 `## 옮기지 못한 모델 후보 글` 아래).")
                 });
             }
         }

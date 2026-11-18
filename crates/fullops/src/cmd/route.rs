@@ -285,7 +285,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             );
         }
     };
-    // RT-06: 후보 목록 밖의 tuple은 `--why`가 있어야 기록한다. 역할을 알면 분류(Jev 호출) 전에 본다
+    // RT-06: 후보 목록 밖의 tuple은 `--why`가 있어야 기록한다. tuple을 실제로 기록하는 자리에서만 본다
     let off_list = |slot: &str| -> Option<CliError> {
         let t = tuple.as_ref().filter(|t| t.why.trim().is_empty())?;
         let list = config.off_list(slot, &t.tuple())?;
@@ -299,9 +299,6 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             2,
         )]))
     };
-    if let Some(refused) = role.as_deref().and_then(off_list) {
-        return Err(refused);
-    }
     // 읽지 못한 기록을 '없음'으로 보면 tuple·이력을 잃고 덮어쓴다
     let Known::Yes(existing) = fullops_store::read_route(repo, &key) else {
         return Err(usage(format!(
@@ -331,6 +328,9 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         // 호출 없이 tuple만 쓴다. 기록이 없으면 untracked로 만든다
         let slot =
             role.ok_or_else(|| usage("`--tuple-only`에는 `--role <역할|reviewer>`가 필요하다."))?;
+        if let Some(refused) = off_list(&slot) {
+            return Err(refused);
+        }
         let mut route =
             existing.unwrap_or_else(|| blank(RouteClass::Untracked, None, DecidedBy::Manual));
         if let Some(tuple) = tuple {
