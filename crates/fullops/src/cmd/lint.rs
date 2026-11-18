@@ -7,8 +7,8 @@ use fullops_core::layout;
 use fullops_core::lint_rules::{self as rules, FileChange, LintCommand, LintConfig};
 use fullops_core::messages::lint as msg;
 use fullops_core::model::{
-    Known, LintCommandResult, LintPass, LintResult, LintStatus, Refusal, RoleKind, Severity, Sha,
-    TestLevel, path_text,
+    Known, LintCommandResult, LintPass, LintResult, LintStatus, Refusal, RoleKind, Seat, Severity,
+    Sha, TestLevel, path_text,
 };
 use fullops_ext::{Git, GitCli, ProcStatus};
 use fullops_store::StoreError;
@@ -262,6 +262,15 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         }
     }
     let repo = ctx.repo()?;
+    // 리뷰 사본은 읽기 전용이다(설계 8.9절): 설치된 의존성이 없어 명령이 환경 탓에 실패하고, 실행 산출물이 사본을 더럽혀 정리를 막는다
+    if ctx.caller()?.actor.seat == Seat::Reviewer {
+        return Err(CliError::Refused(vec![Refusal {
+            rule: "LINT",
+            reason: msg::reason("LINT-SNAPSHOT", &[]).unwrap_or_default(),
+            escape: "lint 증거는 Review folder의 `lint.json`(구현자의 결과 사본)으로 봅니다. 없거나 head를 덮지 못하면 finding으로 남깁니다.".into(),
+            exit: EXIT_REFUSED,
+        }]));
+    }
     let git = GitCli::cli(repo.root.clone());
 
     // 1. 깨끗한 작업 트리와 기준

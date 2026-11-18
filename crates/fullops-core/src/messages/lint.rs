@@ -37,7 +37,11 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
             arg(0),
             arg(1)
         ),
-        // `fullops lint`의 거절. args: 더러운 경로들
+        // `fullops lint`의 거절(규칙 ID는 둘 다 `LINT`). 리뷰 사본에서 불렀다
+        "LINT-SNAPSHOT" => {
+            "읽기 전용 리뷰 사본에서는 lint를 돌리지 않습니다(설치된 의존성이 없고 실행 산출물이 사본을 더럽힙니다).".into()
+        }
+        // args: 더러운 경로들
         "LINT" => format!(
             "작업 트리가 깨끗하지 않습니다({}). lint 결과는 커밋에 고정됩니다.",
             arg(0)

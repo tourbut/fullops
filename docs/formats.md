@@ -429,7 +429,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `reviewer_dispatch` | `DispatchId` \| null | |
 | `owner` | `"lead"` \| `"dispatch:<DispatchId>"` | |
 | `created_at` | 시각 | |
-| `hold` | `{ "reason": 글, "at": 시각 }` \| null | 정리하지 못한 사유(타입 `SnapshotHold`) |
+| `hold` | `{ "reason": 글, "at": 시각, "abandon"?: 글 }` \| null | 정리하지 못한 사유(타입 `SnapshotHold`). `abandon`은 `--abandon`으로 청했을 때의 중단 사유다. `hold`가 남은 snapshot은 `merge`·`settle`·`review prune`이 다시 정리해 본다 |
 
 `Decision` (`decisions[]`, 뜻은 설계 8.10절):
 

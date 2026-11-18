@@ -16,7 +16,7 @@ use fullops_core::layout;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
     AckBy, Completion, Decision, DecisionId, DecisionStatus, Derived, Dispatch, DispatchId,
-    Landing, Need, NeedAction, Sha, SnapshotState, State, TaskKey, ack_by, orca_wakes,
+    Landing, Need, NeedAction, Sha, State, TaskKey, ack_by, orca_wakes, path_text, same_path,
 };
 use fullops_ext::{Git, GitCli, MergeMode, MergeOutcome, Worktree};
 use lexopt::prelude::*;
@@ -245,7 +245,7 @@ fn stamp(at: i64) -> String {
     )
 }
 
-/// M-08: 병합 기록 커밋 하나. `PLANS.md`의 상태 칸·배정 기록·후속 요청과 그 과제의 미커밋 리뷰 파일을 넣는다.
+/// M-08: 병합 기록 커밋 하나. `PLANS.md`의 상태 칸·배정 기록·후속 요청과 그 과제의 미커밋 리뷰 파일(lead 체크아웃의 것)을 넣는다.
 fn record(
     ctx: &Ctx,
     base: &GitCli,
@@ -312,11 +312,33 @@ fn record(
     if text != before {
         std::fs::write(&plan_path, text)?;
     }
-    // shortcut: lead가 기본 브랜치 밖(coordinator 브랜치)에 있으면 lead 체크아웃의 리뷰 파일은 이 커밋에 들어가지 않는다, 그 배치를 쓰는 레포가 생기면 옮겨 넣는다
-    let paths = [layout::plans().to_string(), layout::reviews_dir(key)];
+    // 리뷰 기록은 lead 체크아웃에 쓰인다. lead가 기본 워크트리 밖(coordinator 워크트리)이면 기본 워크트리로 옮겨 적는다
+    let (lead, reviews) = (&ctx.repo()?.root, layout::reviews_dir(key));
+    let mut moved = Vec::new();
+    if !same_path(&path_text(lead), &path_text(&base.repo_root)) {
+        let changed = GitCli::cli(lead.clone()).status(Some(&reviews));
+        for entry in known(changed, "lead 체크아웃 상태")? {
+            let (from, to) = (lead.join(&entry.path), base.repo_root.join(&entry.path));
+            if from.is_file() {
+                std::fs::create_dir_all(to.parent().unwrap_or(&base.repo_root))?;
+                std::fs::copy(&from, &to)?;
+                moved.push(from);
+            }
+        }
+    }
+    let paths = [layout::plans().to_string(), reviews.clone()];
     let message = format!("fullops: 병합 기록 {key}\n\n{}", body.join("\n"));
     base.commit_only(&paths, &message)
         .map_err(|e| CliError::Internal(format!("병합 기록 커밋을 만들지 못했습니다: {e}")))?;
+    // 커밋에 담겼으니 lead 쪽 사본을 치운다. 미추적으로 남으면 M-11이 lead 체크아웃에 기본 브랜치를 반영하지 못한다.
+    // 추적되던 파일은 lead 브랜치의 것으로 되돌려 두고 동기화가 새 글을 가져온다
+    if !moved.is_empty() {
+        for from in &moved {
+            let _ = std::fs::remove_file(from);
+        }
+        let argv = ["checkout", "--quiet", "--", reviews.as_str()];
+        let _ = git_in(lead, &argv, Duration::from_secs(30));
+    }
     Ok(())
 }
 
@@ -618,17 +640,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     });
 
     // M-12
-    let open = load_state(ctx)?;
-    let reviewing =
-        |s: &&fullops_core::model::Snapshot| s.key() == k && s.state == SnapshotState::Active;
-    for snapshot in open.snapshots.iter().filter(reviewing) {
-        if let Ok(Some(why)) = review::cleanup(ctx, &git, &snapshot.review, None) {
-            ctx.note(&format!(
-                "snapshot {}를 정리하지 못해 사유를 적었습니다: {why}",
-                snapshot.review
-            ));
-        }
-    }
+    review::sweep(ctx, &git, Some(k));
 
     // M-13
     let plan = fullops_store::read_plan(repo, assets::PLANS_MD)

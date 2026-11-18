@@ -375,6 +375,7 @@ fn settle(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         }
         archive_done(repo, state)
     })?;
+    super::review::sweep(ctx, &git, None);
     let ids: Vec<&str> = landed.iter().map(|(id, _)| id.as_str()).collect();
     let drifted: Vec<String> = landed
         .iter()

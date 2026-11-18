@@ -213,14 +213,20 @@ pub(super) fn round_logged(git: &GitCli, branch: &str, inbox: &Inbox) -> bool {
         .is_some()
 }
 
-/// 3단계 기록 게시(설계 8.5절): lead의 준비 커밋을 기본 브랜치와 원격에 올린다. 이미 된 일은 건너뛴다.
-fn publish_records(repo: &Repo, config: &Config, git: &GitCli) -> Result<(), CliError> {
+/// 3단계 기록 게시(설계 8.5절): lead의 커밋을 기본 브랜치와 원격에 올린다. 이미 된 일은 건너뛴다.
+/// `coming`은 준비 커밋이 곧 생긴다는 뜻이다(미리 맞추기): 올릴 것이 아직 없어도 올릴 자리의 조건을 본다.
+fn publish_records(
+    repo: &Repo,
+    config: &Config,
+    git: &GitCli,
+    coming: bool,
+) -> Result<(), CliError> {
     let base_ref = format!("refs/heads/{}", config.base);
     let on_base = matches!(fullops_store::head(repo)?, HeadRef::Branch(b) if b == config.base);
     let head = git.rev_parse("HEAD").yes();
     let base_tip = git.rev_parse(&base_ref).yes();
     if let (false, Some(head), Some(base_tip)) = (on_base, &head, &base_tip)
-        && head != base_tip
+        && (head != base_tip || coming)
     {
         if git.is_ancestor(base_tip.as_str(), head.as_str()) != Known::Yes(true) {
             return Err(step_refusal(
@@ -243,6 +249,7 @@ fn publish_records(repo: &Repo, config: &Config, git: &GitCli) -> Result<(), Cli
                     "그 워크트리의 변경을 커밋하거나 치운 뒤 다시 실행한다",
                 ));
             }
+            _ if head == base_tip => {}
             Some(path) => {
                 git.merge(&path, head.as_str(), MergeMode::FfOnly)?;
             }
@@ -309,15 +316,18 @@ fn unreported(state: &State, key: &TaskKey, role: &RoleId, git: &GitCli, log: &s
 }
 
 /// 4단계 대상 워크트리 동기화. 실패하면 `sync_pending`에 적고 멈춘다.
+/// `coming`이면(준비 커밋이 곧 생긴다) 지금 반영할 것이 없어도 대상이 깨끗해야 한다.
 fn sync_target(
     ctx: &Ctx,
     config: &Config,
     role: &RoleId,
     target: &Path,
     base_tip: &Sha,
+    coming: bool,
 ) -> Result<(), CliError> {
     let git = GitCli::cli(target.to_path_buf());
-    if git.is_ancestor(base_tip.as_str(), "HEAD") == Known::Yes(true) {
+    let current = git.is_ancestor(base_tip.as_str(), "HEAD") == Known::Yes(true);
+    if current && !coming {
         return Ok(());
     }
     let pending = |ctx: &Ctx| {
@@ -335,6 +345,9 @@ fn sync_target(
             ),
             &format!("그 worker의 완료 뒤 `fullops sync --role {role}`"),
         ));
+    }
+    if current {
+        return Ok(());
     }
     let steps = merge_steps(target, role, base_tip);
     for rev in &steps {
@@ -722,6 +735,66 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     let orca = OrcaCli::new(repo.root.clone(), ready_timeout + Duration::from_secs(30));
     let handle = session_handle();
 
+    // 준비 커밋에 들어갈 tuple 기록. 파일은 커밋 직전에 쓴다(거절되면 쓰지 않는다)
+    let recorded = route.clone().filter(|_| !req.sub).and_then(|mut route| {
+        let slot = if review {
+            "reviewer".to_string()
+        } else {
+            role.to_string()
+        };
+        let why = why
+            .clone()
+            .or_else(|| route.tuples.get(&slot).map(|t| t.why.clone()))
+            .unwrap_or_default();
+        let record = RouteTuple {
+            agent: tuple.agent.clone(),
+            model: tuple.model.clone(),
+            effort: tuple.effort.clone(),
+            why,
+        };
+        (route.tuples.get(&slot) != Some(&record)).then(|| {
+            route.tuples.insert(slot, record);
+            route
+        })
+    });
+    let paths = [
+        layout::route(&key),
+        layout::request(&key),
+        layout::inbox(&role),
+        layout::plans().to_string(),
+    ];
+    // 3~5단계: 기록 게시, 대상 워크트리 동기화, 기준선 확인. 다시 불러도 이미 된 일은 건너뛴다
+    let deliver = |coming: bool| -> Result<(), CliError> {
+        publish_records(repo, config, &git, coming)?;
+        if review {
+            return Ok(());
+        }
+        let base_tip = git.rev_parse(&base_ref).yes().ok_or_else(|| {
+            CliError::External(format!("기본 브랜치 `{}`를 읽지 못했다.", config.base))
+        })?;
+        sync_target(ctx, config, &role, &target, &base_tip, coming)?;
+        let tgit = GitCli::cli(target.clone());
+        let behind = |rev: &str| tgit.is_ancestor(rev, "HEAD") == Known::Yes(false);
+        if behind(&base_ref) || behind(&config.base_ref()) {
+            return Err(CliError::Refused(vec![refusal(
+                "D-11",
+                &[role.as_str()],
+                &format!(
+                    "`fullops sync --role {role}`. 원격이 앞서 있으면 `fullops settle`로 fetch한 뒤 다시"
+                ),
+                2,
+            )]));
+        }
+        Ok(())
+    };
+    if !req.sub {
+        // 0. 미리 맞추기. 준비 커밋 없이 3~5단계를 먼저 밟는다: 여기서 거절되면 Run도 준비 커밋도 생기지 않는다.
+        // 읽지 못한 경로는 바뀐 것으로 본다
+        let dirty =
+            |path: &String| !matches!(git.status(Some(path)).yes(), Some(e) if e.is_empty());
+        deliver(recorded.is_some() || paths.iter().any(dirty))?;
+    }
+
     // 1. Run 정하기. 만든 Run은 바로 적어 다시 실행해도 같은 Run을 쓴다
     let owner = match parent {
         Some(p) => RunOwner::Dispatch(p.id.clone()),
@@ -759,55 +832,17 @@ pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
 
     if !req.sub {
         // 2. 준비 커밋. tuple 기록이 이 커밋에 들어가도록 먼저 쓴다
-        if let Some(mut route) = route.clone() {
-            let slot = if review {
-                "reviewer".to_string()
-            } else {
-                role.to_string()
-            };
-            let why = why
-                .clone()
-                .or_else(|| route.tuples.get(&slot).map(|t| t.why.clone()))
-                .unwrap_or_default();
-            let record = RouteTuple {
-                agent: tuple.agent.clone(),
-                model: tuple.model.clone(),
-                effort: tuple.effort.clone(),
-                why,
-            };
-            if route.tuples.get(&slot) != Some(&record) {
-                route.tuples.insert(slot, record);
-                fullops_store::write_route(repo, &route)?;
-            }
+        if let Some(route) = &recorded {
+            fullops_store::write_route(repo, route)?;
         }
-        let paths = [
-            layout::route(&key),
-            layout::request(&key),
-            layout::inbox(&role),
-            layout::plans().to_string(),
-        ];
-        git.commit_only(&paths, &format!("fullops: 배정 준비 {key}"))?;
-        // 3. 기록 게시
-        publish_records(repo, config, &git)?;
+        if git
+            .commit_only(&paths, &format!("fullops: 배정 준비 {key}"))?
+            .is_some()
+        {
+            // 3~5. 준비 커밋을 게시하고 대상에 반영한다
+            deliver(false)?;
+        }
         if !review {
-            // 4. 대상 워크트리 동기화
-            let base_tip = git.rev_parse(&base_ref).yes().ok_or_else(|| {
-                CliError::External(format!("기본 브랜치 `{}`를 읽지 못했다.", config.base))
-            })?;
-            sync_target(ctx, config, &role, &target, &base_tip)?;
-            // 5. 기준선 확인
-            let tgit = GitCli::cli(target.clone());
-            let behind = |rev: &str| tgit.is_ancestor(rev, "HEAD") == Known::Yes(false);
-            if behind(&base_ref) || behind(&config.base_ref()) {
-                return Err(CliError::Refused(vec![refusal(
-                    "D-11",
-                    &[role.as_str()],
-                    &format!(
-                        "`fullops sync --role {role}`. 원격이 앞서 있으면 `fullops settle`로 fetch한 뒤 다시"
-                    ),
-                    2,
-                )]));
-            }
             // spec의 Handover가 가리키는 파일이 실제로 있어야 한다
             if handover.as_ref().is_some_and(|p| !Path::new(p).is_file()) {
                 return Err(CliError::Refused(vec![refusal(
