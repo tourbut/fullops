@@ -20,6 +20,11 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
             a(2)
         ),
         ("RT-05", _) => "`--agent`·`--model`·`--effort`는 셋 다 주거나 다 주지 않는다.".into(),
+        ("RT-06", _) => format!(
+            "`{}`는 `fullops.toml`의 `[models].{}` 후보가 아니다.",
+            a(1),
+            a(0)
+        ),
 
         ("H-01", _) => format!("과제 `{}`의 분류 기록이 없거나 아직 정해지지 않았다.", a(0)),
         ("H-02", _) => format!(
@@ -86,6 +91,11 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
         ("D-07", _) => "한도 재배정은 직전과 같은 agent·model·effort로만 한다.".into(),
         ("D-08", _) => format!("병렬 방침 `{}`가 이 위임을 허용하지 않는다.", a(0)),
         ("D-09", _) => "agent·model·effort를 정할 수 없다.".into(),
+        ("D-14", _) => format!(
+            "`{}`는 `fullops.toml`의 `[models].{}` 후보가 아니다.",
+            a(1),
+            a(0)
+        ),
         ("D-10", "same") => format!(
             "`{}` 역할에 과제 `{}`의 같은 배정(`{}`)이 이미 실행 중이다.",
             a(1),

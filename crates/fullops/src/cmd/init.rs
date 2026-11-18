@@ -72,7 +72,7 @@ pub(super) fn git(root: &Path, args: &[&str]) -> Result<String, CliError> {
 }
 
 /// TOML 문자열 리터럴.
-fn quoted(text: &str) -> String {
+pub(super) fn quoted(text: &str) -> String {
     toml::Value::String(text.to_string()).to_string()
 }
 
@@ -97,6 +97,8 @@ pub(super) struct NewConfig {
     pub roles: Vec<NewRole>,
     /// `[review]`. 1.24.0의 `review_policy`를 옮길 때만 적는다.
     pub review: Option<String>,
+    /// `[models]` 표의 글(`models::toml_text`). 1.24.0의 `## 모델 후보`를 옮길 때만 채운다.
+    pub models: String,
 }
 
 fn role_table(role: &NewRole) -> String {
@@ -140,6 +142,7 @@ pub(super) fn config_text(new: &NewConfig) -> String {
     if let Some(review) = &new.review {
         out.push_str(&format!("\n[review]\n{review}"));
     }
+    out.push_str(&new.models);
     out
 }
 
@@ -469,6 +472,7 @@ fn fresh_config(args: &Args, root: &Path) -> Result<(String, Option<String>), Cl
         remote: remote.clone(),
         roles,
         review: None,
+        models: String::new(),
     };
     Ok((config_text(&new), remote))
 }

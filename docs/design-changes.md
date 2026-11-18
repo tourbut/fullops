@@ -976,3 +976,24 @@ hook 규칙 표(`RULES`)는 34개가 된다: 뼈대의 32개에 S-06과 T-13을 
 - QA 보고서가 역할별 파일(`tasks/<KEY>/qa/<역할>.md`)인 과제에서 T-09는 `report.md`만 링크의 근거로 본다. 그런 폴더에 미디어를 더 커밋하면 `report.md`에 링크를 적어야 한다.
 - `scenarios/drivers/py_driver.py`는 시나리오의 새 자리 경로를 1.24.0의 자리로 옮겨 읽는다(`old_place`). 기준선 사본이 없는 환경이라 `cargo xtask compare`로 다시 재지 않았다.
 - `Cargo.toml`·`package.json`의 판 번호, 릴리스 노트, 카탈로그는 따로 올린다.
+
+## 11. 2.2.0: 모델 후보를 `fullops.toml`로 (2026-11-18)
+
+레포 주인 결정(2026-11-18): 역할마다 쓸 수 있는 모델 후보를 `fullops.toml`에 두고 `orca-agents.md`는 없앤다. 목록 밖 조합은 `--why`가 있어야 받는다(경고만 하는 안 대신).
+
+### 11.1 바뀐 것
+
+- `[models]`: 키는 등록 역할 또는 `reviewer`, 값은 `{ agent, model, effort, about? }`의 배열(설계 6.1.1절). 검증은 키·agent(Orca 에이전트 ID)·빈 model/effort만 본다. effort 값의 목록은 호스트마다 달라 보지 않는다.
+- `dispatch`: tuple 기본값에 '그 자리의 후보가 하나면 그 후보'를 더했다. D-09의 탈출구에 후보를 적는다. D-14(목록 밖 tuple에 `--why` 없음)를 더했다. 하위 배정은 D-14를 보지 않는다(tuple은 호출자 worker가 정한다).
+- `route`: RT-06(같은 규칙). `--role`을 주면 Jev 분류 전에 본다.
+- `orca-agents.md` 템플릿을 뗐다. 옛 템플릿 둘(1.24.0, 2.0.0~2.1.x)은 `assets/legacy/`에 남겨 `migrate`가 기본 글인지 견주는 데만 쓴다. 분류 기준·모델 고르는 법·중복 기동 금지·리뷰 모델의 대체(가장 강한 구현 후보)는 `fullops-orca` 스킬로 옮겼다.
+- `migrate --models`(13.7절)와 `migrate --from-python`의 후보 옮김. `upgrade`의 필수 적용 `models`.
+
+### 11.2 명세와 다르게 정한 것
+
+- 기본 글 판별은 1.24.0처럼 sha256이 아니라 '견줄 꼴'로 한다: front matter, 운영 모드 블록, 후보 절, 배정표 행, `## 라우팅 기준`의 `- ` 줄을 빼고 견준다. setup이 배정표와 라우팅 줄을 늘 채우므로 해시로는 실제 레포에서 맞는 일이 없다. 뺀 줄의 기계 값은 `[roles]`·`routing`에 있다.
+- 사람이 적은 절이 남으면 후보 절만 빼고 파일을 둔다. 다른 문서로 옮기지 않는다(`project.md`로 옮기면 coordinator 규칙이 모든 worker 세션의 필수 문서에 들어간다).
+
+### 11.3 남은 것
+
+- jevpet의 `orca-agents.md`에는 후보 절을 뺀 뒤 약 110줄의 레포 전용 운영 규칙이 남는다(옛 이름 `handovers/to_<역할>.md`, `packet-outcomes.json`, `PLANS.md`, `--override-role`이 섞여 있다). 정리와 자리는 레포 주인이 정한다.

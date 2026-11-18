@@ -285,6 +285,23 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             );
         }
     };
+    // RT-06: 후보 목록 밖의 tuple은 `--why`가 있어야 기록한다. 역할을 알면 분류(Jev 호출) 전에 본다
+    let off_list = |slot: &str| -> Option<CliError> {
+        let t = tuple.as_ref().filter(|t| t.why.trim().is_empty())?;
+        let list = config.off_list(slot, &t.tuple())?;
+        Some(CliError::Refused(vec![refusal(
+            "RT-06",
+            &[slot, &format!("{}/{}/{}", t.agent, t.model, t.effort)],
+            &format!(
+                "후보에서 고른다({}). 사용자가 정한 조합이면 `--why \"<근거>\"`",
+                fullops_core::model::candidates_text(list)
+            ),
+            2,
+        )]))
+    };
+    if let Some(refused) = role.as_deref().and_then(off_list) {
+        return Err(refused);
+    }
     // 읽지 못한 기록을 '없음'으로 보면 tuple·이력을 잃고 덮어쓴다
     let Known::Yes(existing) = fullops_store::read_route(repo, &key) else {
         return Err(usage(format!(
@@ -509,6 +526,9 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         route.tuples = old.tuples.clone();
         route.history = std::mem::take(&mut old.history);
         route.history.push(old);
+    }
+    if let Some(refused) = route.role.as_ref().and_then(|r| off_list(r.as_str())) {
+        return Err(refused);
     }
     match (tuple, &route.role) {
         (Some(tuple), Some(role)) => {

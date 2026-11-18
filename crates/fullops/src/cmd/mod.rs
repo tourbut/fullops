@@ -18,6 +18,7 @@ mod lint;
 mod merge;
 mod migrate;
 mod mode;
+mod models;
 mod plan;
 mod relocate;
 mod retire;

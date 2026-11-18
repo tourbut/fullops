@@ -6,9 +6,9 @@ use crate::messages::{self, MsgId};
 use crate::model::{
     ArchiveLine, BriefAt, Completion, Dispatch, DispatchId, DispatchReason, DispatchRequest, Extra,
     Inbox, Known, Message, MessageNote, Metrics, ModelTuple, OrcaMessage, Parallel, Plan,
-    PlanStatus, Purpose, Refusal, RoleId, RoleKind, RouteClass, RunId, RunOwner, Seat, Settled,
-    SettledHow, Sha, ShaSource, SnapshotState, State, TaskKey, TaskNewRequest, TestLevel, Turn,
-    TurnKind, WorkOutcome, host_of_agent, sha256_hex,
+    PlanStatus, Purpose, REVIEWER_SLOT, Refusal, RoleId, RoleKind, RouteClass, RunId, RunOwner,
+    Seat, Settled, SettledHow, Sha, ShaSource, SnapshotState, State, TaskKey, TaskNewRequest,
+    TestLevel, Turn, TurnKind, WorkOutcome, candidates_text, host_of_agent, sha256_hex,
 };
 use std::collections::BTreeSet;
 
@@ -62,16 +62,27 @@ pub fn dispatch_defaults(req: &DispatchRequest, facts: &mut dyn Facts) -> Dispat
             None => None,
         };
     }
-    let slot = match (req.purpose, &role) {
-        (Purpose::Review, _) => Some("reviewer".to_string()),
-        (_, Some(role)) => Some(role.to_string()),
+    let slot = tuple_slot(req.purpose, role.as_ref());
+    let recorded = || Some(route.as_ref()?.tuples.get(slot.as_deref()?)?.tuple());
+    // 후보가 하나뿐이면 그것을 쓴다
+    let config = facts.config().ok();
+    let only = || match config?.candidates(slot.as_deref()?) {
+        [only] => Some(only.tuple()),
         _ => None,
     };
-    let recorded = || Some(route.as_ref()?.tuples.get(slot.as_deref()?)?.tuple());
     DispatchDefaults {
-        tuple: req.tuple.clone().or_else(recorded),
+        tuple: req.tuple.clone().or_else(recorded).or_else(only),
         role,
         parent: None,
+    }
+}
+
+/// tuple을 기록하고 후보를 찾는 자리: 리뷰는 `reviewer`, 그 밖은 역할 ID.
+pub fn tuple_slot(purpose: Purpose, role: Option<&RoleId>) -> Option<String> {
+    match (purpose, role) {
+        (Purpose::Review, _) => Some(REVIEWER_SLOT.to_string()),
+        (_, Some(role)) => Some(role.to_string()),
+        _ => None,
     }
 }
 
@@ -123,8 +134,37 @@ pub fn check_dispatch(req: &DispatchRequest, facts: &mut dyn Facts) -> Vec<Refus
             ));
         }
     }
+    let slot = tuple_slot(req.purpose, found.role.as_ref());
+    let list = slot.as_deref().map_or(&[][..], |s| config.candidates(s));
     if found.tuple.is_none() {
-        out.push(refusal("D-09", &[], "`--agent --model --effort`", 2));
+        let escape = if list.is_empty() {
+            "`--agent --model --effort`".to_string()
+        } else {
+            format!(
+                "`--agent --model --effort`. `[models].{}` 후보: {}",
+                slot.as_deref().unwrap_or_default(),
+                candidates_text(list)
+            )
+        };
+        out.push(refusal("D-09", &[], &escape, 2));
+    }
+    // D-14: 후보 목록 밖의 tuple은 근거가 있어야 받는다. 하위 배정의 tuple은 호출자가 정한다
+    if let (false, Some(tuple), Some(slot)) = (req.sub, &req.tuple, &slot)
+        && req.why.as_deref().is_none_or(|w| w.trim().is_empty())
+        && let Some(list) = config.off_list(slot, tuple)
+    {
+        out.push(refusal(
+            "D-14",
+            &[
+                slot,
+                &format!("{}/{}/{}", tuple.agent, tuple.model, tuple.effort),
+            ],
+            &format!(
+                "후보에서 고른다({}). 사용자가 정한 조합이면 `--why \"<근거>\"`",
+                candidates_text(list)
+            ),
+            2,
+        ));
     }
     // D-10(같은 배정): 성공한 배정을 다시 실행하면 같은 워크트리에 worker가 하나 더 뜬다. 한도 재배정은 D-07이 본다.
     // build와 fix는 같은 워크트리의 같은 작업이라 목적이 달라도 같은 배정이다

@@ -56,10 +56,6 @@ pub const STOCK_1_24: &[(&str, &str)] = &[
         "70bce7373f735831d1444b952e8165879d502c317fe34bb4f2b1484dc122dc04",
     ),
     (
-        "orca-agents.md",
-        "ff4f8166211058ce111396671571e43b330a9ae13f6de1621760f608a9236da8",
-    ),
-    (
         "review/_REPORT.md",
         "47145317fa03c8132db75b730467edd5d092a70f55e546f6b48c0c0302d6e8d3",
     ),
@@ -110,11 +106,17 @@ pub fn template_for(old_rel: &str) -> Option<&'static str> {
         .map(|(_, text)| *text)
 }
 
+/// 2.2.0에서 뗀 `orca-agents.md` 템플릿(1.24.0, 2.0.0~2.1.x). 모델 후보는 `fullops.toml`의 `[models]`로 갔다.
+/// `migrate`가 후보 절을 뺀 나머지가 이 글 그대로인지 보고 그 파일을 지운다.
+pub const ORCA_AGENTS_OLD: [&str; 2] = [
+    include_str!("../assets/legacy/orca-agents-1.24.md"),
+    include_str!("../assets/legacy/orca-agents-2.0.md"),
+];
+
 /// 2.0.x까지의 템플릿 파일 자리(`.fullops-squad/` 기준). `migrate --from-python`이 옛 자리에 없는 것을 더한다.
 pub const LEGACY_FILES: &[&str] = &[
     "FULLOPS.md",
     "project.md",
-    "orca-agents.md",
     "PLANS.md",
     ".gitignore",
     ".env.example",
@@ -154,10 +156,6 @@ pub const REPO_FILES: &[(&str, &str)] = &[
     (
         "guide/project.md",
         include_str!("../assets/repo/guide/project.md"),
-    ),
-    (
-        "guide/orca-agents.md",
-        include_str!("../assets/repo/guide/orca-agents.md"),
     ),
     (
         "guide/lint.md",
@@ -253,6 +251,7 @@ pub const RELEASES: &[(&str, &str)] = &[
     ("2.0.4", include_str!("../assets/releases/2.0.4.md")),
     ("2.1.0", include_str!("../assets/releases/2.1.0.md")),
     ("2.1.1", include_str!("../assets/releases/2.1.1.md")),
+    ("2.2.0", include_str!("../assets/releases/2.2.0.md")),
 ];
 
 #[cfg(test)]

@@ -432,7 +432,6 @@ fn new_request() -> String {
 
 struct Options {
     req: DispatchRequest,
-    why: Option<String>,
     dry_run: bool,
 }
 
@@ -494,12 +493,12 @@ fn parse(mut args: lexopt::Parser) -> Result<Options, CliError> {
             run: run.map(RunId::new).transpose().map_err(bad)?,
             terminal,
             tuple,
+            why,
             sha,
             reason,
             brief,
             sub: false,
         },
-        why,
         dry_run,
     })
 }
@@ -540,11 +539,8 @@ fn open_limit_decision(ctx: &Ctx, key: &TaskKey, origin: Origin) -> Result<Decis
 }
 
 pub fn run(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
-    let Options {
-        mut req,
-        why,
-        dry_run,
-    } = parse(args)?;
+    let Options { mut req, dry_run } = parse(args)?;
+    let why = req.why.clone();
     let (repo, config) = (ctx.repo()?, ctx.config()?);
     let caller = ctx.caller()?;
     req.sub = caller.actor.dispatch.is_some();
