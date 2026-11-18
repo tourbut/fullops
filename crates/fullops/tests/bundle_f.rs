@@ -1715,7 +1715,6 @@ fn init_mode_and_upgrade() {
         "config/review.json",
         "guide/FULLOPS.md",
         "guide/project.md",
-        "guide/orca-agents.md",
         "guide/lint.md",
         "guide/rules/delegation.md",
         "guide/rules/common/testing.md",
@@ -1729,6 +1728,8 @@ fn init_mode_and_upgrade() {
     ] {
         assert!(squad.join(file).is_file(), "{file}");
     }
+    // 2.2.0: 모델 후보는 fullops.toml의 [models]이고 orca-agents.md는 만들지 않는다
+    assert!(!squad.join("guide/orca-agents.md").exists());
     let delegation = std::fs::read_to_string(squad.join("guide/rules/delegation.md")).unwrap();
     assert!(delegation.contains("병렬 진행") && delegation.contains("--brief"));
     for name in ["AGENTS.md", "CLAUDE.md", "GEMINI.md"] {

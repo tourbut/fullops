@@ -8,14 +8,14 @@
 |---|---|
 | 공통 코딩·테스트·보안 기준과 우선순위 | [guide/rules/common/README.md](rules/common/README.md) 및 연결된 세 규칙 |
 | 기술 기준·검증 명령·주요 흐름·자주 틀리는 것·문서 정본 | `guide/project.md` |
-| 역할·워크트리·에이전트 배정 | `guide/orca-agents.md` |
+| 역할·책임·모델 후보 | `fullops.toml`의 `[roles]`·`[models]` · `fullops-orca` 스킬 |
 | 병렬 진행(하위 에이전트·하위 배정)과 결과 취합 | [guide/rules/delegation.md](rules/delegation.md) |
 | FullOps update 요청과 릴리스별 레포 적용 | `update-fullops` 스킬 |
 | 현재 할 일·우선순위 | `PLANS.md` |
 | 세션을 시작할 때의 역할·현재 인박스·병렬 방침·lead의 할 일 | `fullops status` |
 | 역할별 작업 명세와 완료 처리 | `inbox/to_<역할>.md`(틀은 `templates/handover.md`) · `fullops-work` 스킬 |
 | 끝난 과제의 기록(분류·지시서와 완료 보고·리뷰·QA) | `tasks/<KEY>/` |
-| Orca 착수 확인·회신·검토 | `guide/orca-agents.md` · `fullops-orca` 스킬 |
+| Orca 착수 확인·회신·검토 | `fullops-orca` 스킬 |
 | 코드 변경의 lint 게이트 | `guide/lint.md` · `config/lint.json` |
 | 병합 전 독립 코드·문서 검토 | `config/review.json` · `fullops-review` 스킬 |
 | 과거 결정·교훈 | `guide/roles/<role>.md` |

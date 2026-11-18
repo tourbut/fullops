@@ -203,6 +203,30 @@ pub struct ModelTuple {
     pub effort: String,
 }
 
+/// `fullops.toml`의 `[models]` 한 줄. 역할(또는 `reviewer`)마다 약하고 싼 후보부터 적는다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelCandidate {
+    /// Orca 에이전트 ID(agy는 `antigravity`).
+    pub agent: String,
+    pub model: String,
+    pub effort: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub about: Option<String>,
+}
+
+impl ModelCandidate {
+    pub fn tuple(&self) -> ModelTuple {
+        ModelTuple {
+            agent: self.agent.clone(),
+            model: self.model.clone(),
+            effort: self.effort.clone(),
+        }
+    }
+}
+
+/// `[models]`의 리뷰 세션 키. 역할 ID가 아니다.
+pub const REVIEWER_SLOT: &str = "reviewer";
+
 /// `fullops.toml`의 `[roles.<id>]`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Role {
@@ -277,6 +301,8 @@ pub struct Config {
     pub review: ReviewPolicy,
     pub code: CodeDef,
     pub wait: WaitConfig,
+    /// 역할 ID 또는 `reviewer` → 모델 후보(설계 6.1.1절).
+    pub models: BTreeMap<String, Vec<ModelCandidate>>,
 }
 
 /// 세션 파일의 `mode_at_start`. `[mode, primary_role, primary_branch]`.
@@ -310,6 +336,28 @@ impl Config {
     pub fn role_of_branch(&self, branch: &str) -> Option<(&RoleId, &Role)> {
         self.roles.iter().find(|(_, r)| r.branch == branch)
     }
+
+    /// 그 자리(역할 ID 또는 `reviewer`)의 모델 후보. 없으면 빈 목록이다.
+    pub fn candidates(&self, slot: &str) -> &[ModelCandidate] {
+        self.models.get(slot).map_or(&[], Vec::as_slice)
+    }
+
+    /// 후보가 있는 자리에 목록 밖 tuple을 주면 그 자리의 후보를 돌려준다(D-14·RT-06).
+    pub fn off_list(&self, slot: &str, tuple: &ModelTuple) -> Option<&[ModelCandidate]> {
+        let list = self.candidates(slot);
+        (!list.is_empty() && !list.iter().any(|c| c.tuple() == *tuple)).then_some(list)
+    }
+}
+
+/// 후보 목록을 한 줄로 쓴다. 거절의 탈출구에 붙인다.
+pub fn candidates_text(list: &[ModelCandidate]) -> String {
+    list.iter()
+        .map(|c| match &c.about {
+            Some(about) => format!("{}/{}/{}({about})", c.agent, c.model, c.effort),
+            None => format!("{}/{}/{}", c.agent, c.model, c.effort),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

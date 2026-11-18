@@ -5,7 +5,7 @@
 //! Python판의 상태 폴더는 읽기만 하고 `<git-common-dir>/fullops/py-backup/`에 사본을 둔다.
 
 use super::init::{self, NewConfig, NewRole};
-use super::relocate;
+use super::{models, relocate};
 use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::layout;
@@ -96,11 +96,16 @@ struct Guide {
     about: BTreeMap<String, String>,
     /// 읽지 못한 `- ` 줄.
     unread: Vec<String>,
+    /// 파일 글 그대로. `## 모델 후보`는 `models`가 읽는다.
+    text: String,
 }
 
 fn read_guide(squad: &Path) -> Guide {
     let text = std::fs::read_to_string(squad.join("orca-agents.md")).unwrap_or_default();
-    let mut guide = Guide::default();
+    let mut guide = Guide {
+        text: text.clone(),
+        ..Guide::default()
+    };
     let (mut inside, mut fenced) = (false, false);
     for line in text.lines() {
         if line.starts_with("```") {
@@ -231,6 +236,15 @@ fn build_config(old: &Value, guide: &Guide) -> Result<Built, String> {
             .filter_map(|key| Some(format!("{key} = {}\n", policy.get(*key)?)))
             .collect::<String>()
     });
+    // 모델 후보는 `[models]`로 간다(2.2.0)
+    let ids: Vec<RoleId> = roles.iter().map(|r| r.id.clone()).collect();
+    let candidates = models::parse(&guide.text, &models::slots(ids.iter()));
+    report.extend(
+        candidates
+            .unread
+            .iter()
+            .map(|l| format!("옮기지 않은 모델 후보 줄: {l}")),
+    );
     let dev = mode == Mode::Dev;
     let new = NewConfig {
         mode,
@@ -248,6 +262,7 @@ fn build_config(old: &Value, guide: &Guide) -> Result<Built, String> {
         remote: old["git"]["remote"].as_str().map(str::to_string),
         roles,
         review,
+        models: models::toml_text(&candidates.models),
     };
     let text = init::config_text(&new);
     fullops_store::parse_config(&text).map_err(|e| e.to_string())?;
@@ -454,6 +469,38 @@ fn plan_changes(
                 if !lines.is_empty() {
                     python.push(format!("{shown} {}번 줄", lines.join(", ")));
                 }
+            }
+        }
+    }
+    // 모델 후보는 `[models]`로 갔다(2.2.0): 후보 절을 빼고, 나머지가 기본 글이면 파일을 지운다
+    let agents = ".fullops-squad/orca-agents.md";
+    if let Some(Some(before)) = read(agents) {
+        let roles: Vec<RoleId> = old["roles"]
+            .as_object()
+            .into_iter()
+            .flat_map(|r| r.keys())
+            .filter_map(|id| RoleId::new(id.as_str()).ok())
+            .collect();
+        let parsed = models::parse(&before, &models::slots(roles.iter()));
+        let after = models::leftover(&before, &parsed);
+        let gone = after.is_none();
+        // 남긴 글에 Python판 명령이 있으면 다른 문서처럼 알린다
+        let lines = after.as_deref().map(python_lines).unwrap_or_default();
+        if !lines.is_empty() {
+            python.push(format!("{agents} {}번 줄", lines.join(", ")));
+        }
+        if after.as_ref() != Some(&before) {
+            let change = Change {
+                rel: agents.to_string(),
+                before: Some(before),
+                after,
+            };
+            if stage(root, change, &mut changes, &mut links) {
+                report.push(if gone {
+                    format!("`{agents}`는 기본 글이라 지운다. 모델 후보는 `fullops.toml`의 `[models]`로 옮겼다.")
+                } else {
+                    format!("`{agents}`에서 옮긴 모델 후보 줄을 뺐다(`[models]`로 옮겼다). 나머지 글은 사람이 적은 것이라 남겼다(옮기지 못한 후보 절의 글은 `## 옮기지 못한 모델 후보 글` 아래).")
+                });
             }
         }
     }
@@ -1250,15 +1297,17 @@ fn finalize(ctx: &Ctx, apply: bool, early: bool) -> Result<u8, CliError> {
     Ok(EXIT_OK)
 }
 
-const USAGE: &str = "사용법: fullops migrate --layout [--dry-run] | fullops migrate --from-python [--dry-run] | fullops migrate --rollback | fullops migrate --finalize [--apply] [--early]";
+const USAGE: &str = "사용법: fullops migrate --layout [--dry-run] | fullops migrate --models [--dry-run] | fullops migrate --from-python [--dry-run] | fullops migrate --rollback | fullops migrate --finalize [--apply] [--early]";
 
 pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
     use lexopt::prelude::*;
     let (mut python, mut dry_run, mut back) = (false, false, false);
     let (mut fin, mut apply, mut early, mut place) = (false, false, false, false);
+    let mut models = false;
     while let Some(arg) = parser.next()? {
         match arg {
             Long("layout") => place = true,
+            Long("models") => models = true,
             Long("from-python") => python = true,
             Long("dry-run") => dry_run = true,
             Long("rollback") => back = true,
@@ -1269,6 +1318,12 @@ pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
         }
     }
     let plain = !(apply || early);
+    if models {
+        if place || python || back || fin || !plain {
+            return Err(CliError::Usage(USAGE.into()));
+        }
+        return super::models::run(ctx, dry_run);
+    }
     if place {
         if python || back || fin || !plain {
             return Err(CliError::Usage(USAGE.into()));

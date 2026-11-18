@@ -42,6 +42,12 @@ const REQUIRED: &[RequiredApply] = &[
         },
         hint: "`.fullops/guide/rules/delegation.md`가 없거나 1.24.0의 글이다. 병렬 방침에 맞게 고친다(없으면 `fullops init`이 새 템플릿을 둔다).",
     },
+    RequiredApply {
+        since: "2.2.0",
+        id: "models",
+        check: |root| !super::models::has_section(&read(root, &layout::guide("orca-agents.md"))),
+        hint: "모델 후보가 아직 `.fullops/guide/orca-agents.md`에 있다. lead 체크아웃에서 `fullops migrate --models --dry-run`으로 본 뒤 `fullops migrate --models`로 `fullops.toml`의 `[models]`에 옮긴다.",
+    },
 ];
 
 fn triple(version: &str) -> (u64, u64, u64) {

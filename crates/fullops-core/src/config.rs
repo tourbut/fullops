@@ -1,8 +1,8 @@
 //! `fullops.toml`의 형태와 검증(설계 6.1.1절). TOML 해석은 `fullops-store`가 한다.
 
 use crate::model::{
-    Baseline, CodeDef, Config, Mode, ModeTuple, Parallel, ReviewPolicy, Role, RoleId, RoleKind,
-    Routing, TestLevel, WaitConfig,
+    Baseline, CodeDef, Config, Mode, ModeTuple, ModelCandidate, Parallel, REVIEWER_SLOT,
+    ReviewPolicy, Role, RoleId, RoleKind, Routing, TestLevel, WaitConfig, host_of_agent,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -82,6 +82,8 @@ pub struct RawConfig {
     pub code: CodeDef,
     #[serde(default)]
     pub wait: WaitConfig,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub models: BTreeMap<String, Vec<ModelCandidate>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -252,6 +254,28 @@ pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
             "[git].remote `{remote}`는 원격 이름이 아닙니다. 영문·숫자로 시작하고 영문·숫자·`._-/`만 씁니다(URL과 경로는 쓸 수 없습니다)."
         )));
     }
+    for (slot, list) in &raw.models {
+        let known =
+            slot == REVIEWER_SLOT || RoleId::new(slot).is_ok_and(|id| raw.roles.contains_key(&id));
+        if !known {
+            return Err(invalid(format!(
+                "[models].{slot}는 등록된 역할도 `{REVIEWER_SLOT}`도 아닙니다."
+            )));
+        }
+        for c in list {
+            if host_of_agent(&c.agent).is_none() {
+                return Err(invalid(format!(
+                    "[models].{slot}의 agent `{}`를 모릅니다. claude·codex·grok·antigravity 중 하나입니다.",
+                    c.agent
+                )));
+            }
+            if c.model.trim().is_empty() || c.effort.trim().is_empty() {
+                return Err(invalid(format!(
+                    "[models].{slot}의 후보에 model이나 effort가 비었습니다."
+                )));
+            }
+        }
+    }
     Ok(Config {
         schema: raw.schema,
         applied_version: raw.applied_version,
@@ -268,6 +292,7 @@ pub fn validate(raw: RawConfig) -> Result<Config, PolicyError> {
         review: raw.review,
         code: raw.code,
         wait: raw.wait,
+        models: raw.models,
     })
 }
 

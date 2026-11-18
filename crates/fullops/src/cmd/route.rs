@@ -285,6 +285,20 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             );
         }
     };
+    // RT-06: 후보 목록 밖의 tuple은 `--why`가 있어야 기록한다. tuple을 실제로 기록하는 자리에서만 본다
+    let off_list = |slot: &str| -> Option<CliError> {
+        let t = tuple.as_ref().filter(|t| t.why.trim().is_empty())?;
+        let list = config.off_list(slot, &t.tuple())?;
+        Some(CliError::Refused(vec![refusal(
+            "RT-06",
+            &[slot, &format!("{}/{}/{}", t.agent, t.model, t.effort)],
+            &format!(
+                "후보에서 고른다({}). 사용자가 정한 조합이면 `--why \"<근거>\"`",
+                fullops_core::model::candidates_text(list)
+            ),
+            2,
+        )]))
+    };
     // 읽지 못한 기록을 '없음'으로 보면 tuple·이력을 잃고 덮어쓴다
     let Known::Yes(existing) = fullops_store::read_route(repo, &key) else {
         return Err(usage(format!(
@@ -314,6 +328,9 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         // 호출 없이 tuple만 쓴다. 기록이 없으면 untracked로 만든다
         let slot =
             role.ok_or_else(|| usage("`--tuple-only`에는 `--role <역할|reviewer>`가 필요하다."))?;
+        if let Some(refused) = off_list(&slot) {
+            return Err(refused);
+        }
         let mut route =
             existing.unwrap_or_else(|| blank(RouteClass::Untracked, None, DecidedBy::Manual));
         if let Some(tuple) = tuple {
@@ -509,6 +526,9 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         route.tuples = old.tuples.clone();
         route.history = std::mem::take(&mut old.history);
         route.history.push(old);
+    }
+    if let Some(refused) = route.role.as_ref().and_then(|r| off_list(r.as_str())) {
+        return Err(refused);
     }
     match (tuple, &route.role) {
         (Some(tuple), Some(role)) => {

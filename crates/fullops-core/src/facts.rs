@@ -192,6 +192,7 @@ mod tests {
             review: ReviewPolicy::default(),
             code: CodeDef::default(),
             wait: WaitConfig::default(),
+            models: Default::default(),
         }
     }
 

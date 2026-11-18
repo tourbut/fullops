@@ -285,6 +285,8 @@ pub struct DispatchRequest {
     pub run: Option<RunId>,
     pub terminal: Option<String>,
     pub tuple: Option<ModelTuple>,
+    /// `--why`. 후보 목록 밖의 tuple은 이것이 있어야 받는다(D-14).
+    pub why: Option<String>,
     pub sha: Option<String>,
     pub reason: Option<DispatchReason>,
     /// `--brief`의 글. 하위 배정에서 필수이고 lead가 주면 사용법 오류다. Orca로만 가고 저장하지 않는다.
