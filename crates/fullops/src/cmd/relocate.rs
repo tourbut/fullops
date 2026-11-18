@@ -515,8 +515,27 @@ pub(super) fn run_at(
                 }
             ))
         })?;
+        // 역할 워크트리가 인자 없는 `fullops sync`나 다음 `merge`로 따라오게 예약한다
+        let (git_dir, common_dir) = init::git_dirs(root)
+            .ok_or_else(|| CliError::Internal("Git 디렉터리를 찾지 못했다".into()))?;
+        let repo = fullops_store::Repo {
+            root: root.to_path_buf(),
+            git_dir,
+            common_dir,
+        };
+        let tip = GitCli::cli(root.to_path_buf())
+            .rev_parse("HEAD")
+            .yes()
+            .ok_or_else(|| CliError::Internal("자리 옮김 커밋을 읽지 못했다".into()))?;
+        fullops_store::update_state(&repo, fullops_store::CLI_WAIT, None, |state| {
+            for (role, def) in &config.roles {
+                if def.branch != config.base {
+                    state.sync_pending.insert(role.clone(), tip.clone());
+                }
+            }
+        })?;
         lines.push(format!(
-            "커밋 `{COMMIT}`을 만들었다. push하지 않았다. 다른 워크트리는 `fullops sync`나 다음 `fullops merge`의 동기화로 따라온다(그 워크트리에 남는 `.fullops-squad/`의 추적되지 않는 파일은 손으로 옮기거나 지운다). 되돌리기는 그 커밋의 `git revert`다."
+            "커밋 `{COMMIT}`을 만들었다. push하지 않았다. 역할 워크트리는 `fullops sync`(또는 다음 `fullops merge`)로 따라오도록 예약했다. 그때 워크트리에 남은 `.fullops-squad/`를 `.fullops/local/legacy/`로 옮기고 `.env` 링크를 다시 건다. 되돌리기는 그 커밋의 `git revert`다."
         ));
     }
     let fields = json!({

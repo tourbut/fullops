@@ -471,6 +471,42 @@ fn migrate_layout_moves_rewrites_and_untracks() {
     assert!(old.join("docs/evaluations/jev/A-1-find.json").is_file());
 }
 
+/// 자리 옮김 뒤 인자 없는 `fullops sync`가 역할 워크트리를 따라오게 하고, 옛 폴더 잔재를 `local/legacy/`로 옮기고 `.env`를 다시 잇는다.
+#[test]
+fn sync_after_migrate_follows_tidies_and_relinks() {
+    let sb = Sandbox::with(&Setup {
+        remote: false,
+        ..Setup::default()
+    });
+    let (lead, dev) = (sb.path("lead"), sb.path("dev"));
+    sb.git_ok(&lead, &["mv", ".fullops", OLD]);
+    sb.write(&lead.join(OLD).join(".gitignore"), ".env*\nlocal/\n");
+    commit(&sb, &lead, "2.0.x의 옛 자리");
+    sb.git_ok(&dev, &["merge", "--ff-only", "-q", "main"]);
+    // 옛 자리의 무시되던 파일: lead의 키, dev의 끊긴 키 사본과 임시 파일
+    sb.write(&lead.join(OLD).join(".env"), "KEY=1\n");
+    sb.write(&dev.join(OLD).join(".env"), "OLD\n");
+    sb.write(&dev.join(OLD).join("local/run.log"), "log\n");
+    assert_eq!(sb.git_ok(&dev, &["status", "--porcelain"]), "");
+
+    assert_eq!(layout(&sb, &lead).code, Some(0));
+    let sync = sb.cli(&lead, &["sync"]);
+    assert_eq!(sync.code, Some(0), "{}", sync.stderr);
+    assert!(
+        sync.stdout.contains("동기화한 역할: dev"),
+        "{}",
+        sync.stdout
+    );
+
+    assert_eq!(sb.git_ok(&dev, &["log", "--format=%s", "-1"]), COMMIT);
+    assert_eq!(sb.git_ok(&dev, &["status", "--porcelain"]), "");
+    assert!(!dev.join(OLD).exists(), "옛 폴더가 남았다");
+    let legacy = dev.join(".fullops/local/legacy");
+    assert_eq!(read(&legacy.join(".env")), "OLD\n");
+    assert_eq!(read(&legacy.join("local/run.log")), "log\n");
+    assert_eq!(read(&dev.join(".fullops/.env")), "KEY=1\n");
+}
+
 /// 거절 조건(13.6절 1번)마다 종료 코드 2로 멈추고 아무것도 옮기지 않는다.
 #[test]
 fn migrate_layout_refusals() {
