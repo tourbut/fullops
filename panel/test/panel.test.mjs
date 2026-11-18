@@ -150,3 +150,48 @@ test('빈 상태와 계산하지 않은 지표, 모르는 어휘에서도 죽지
     assert.ok(odd.includes(text), `화면에 "${text}"가 없다`)
   }
 })
+
+test('과제 키를 누르면 그 과제의 글을 열고 목록으로 돌아온다', async () => {
+  const { app, context } = mount()
+  const asked = []
+  const bad = '<script>alert(1)</script>'
+  const task = {
+    state: 'ok',
+    key: 'A-1',
+    role: 'dev',
+    route: { class: 'direct', role: 'dev', reason: null, decided_by: 'manual' },
+    inbox: { text: `# 지시서\n- [x] 진행 ${bad}`, truncated: false, from: 'app-dev', name: 'to_dev.md' },
+    record: { text: '첫 차수 보고', truncated: true, from: 'app', name: 'dev.r0.md' },
+    rounds: ['dev.r1.md', 'dev.r0.md'],
+    request: null
+  }
+  const status = okRepo({ dispatches: [{ key: 'A-1', role: 'dev', purpose: 'build', agent: 'claude', model: 'm', started_at: 1, settled: false }] })
+  context.start({
+    on() {},
+    plugin: {
+      request: async (name, input) => {
+        asked.push([name, input])
+        return name === 'task.read' ? task : status
+      }
+    }
+  })
+  await context.refresh()
+  assert.match(app.innerHTML, /<button type="button" class="open key " data-key="A-1" data-role="dev"/)
+
+  await context.openTask('A-1', 'dev')
+  assert.deepEqual(JSON.parse(JSON.stringify(asked.at(-1))), ['task.read', { repo: 'r1', key: 'A-1', role: 'dev' }])
+  const html = app.innerHTML
+  for (const text of ['← 목록', '바로 배정 → dev', '지시서(진행 중)', 'to_dev.md · app-dev', '진행 &lt;script&gt;', '앞부분만 보여 준다', '차수 2개 가운데']) {
+    assert.ok(html.includes(text), `화면에 "${text}"가 없다`)
+  }
+  assert.doesNotMatch(html, /<script>alert/)
+  // 폴링은 연 과제도 다시 읽는다
+  await context.refresh()
+  assert.equal(asked.filter(([name]) => name === 'task.read').length, 2)
+
+  // 못 읽은 과제는 이유를 보인다
+  task.state = 'bad'
+  task.detail = '과제 키가 아니다'
+  await context.refresh()
+  assert.match(app.innerHTML, /과제 키가 아니다/)
+})

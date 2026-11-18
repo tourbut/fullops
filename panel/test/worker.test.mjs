@@ -1,11 +1,11 @@
 // worker가 status.json을 읽는 경우들. `node --test`로 돌린다(의존 없음).
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-import activate, { readStatus, snapshot } from '../src/worker.mjs'
+import activate, { readStatus, readTask, snapshot } from '../src/worker.mjs'
 
 const FIXTURE = readFileSync(new URL('./fixtures/status.design.json', import.meta.url), 'utf8')
 const DESIGN = new URL('../../docs/design.md', import.meta.url)
@@ -174,8 +174,64 @@ test('activate가 status.read를 등록하고, 초점을 못 읽어도 답한다
     }
   })
 
-  assert.deepEqual(Object.keys(handlers), ['status.read'])
+  assert.deepEqual(Object.keys(handlers), ['status.read', 'task.read'])
   const answer = await handlers['status.read']()
   assert.equal(answer.repos[0].state, 'ok')
   assert.equal(answer.focus, null)
+})
+
+test('task.read는 일하는 워크트리의 인박스, 끝난 차수의 기록, 요청, 분류를 모은다', (t) => {
+  const main = repo(t, { status: FIXTURE })
+  const dev = worktree(t, main, 'dev')
+  const id = snapshot([workspace(main)], null).repos[0].id
+  const put = (root, rel, text, at) => {
+    const file = path.join(root, '.fullops', rel)
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(file, text)
+    if (at) utimesSync(file, at, at)
+  }
+  const inbox = (body) => `---\nkey: PAY-12\nrole: dev\n---\n${body}\n`
+  // lead의 인박스는 배정 때의 글이고 worker가 자기 워크트리에서 진행을 적는다
+  put(main, 'inbox/to_dev.md', inbox('# 지시서'), 1000)
+  put(dev, 'inbox/to_dev.md', inbox('# 지시서\n- [x] 진행 적음'), 2000)
+  put(main, 'inbox/to_art.md', '---\nkey: UI-7\n---\n다른 과제\n')
+  put(main, 'tasks/PAY-12/request.md', '결제 재시도 버튼')
+  put(main, 'tasks/PAY-12/route.json', JSON.stringify({ class: 'direct', role: 'dev', reason: '', decided_by: 'manual', tuples: { dev: { agent: 'x' } } }))
+  put(main, 'tasks/PAY-12/dev.r0.md', '첫 차수')
+  put(main, 'tasks/PAY-12/dev.r1.md', '둘째 차수')
+  put(main, 'tasks/PAY-12/notes.txt', '과제 기록이 아니다')
+  const ws = [workspace(main, 'app'), workspace(dev, 'app-dev', 'fullops/dev')]
+
+  const answer = readTask(ws, { repo: id, key: 'PAY-12', role: 'dev' })
+  assert.equal(answer.state, 'ok')
+  assert.match(answer.inbox.text, /진행 적음/)
+  assert.equal(answer.inbox.from, 'app-dev')
+  assert.equal(answer.record.name, 'dev.r1.md')
+  assert.deepEqual(answer.rounds, ['dev.r1.md', 'dev.r0.md'])
+  assert.equal(answer.request.text, '결제 재시도 버튼')
+  assert.deepEqual(answer.route, { class: 'direct', role: 'dev', reason: '', decided_by: 'manual' })
+  // 역할을 모르면 인박스를 모두 보고 키가 같은 것만 고른다
+  assert.match(readTask(ws, { repo: id, key: 'PAY-12', role: null }).inbox.text, /진행 적음/)
+  assert.equal(readTask(ws, { repo: id, key: 'UI-7', role: null }).inbox.name, 'to_art.md')
+  assert.equal(readTask(ws, { repo: id, key: 'NONE-1' }).inbox, null)
+  // 긴 글은 앞부분만 보낸다
+  put(main, 'tasks/PAY-12/request.md', '가'.repeat(70 * 1024))
+  assert.equal(readTask(ws, { repo: id, key: 'PAY-12' }).request.truncated, true)
+})
+
+test('task.read는 경로가 될 수 없는 키·역할과 다른 레포를 받지 않는다', (t) => {
+  const main = repo(t, { status: FIXTURE })
+  const id = snapshot([workspace(main)], null).repos[0].id
+  for (const input of [
+    { repo: id, key: '../../etc' },
+    { repo: id, key: 'A/1' },
+    { repo: id, key: '' },
+    { repo: id, key: 5 },
+    { repo: id, key: 'A-1', role: '../dev' },
+    { repo: id, key: 'A-1', role: 'Dev' },
+    null
+  ]) {
+    assert.equal(readTask([workspace(main)], input).state, 'bad', JSON.stringify(input))
+  }
+  assert.equal(readTask([workspace(main)], { repo: 'other', key: 'A-1' }).state, 'none')
 })

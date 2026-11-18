@@ -244,6 +244,27 @@
       .foot {
         margin: 6px 0 0;
       }
+      button.open {
+        padding: 0;
+        border: 0;
+        text-align: left;
+        text-decoration: underline dotted;
+        text-underline-offset: 3px;
+      }
+      button.open:hover {
+        background: transparent;
+        text-decoration-style: solid;
+      }
+      pre {
+        margin: 0;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--round);
+        background: var(--card);
+        font: 12px/1.5 var(--mono);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
     </style>
   </head>
   <body>
@@ -258,6 +279,8 @@
       let error = null
       let picked = null // 사용자가 고른 레포의 id
       let painted = ''
+      let shown = null // 지금 그린 레포의 id
+      let detail = null // 연 과제 { repo, key, role, answer, error }
 
       const STAGE = {
         assigned: ['배정됨', 'info'],
@@ -297,6 +320,11 @@
         const passed = now - at
         return html`<time title="${new Date(at * 1000).toLocaleString('ko-KR')}">${passed < 60 ? '방금' : `${span(passed)} 전`}</time>`
       }
+      // 과제 키를 누르면 그 과제의 글(지시서·기록·요청)을 연다
+      const taskLink = (key, role, extra = '') =>
+        key == null
+          ? html`<span class="key ${extra}">키 없음</span>`
+          : html`<button type="button" class="open key ${extra}" data-key="${key}" data-role="${role ?? ''}" title="과제 내용 보기">${key}</button>`
       const sha = (value) => value != null && html`<span class="mono">${value}</span>`
       const badge = (label, tone) => html`<span class="badge ${tone}">${label}</span>`
       const section = (title, items, row) =>
@@ -329,7 +357,7 @@
         const [label, tone] = held ? ['보류', 'warn'] : pick(LANDING, p.landing, ['미계산', ''])
         return html`<li data-id="${p.id}">
           <div class="row">
-            ${p.key != null ? html`<span class="key grow">${p.key}</span>` : html`<span class="sub grow">키 없음</span>`}
+            ${p.key != null ? html`<span class="grow">${taskLink(p.key, null)}</span>` : html`<span class="sub grow">키 없음</span>`}
             ${sha(p.sha)}${badge(label, tone)}
           </div>
           <div class="sub"><span class="mono">${p.id}</span>${held && html` · 보류 사유: ${p.hold_reason}`}</div>
@@ -339,7 +367,7 @@
         return (d) =>
           html`<li>
             <div class="row">
-              <span class="key grow">${d.key}</span>${d.sub === true && badge('하위 배정', '')}
+              <span class="grow">${taskLink(d.key, d.purpose === 'review' ? null : d.role)}</span>${d.sub === true && badge('하위 배정', '')}
               ${badge(pick(PURPOSE, d.purpose, d.purpose ?? '?'), 'info')}
             </div>
             <div class="sub">${d.role} · ${d.agent}/${d.model} · ${when(d.started_at, now)} 시작</div>
@@ -349,7 +377,7 @@
         const [label, tone] = pick(STAGE, t.stage, [t.stage ?? '?', ''])
         return html`<li>
           <div class="row">
-            <span class="key grow">${t.key}</span>${sha(t.sha)}${t.held === true && badge('보류', 'warn')}
+            <span class="grow">${taskLink(t.key, t.role)}</span>${sha(t.sha)}${t.held === true && badge('보류', 'warn')}
             ${badge(label, tone)}
           </div>
           <div class="sub">${t.role ?? '역할 없음'}${t.rounds > 0 && html` · 재작업 ${t.rounds}/${t.budget}`}</div>
@@ -422,7 +450,7 @@
           ${s.ready.length > 0 &&
           html`<section>
             <h2>준비된 과제 <span>${s.ready.length}</span></h2>
-            <div class="chips">${s.ready.map((key) => html`<span class="chip key">${key}</span>`)}</div>
+            <div class="chips">${s.ready.map((key) => html`<span class="chip">${taskLink(key, null)}</span>`)}</div>
           </section>`}
           ${section(
             '워크트리 동기화 대기',
@@ -432,9 +460,49 @@
           ${metrics(s.metrics, now)}`
       }
 
+      const CLASS = { direct: '바로 배정', design: '설계 먼저', product: '기획 먼저', unresolved: '미정', untracked: '분류 없음' }
+      function text(title, file, note) {
+        return (
+          file &&
+          html`<section>
+            <h2>${title} <span>${file.name ?? ''}${file.from && ` · ${file.from}`}</span></h2>
+            <pre>${file.text}</pre>
+            ${file.truncated && html`<p class="foot">앞부분만 보여 준다.</p>`}${note && html`<p class="foot">${note}</p>`}
+          </section>`
+        )
+      }
+      function detailView() {
+        const a = detail.answer
+        const head = html`<header>
+          <button id="back" type="button" title="목록으로" aria-label="목록으로">← 목록</button>
+          <h1 class="key">${detail.key}</h1>
+          <button id="refresh" type="button" title="다시 읽기" aria-label="다시 읽기">↻</button>
+        </header>`
+        if (detail.error) {
+          return html`${head}<p class="note bad" role="alert">
+            과제를 읽지 못했다.<small>${detail.error.code ?? ''} ${detail.error.message ?? detail.error}</small>
+          </p>`
+        }
+        if (!a) return html`${head}<p class="note">불러오는 중…</p>`
+        if (a.state !== 'ok') return html`${head}<p class="note bad">${a.detail ?? '과제를 읽지 못했다.'}</p>`
+        const r = a.route
+        const empty = !a.inbox && !a.record && !a.request
+        return html`${head}
+          ${r &&
+          html`<p class="meta">
+            ${pick(CLASS, r.class, r.class ?? '?')}${r.role && ` → ${r.role}`}${r.reason && ` · ${r.reason}`}
+          </p>`}
+          ${empty && html`<p class="note">이 과제의 지시서·기록·요청 파일을 찾지 못했다.</p>`}
+          ${text('지시서(진행 중)', a.inbox)}
+          ${text('지난 차수의 지시서와 완료 보고', a.record, a.rounds.length > 1 && `차수 ${a.rounds.length}개 가운데 가장 늦은 것이다.`)}
+          ${text('요청', a.request)}`
+      }
+
       function view() {
+        if (detail) return detailView()
         const repos = data ? list(data.repos) : []
         const repo = repos.find((r) => r.id === picked) ?? repos.find((r) => r.id === data.focus) ?? repos[0]
+        shown = repo?.id ?? null
         return html`<header>
             ${repos.length > 1
               ? html`<select id="repo" aria-label="레포">
@@ -473,13 +541,44 @@
         } catch (failure) {
           error = failure
         }
+        if (detail) await readDetail()
         paint()
+      }
+
+      async function readDetail() {
+        const asked = detail
+        try {
+          const answer = await host.plugin.request('task.read', { repo: asked.repo, key: asked.key, role: asked.role })
+          // 기다리는 사이에 다른 과제를 열었거나 닫았으면 버린다
+          if (detail === asked) Object.assign(detail, { answer, error: null })
+        } catch (failure) {
+          if (detail === asked) detail.error = failure
+        }
+      }
+
+      async function openTask(key, role) {
+        detail = { repo: shown, key, role: role || null, answer: null, error: null }
+        paint()
+        await readDetail()
+        paint()
+        document.getElementById('back')?.focus?.()
       }
 
       function start(orca) {
         host = orca
         app.addEventListener('click', (event) => {
-          if (event.target.closest('#refresh')) refresh()
+          const target = event.target.closest('button')
+          if (!target) return
+          if (target.id === 'refresh') refresh()
+          else if (target.id === 'back') {
+            detail = null
+            paint()
+          } else if (target.classList.contains('open')) openTask(target.dataset.key, target.dataset.role)
+        })
+        app.addEventListener('keydown', (event) => {
+          if (event.key !== 'Escape' || !detail) return
+          detail = null
+          paint()
         })
         app.addEventListener('change', (event) => {
           if (event.target.id !== 'repo') return

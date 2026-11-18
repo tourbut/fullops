@@ -56,5 +56,22 @@
     repo({ state: 'ok', status }),
     { id: 'c:/work/docs-site/.git', name: 'docs-site', workspaces: [], active: true, state: 'none' }
   ]
-  start({ on() {}, plugin: { request: async () => ({ repos, focus: repos[0]?.id ?? null }) } })
+  // 과제 키를 누르면 여는 글의 표본이다(worker의 task.read 답).
+  const task = (input) => ({
+    state: 'ok',
+    key: input.key,
+    role: input.role,
+    route: { class: 'direct', role: input.role ?? 'dev', reason: null, decided_by: 'manual' },
+    inbox: {
+      name: `to_${input.role ?? 'dev'}.md`,
+      from: 'shop-api-dev',
+      truncated: false,
+      text: `---\nkey: ${input.key}\nrole: ${input.role ?? 'dev'}\ngoal: 결제 실패 시 재시도 버튼\n---\n\n## 해야 할 일과 파일 소유권\n\n- [x] src/pay/retry.ts에 재시도 흐름\n- [ ] 실패 사유 문구\n\n## 완료 기준과 검증\n\n- npm test -- pay\n`
+    },
+    record: null,
+    rounds: [],
+    request: { from: 'shop-api', truncated: false, text: '결제가 실패하면 재시도 버튼을 보여 주고 실패 사유를 알려 준다.' }
+  })
+  const request = async (name, input) => (name === 'task.read' ? task(input) : { repos, focus: repos[0]?.id ?? null })
+  start({ on() {}, plugin: { request } })
 })()
