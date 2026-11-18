@@ -1,6 +1,6 @@
 // fullops 패널의 worker. 패널(샌드박스 프레임)은 파일을 읽지 못하므로 여기서 status.json을 읽어 준다.
 // 읽기만 한다. 어떤 파일도 쓰지 않고 프로세스도 띄우지 않는다.
-import { readFileSync, statSync } from 'node:fs'
+import { lstatSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 const STATUS_V = 1
@@ -90,7 +90,7 @@ export function snapshot(workspaces, focus) {
     const found = typeof ws?.path === 'string' ? findRepo(ws.path) : null
     if (!found) continue
     // 설계의 same_path와 같다: Windows는 대소문자를 가리지 않고 심볼릭 링크는 풀지 않는다.
-    const id = process.platform === 'win32' ? found.common.toLowerCase() : found.common
+    const id = repoId(found.common)
     let repo = repos.get(id)
     if (!repo) {
       const name = path.basename(found.common) === '.git' ? path.basename(path.dirname(found.common)) : path.basename(found.common)
@@ -108,6 +108,112 @@ export function snapshot(workspaces, focus) {
   return { repos: list, focus: focused?.id ?? null }
 }
 
+// 과제 키(TaskKey)와 역할 ID(RoleId)의 문법. 패널이 준 값으로 경로를 만들므로 이 꼴만 받는다(`..`·구분자가 못 들어온다).
+const KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+const ROLE = /^[a-z][a-z0-9_-]{0,63}$/
+// 응답은 1MiB까지다. 파일마다 앞부분만 보낸다.
+const MAX_TEXT = 64 * 1024
+
+const repoId = (common) => (process.platform === 'win32' ? common.toLowerCase() : common)
+
+/** 일반 파일이면 앞 MAX_TEXT자와 바뀐 시각. 없거나 폴더거나 링크면 null. */
+function readCapped(file) {
+  const st = (() => {
+    try {
+      return lstatSync(file)
+    } catch {
+      return null
+    }
+  })()
+  if (!st?.isFile()) return null
+  const text = readText(file)
+  if (text == null) return null
+  return { text: text.slice(0, MAX_TEXT), truncated: text.length > MAX_TEXT, mtime: st.mtimeMs }
+}
+
+function list(dir) {
+  try {
+    return readdirSync(dir)
+  } catch {
+    return []
+  }
+}
+
+/** 인박스 front matter의 key. */
+function frontKey(text) {
+  const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
+  return front ? /^key:\s*["']?([^"'\r\n]+?)["']?\s*$/m.exec(front[1])?.[1] ?? null : null
+}
+
+/**
+ * 과제 하나의 글을 모은다(읽기만 한다). 그 레포의 체크아웃마다(열린 워크스페이스와 원본 체크아웃) 본다.
+ * 지시서는 그 키의 인박스 가운데 가장 늦게 바뀐 것(일하는 worker의 워크트리가 먼저다), 끝난 차수의 기록은 `tasks/<KEY>/<역할>.r<n>.md`다.
+ */
+export function readTask(workspaces, input) {
+  const key = input?.key
+  const role = input?.role ?? null
+  if (typeof key !== 'string' || !KEY.test(key)) return { state: 'bad', detail: '과제 키가 아니다' }
+  if (role !== null && (typeof role !== 'string' || !ROLE.test(role))) return { state: 'bad', detail: '역할 ID가 아니다' }
+  const roots = new Map()
+  for (const ws of Array.isArray(workspaces) ? workspaces : []) {
+    const found = typeof ws?.path === 'string' ? findRepo(ws.path) : null
+    if (!found || repoId(found.common) !== input?.repo) continue
+    roots.set(found.root, ws.name ?? path.basename(found.root))
+    // 원본 체크아웃은 Orca에 열려 있지 않아도 본다.
+    const main = path.basename(found.common) === '.git' ? path.dirname(found.common) : null
+    if (main && !roots.has(main)) roots.set(main, path.basename(main))
+  }
+  if (roots.size === 0) return { state: 'none', detail: '그 레포의 워크스페이스가 열려 있지 않다' }
+
+  let inbox = null
+  const records = new Map()
+  let request = null
+  let route = null
+  for (const [root, from] of roots) {
+    const dir = path.join(root, '.fullops')
+    const names = role ? [`to_${role}.md`] : list(path.join(dir, 'inbox')).filter((n) => /^to_[a-z][a-z0-9_-]*\.md$/.test(n))
+    for (const name of names) {
+      const file = readCapped(path.join(dir, 'inbox', name))
+      if (file && frontKey(file.text) === key && (!inbox || file.mtime > inbox.mtime)) inbox = { ...file, name, from }
+    }
+    const task = path.join(dir, 'tasks', key)
+    for (const name of list(task)) {
+      const round = /^([a-z][a-z0-9_-]*)\.r(\d+)\.md$/.exec(name)
+      if (!round || (role && round[1] !== role) || records.has(name)) continue
+      const file = readCapped(path.join(task, name))
+      if (file) records.set(name, { ...file, name, role: round[1], round: Number(round[2]), from })
+    }
+    if (!request) {
+      const file = readCapped(path.join(task, 'request.md'))
+      if (file) request = { ...file, from }
+    }
+    if (!route) {
+      try {
+        const raw = JSON.parse(readCapped(path.join(task, 'route.json'))?.text ?? 'null')
+        if (isObj(raw)) {
+          const text = (x) => (typeof x === 'string' ? x : null)
+          route = { class: text(raw.class), role: text(raw.role), reason: text(raw.reason), decided_by: text(raw.decided_by) }
+        }
+      } catch {
+        // 깨진 분류 기록은 보여 주지 않는다.
+      }
+    }
+  }
+  const done = [...records.values()].sort((a, b) => b.round - a.round || a.name.localeCompare(b.name))
+  const strip = (file) => file && { text: file.text, truncated: file.truncated, from: file.from, ...(file.name && { name: file.name }) }
+  return {
+    state: 'ok',
+    key,
+    role,
+    route,
+    inbox: strip(inbox),
+    // 가장 늦은 차수의 글만 보내고 나머지는 이름만 보낸다.
+    record: strip(done[0] ?? null),
+    rounds: done.map((r) => r.name),
+    request: strip(request)
+  }
+}
+
 export default function activate(orca) {
   orca.panels.handle('status.read', async () => {
     const [listed, focus] = await Promise.all([
@@ -116,5 +222,9 @@ export default function activate(orca) {
       orca.host.call('workspace.readContext', {}).catch(() => null)
     ])
     return snapshot(listed?.workspaces, focus)
+  })
+  orca.panels.handle('task.read', async (input) => {
+    const listed = await orca.host.call('workspace.list', {})
+    return readTask(listed?.workspaces, input)
   })
 }

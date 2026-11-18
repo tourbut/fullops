@@ -20,6 +20,7 @@ Orca 오른쪽 사이드바에서 fullops의 진행 상황을 보여 주는 플�
 - 활성 표식(`.fullops/fullops.toml`)도 `status.json`도 없는 레포는 보여 주지 않는다. fullops를 쓰는 레포가 여럿이면 초점이 있는 워크스페이스의 레포를 먼저 보여 주고 목록에서 고를 수 있다.
 - `status.json`이 없으면 "아직 기록된 상태가 없다", JSON이 아니거나 `v`가 없으면 "읽지 못했다", `v`가 1보다 크면 "새 형식이다"를 보여 준다.
 - 통합 대기 건은 `pending[]`의 `id`로 가리킨다(과제 키와 SHA는 없을 수 있다).
+- 진행 중인 배정·과제·통합 대기·준비된 과제의 키를 누르면 그 과제의 글을 연다(`plugin.request('task.read', { repo, key, role })`). worker가 그 레포의 체크아웃마다(열린 워크스페이스와 원본 체크아웃) 읽는다: 지시서는 그 키의 `.fullops/inbox/to_<역할>.md` 가운데 가장 늦게 바뀐 것(worker가 자기 워크트리에 적는 진행이 보인다), 끝난 차수는 `tasks/<KEY>/<역할>.r<n>.md`의 가장 늦은 차수, 요청 원문 `tasks/<KEY>/request.md`, 분류 `tasks/<KEY>/route.json`의 class·role·reason. 키·역할은 `TaskKey`·`RoleId` 문법만 받고(경로가 될 수 없다), 심볼릭 링크는 읽지 않으며, 파일마다 앞 64KiB만 보낸다. 열린 동안 5초마다 다시 읽고, "← 목록"이나 Esc로 돌아간다.
 - 파일에서 온 글은 모두 이스케이프해 그린다.
 
 ## 확인
