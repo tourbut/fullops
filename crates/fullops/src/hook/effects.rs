@@ -5,9 +5,9 @@ use super::facts_real::RealFacts;
 use fullops_core::Effect;
 use fullops_core::facts::Facts;
 use fullops_core::model::{
-    BlockMark, BoundBy, Current, DispatchId, Extra, Known, MessageId, OrcaMessage, RunId, RunOwner,
-    SESSION_V, Session, SessionDispatch, Settled, SettledHow, Sha, SnapshotState, State, Turn,
-    WorkOutcome, same_path,
+    BlockMark, BoundBy, Card, Current, Decision, DecisionStatus, DispatchId, Extra, Known,
+    MessageId, OrcaMessage, RunId, RunOwner, SESSION_V, Session, SessionDispatch, Settled,
+    SettledHow, Sha, SnapshotState, State, TaskKey, Turn, WorkOutcome, same_path,
 };
 use fullops_ext::{CheckMode, Git, Orca};
 use fullops_store::{HOOK_WAIT, StoreError};
@@ -147,6 +147,7 @@ enum Write {
     LostSnapshots(Vec<String>),
     Escalated(DispatchId),
     Peeked(Option<RunId>, Vec<OrcaMessage>),
+    Cards(Vec<(Card, Option<TaskKey>)>),
 }
 
 fn apply(facts: &RealFacts, state: &mut State, write: &Write, now: i64) {
@@ -247,6 +248,29 @@ fn apply(facts: &RealFacts, state: &mut State, write: &Write, now: i64) {
                 );
             }
         }
+        Write::Cards(cards) => {
+            for (card, key) in cards {
+                // 같은 질문 글의 열린 결정은 다시 쓴다: 같은 카드를 다시 내도, 새 세션이 열린 결정을 다시 물어도 하나다
+                let same =
+                    |d: &Decision| d.status == DecisionStatus::Open && d.question == card.question;
+                if !state.decisions.iter().any(same) {
+                    let ask = crate::cmd::Ask {
+                        key: key.clone(),
+                        question: card.question.clone(),
+                        ..Default::default()
+                    };
+                    crate::cmd::open_decision(state, ask, now);
+                }
+                if let Some(decision) = state.decisions.iter_mut().find(|d| same(d)) {
+                    // 카드로 물었다는 표시. `decision answer`의 사람 턴 확인(DC-04)이 본다
+                    decision.extra.insert("card".into(), true.into());
+                    // 새 결정과 선택지 없이 연 결정(`decision add`)은 카드의 선택지를 받는다. 있는 선택지는 바꾸지 않는다
+                    if decision.options.is_empty() {
+                        decision.options = card.options.clone();
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -343,6 +367,7 @@ pub fn after_output(facts: &mut RealFacts, effects: &[Effect], errors: &mut Vec<
                 )),
                 Known::Unknown(why) => errors.push(why),
             },
+            Effect::RecordCards(cards) => writes.push(Write::Cards(cards.clone())),
             Effect::GcSessions => gc_sessions(facts, now),
             Effect::SelfInstall => {
                 // 실행본 단계(`install --only runtime`과 같은 함수). 플러그인 등록과 의존 설치는 하지 않는다

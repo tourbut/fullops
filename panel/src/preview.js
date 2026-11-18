@@ -37,7 +37,8 @@
       { id: 'msg_11', key: null, sha: null, landing: null, hold_reason: null }
     ],
     decisions: [
-      { id: 'D001', key: 'PAY-12', question: '변경이 620줄이라 리뷰 기준을 넘는다. 리뷰를 진행할까?', options: ['진행', '생략'], asked_at: now - 1500, expires_at: now + 84900 }
+      { id: 'D001', key: 'PAY-12', question: '변경이 620줄이라 리뷰 기준을 넘는다. 리뷰를 진행할까?', options: ['진행', '생략'], asked_at: now - 1500, expires_at: now + 84900 },
+      { id: 'D002', key: 'PAY-13', question: 'PAY-13의 재시도 횟수를 몇 번으로 할까?', options: ['3번 (추천)', '5번', '재시도 없음'], asked_at: now - 300, expires_at: null }
     ],
     ready: ['PAY-13', 'PAY-15'],
     sync_pending: { art: '9c1e0aa' },

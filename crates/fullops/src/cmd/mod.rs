@@ -149,6 +149,7 @@ pub static COMMANDS: &[Command] = &[
 ];
 
 /// 실행본 단계(설계 10.3절). hook의 `SelfInstall` 효과(S-04의 자동 설치)가 `install --only runtime`과 같은 함수를 부른다.
+pub(crate) use decision::{Ask, open as open_decision};
 pub use install::{platform_binary, runtime_stage};
 /// 유효한 `accepted.json`(설계 8.9절). X-02의 리뷰 증거가 `review check`·`merge`와 같은 판정을 쓴다.
 pub use review::accepted;

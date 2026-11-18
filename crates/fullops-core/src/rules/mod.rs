@@ -17,8 +17,8 @@ pub use session::start_skill;
 use crate::facts::Facts;
 use crate::messages::MsgId;
 use crate::model::{
-    Actor, BoundBy, DispatchId, EventKind, HookInput, MessageId, RoleKind, RuleTrace, RunId, Seat,
-    TaskKey, TurnKind, Verdict,
+    Actor, BoundBy, Card, DispatchId, EventKind, HookInput, MessageId, RoleKind, RuleTrace, RunId,
+    Seat, TaskKey, TurnKind, Verdict,
 };
 
 /// 규칙의 강도. `Warn`은 없다: `Warn`을 결과로 내는 규칙이 없고, 한 번 막은 뒤의 통과와 능력이 없는 호스트의 S-00·S-01이
@@ -193,6 +193,11 @@ pub static RULES: &[Rule] = &[
     rule!("T-11", PreToolUse, lead, Effect, tool::t11, "PreToolUse lead의 `check` 미리 보기 기록"),
     rule!("T-12", PreToolUse, all, Effect, tool::t12, "없음"),
     rule!("T-13", PreToolUse, all, Effect, tool::t13, "없음"),
+    rule!("T-14", PreToolUse, bound, Deny, tool::t14,
+        [("", "preamble의 `ask`로 lead에게 묻는다. 되돌릴 수 있는 선택은 묻지 않고 추천안으로 진행해 완료 보고에 적는다")], "없음"),
+    rule!("T-15", PreToolUse, lead, Deny, tool::t15,
+        [("", "추천하는 선택지를 1번에 두고 그 label에 `(추천)`을 붙여 다시 묻는다")], "없음"),
+    rule!("T-16", PreToolUse, lead, Effect, tool::t16, "없음"),
     rule!("X-00", Stop, all, BlockOnce, stop::x00, [("", "설정을 고치거나 새 세션")],
         "미설정 레포 빈 판정, fail-open, 정책 오류 차단"),
     // dev 직접 작업이면 check가 Finding::Hit.always로 BlockAlways로 올린다(설계 7.5절 표)
@@ -261,6 +266,8 @@ pub enum Effect {
     },
     /// 프롬프트 이벤트가 없는 호스트의 `prompt_fp`(설계 7.5절). 값은 사용자 입력의 sha256 앞 16자다.
     SetPromptFp(String),
+    /// T-16: 질문 카드의 질문마다 열린 결정으로 적는다. 키는 질문 글에서 알아낸 과제 키다.
+    RecordCards(Vec<(Card, Option<TaskKey>)>),
 }
 
 /// `decide`의 결과. `trace`는 추적 줄의 `rules`가 된다.

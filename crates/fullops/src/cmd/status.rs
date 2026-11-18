@@ -159,8 +159,14 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             ));
         }
         for d in &status.decisions {
+            // 새 세션이 같은 질문 글과 선택지의 카드로 다시 물을 수 있게 선택지를 함께 낸다
+            let options = if d.options.is_empty() {
+                String::new()
+            } else {
+                format!(" 선택지: {}", d.options.join(" / "))
+            };
             out.push(format!(
-                "열린 결정 {}: {} (막는 과제 {})",
+                "열린 결정 {}: {} (막는 과제 {}){options}",
                 d.id,
                 d.question,
                 d.key.as_ref().map_or("-", TaskKey::as_str)

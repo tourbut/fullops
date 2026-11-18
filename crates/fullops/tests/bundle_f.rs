@@ -789,7 +789,7 @@ fn q9_dist_builds_native_and_directory_packages() {
     }
     assert_eq!(
         hooks["hooks"]["PreToolUse"][0]["matcher"],
-        "Bash|PowerShell|Write|Edit|MultiEdit|Agent|Task|Workflow"
+        "Bash|PowerShell|Write|Edit|MultiEdit|Agent|Task|Workflow|AskUserQuestion"
     );
     assert!(hooks["hooks"]["SessionStart"][0].get("matcher").is_none());
     let codex_hooks = json(&native.join("hooks/codex.json"));

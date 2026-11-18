@@ -114,6 +114,8 @@ pub enum ToolKind {
     Patch,
     SubAgent,
     Workflow,
+    /// 사용자에게 묻는 질문 카드(Claude Code의 `AskUserQuestion`).
+    Ask,
     Other,
 }
 
@@ -135,6 +137,15 @@ pub struct ToolCall {
     pub text: Option<String>,
     /// 호스트가 입력을 잘랐다(grok의 `toolInputTruncated`). 참이면 잘린 글로 판정하지 않는다.
     pub truncated: bool,
+    /// `Ask`의 질문들. 모양을 읽지 못하면 비어 있다(기록도 거부도 하지 않는다).
+    pub cards: Vec<Card>,
+}
+
+/// 질문 카드의 질문 하나. `options`는 선택지 label을 적힌 순서대로 담는다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Card {
+    pub question: String,
+    pub options: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

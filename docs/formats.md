@@ -454,6 +454,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `repository` | 글 | `--repository`. 값이 있을 때만 있는 필드다 |
 | `drop_reason` | 글 | `drop --reason`. 값이 있을 때만 있는 필드다 |
 | `human_turn` | 불 | 답한 결정에만 있다. 결정을 연 뒤의 사람 턴을 확인하고 받은 답이면 참(DC-04. 설계 8.10절). 타입의 필드가 아니라 `extra`에 쓴다 |
+| `card` | 불 | 질문 카드로 물은 결정에만 있다(hook의 T-16이 쓴다). `sha`가 없는 결정은 이 표시가 있으면 사람 턴 없이도 답을 받는다(설계 8.10절). `extra`에 쓴다 |
 
 ### 4.2 `archive.jsonl`
 
@@ -691,13 +692,14 @@ pub fn host_for(arg: &str) -> Option<Box<dyn Host>>;   // 인자만 본다
 | 필드 | 타입 | 채우는 값 |
 |---|---|---|
 | `name` | 글 | 호스트가 준 도구 이름(추적용) |
-| `kind` | `ToolKind` | `Shell(Bash\|PowerShell)`, `Write`, `Edit`, `Patch`, `SubAgent`, `Workflow`, `Other` |
+| `kind` | `ToolKind` | `Shell(Bash\|PowerShell)`, `Write`, `Edit`, `Patch`, `SubAgent`, `Workflow`, `Ask`(질문 카드), `Other` |
 | `command` | 글 \| 없음 | `Shell`의 명령 글, `Patch`의 패치 본문 |
 | `file_path` | 글 \| 없음 | `Write`·`Edit`의 대상 경로 |
 | `content` | 글 \| 없음 | `Write`의 전체 내용 |
 | `edits` | `EditOp { old, new, replace_all }` 목록 | `Edit`. 여러 곳 편집은 여러 원소 |
 | `text` | 글 \| 없음 | `SubAgent`의 지시 글(인자가 여럿이면 줄바꿈으로 이은 것) |
 | `truncated` | 불 | 호스트가 입력을 잘랐다(grok의 `toolInputTruncated`). 참이면 셸 분류는 `Unparsed`이고 편집 대상의 `after`는 `Unknown`이다 |
+| `cards` | `Card { question, options }` 목록 | `Ask`의 질문들. `options`는 선택지 label(적힌 순서). 모양을 읽지 못하면 비어 있다 |
 
 판정 출력(`Host::encode`. 묶음 B가 채운다. 표본은 `scenarios/fixtures/host/output/`, `host/grok/output/`, `host/agy/output/`). 문구는 `fullops_core::messages`의 `refusal`·`block`·`warn`으로 만든다.
 
@@ -725,13 +727,13 @@ pub fn host_for(arg: &str) -> Option<Box<dyn Host>>;   // 인자만 본다
 | `command_name(token)` | `fullops_core::shell` | 셸 낱말에서 명령 이름을 뽑는다 |
 | `read_trace(repo, sid) -> Vec<TraceLine>` | `fullops_store::trace` | `fullops why`가 읽는다 |
 
-규칙 표(`fullops_core::rules::RULES`. 34개. 표 순서가 평가 순서다)의 타입:
+규칙 표(`fullops_core::rules::RULES`. 37개. 표 순서가 평가 순서다)의 타입:
 
 | 타입 | 필드 |
 |---|---|
 | `Rule` | `id`, `event`, `applies: fn(&Actor) -> bool`, `strength`(`Context` \| `Effect` \| `Deny` \| `BlockOnce` \| `BlockAlways`), `on_unknown`(`Pass`), `check: fn(&HookInput, &mut dyn Facts) -> Finding`, `message: MsgId`(값은 규칙 ID), `escapes: &[(경우, 탈출구 문장)]`, `origin`(설계 11.1절의 1.24.0 기능 이름 또는 `없음`) |
 | `Finding` | `None` \| `Unknown` \| `Hit { fp, args, case, always }`. `case`는 걸린 경우(T-05의 `a`~`d`, T-08의 `e`~`g`, X-05의 `a`·`b`. 없으면 빈 글. X-01과 X-03은 경우를 나누지 않고 탈출구 문장 하나가 두 쪽을 함께 적는다), `always`가 참이면 `BlockOnce` 규칙을 이번만 `BlockAlways`로 다룬다(X-01의 dev 직접 작업) |
-| `Effect` | `CreateSession`, `TouchSession`, `BumpTurn`, `BindDispatch { id, task, by }`, `RecordBlock { rule, fp }`, `RecordNotice(글)`, `AppendRouted(TaskKey)`, `RecordTurn(TurnKind)`, `StampCurrent`, `MarkLanded(Vec<MessageId>)`, `MarkSettled(DispatchId)`, `CloseRuns(Vec<RunId>)`, `CloseLostSnapshots`, `GcSessions`, `SelfInstall`, `PeekCompletions { run }`, `SendLimitEscalation { dispatch, task, error }`, `SetPromptFp(글)` |
+| `Effect` | `CreateSession`, `TouchSession`, `BumpTurn`, `BindDispatch { id, task, by }`, `RecordBlock { rule, fp }`, `RecordNotice(글)`, `AppendRouted(TaskKey)`, `RecordTurn(TurnKind)`, `StampCurrent`, `MarkLanded(Vec<MessageId>)`, `MarkSettled(DispatchId)`, `CloseRuns(Vec<RunId>)`, `CloseLostSnapshots`, `GcSessions`, `SelfInstall`, `PeekCompletions { run }`, `SendLimitEscalation { dispatch, task, error }`, `SetPromptFp(글)`, `RecordCards(Vec<(Card, Option<TaskKey>)>)` |
 
 `Rule::escape(case)`가 경우에 맞는 탈출구를 고른다(그 경우가 없으면 첫 탈출구). 경우가 하나뿐인 규칙의 경우 이름은 빈 글이고 안내·효과 규칙의 `escapes`는 비어 있다. `fullops rules --json`은 `{"ok":true,"rules":[{"id","event","strength","escapes":[{"case","escape"}],"origin"}]}`(`RULES`의 순서 그대로)를, `fullops rules [--markdown]`은 Markdown 표를 낸다. ID·이벤트·강도가 설계 7.5절의 표와 같은지는 `crates/fullops/tests/skeleton.rs`가 대조한다.
 
@@ -739,7 +741,7 @@ pub fn host_for(arg: &str) -> Option<Box<dyn Host>>;   // 인자만 본다
 |---|---|
 | SessionStart | S-00, S-01, S-02, S-03, S-04, S-05, S-06 |
 | UserPromptSubmit | P-00, P-01, P-02, P-03 |
-| PreToolUse | T-00 ~ T-13 |
+| PreToolUse | T-00 ~ T-16 |
 | Stop | X-00 ~ X-07 |
 | StopFailure | F-01 |
 

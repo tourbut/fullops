@@ -90,6 +90,7 @@ fn tool(name: &str, kind: ToolKind) -> ToolCall {
         edits: Vec::new(),
         text: None,
         truncated: false,
+        cards: Vec::new(),
     }
 }
 
