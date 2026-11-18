@@ -13,7 +13,7 @@ lead(coor 모드의 coordinator, dev 모드의 주 담당)가 요청을 받아 �
 
 ## bootstrap
 
-역할 워크트리는 Orca로 만든다. 역할 브랜치는 `fullops/<역할>`이고 `fullops init`이 원격에 만들어 둔다. 그 브랜치를 체크아웃한 워크트리가 없으면 배정이 거절된다. 역할과 모델 후보는 `.fullops/guide/orca-agents.md`에 있다. grok worker는 원본 레포의 폴더 신뢰가 필요하고 사용자가 grok에서 승인한다.
+역할 워크트리는 Orca로 만든다. 역할 브랜치는 `fullops/<역할>`이고 `fullops init`이 원격에 만들어 둔다. 그 브랜치를 체크아웃한 워크트리가 없으면 배정이 거절된다. 역할과 책임은 `.fullops/fullops.toml`의 `[roles]`, 모델 후보는 `[models]`에 있다. 같은 worker에 터미널을 둘 띄우지 않는다. 진행 중인 worker를 다른 과제에 다시 쓰려면 그 과제가 끝나고 세션이 분리됐는지 먼저 확인한다. grok worker는 원본 레포의 폴더 신뢰가 필요하고 사용자가 grok에서 승인한다.
 
 역할 워크트리의 환경 파일(`.fullops/.env*`)은 `fullops dispatch`와 `fullops task recover`가 주 체크아웃에서 연결한다. 배정 전에 그 워크트리에서 직접 쓸 일이 있거나 연결이 빠졌으면 그 워크트리에서 `fullops env link`를 실행한다. 추적 파일과 이미 있는 파일은 건드리지 않는다.
 
@@ -26,8 +26,8 @@ fullops route <KEY> (--request-file <경로> | --request "<글>")
 ```
 
 1. 과제 키를 정하고 `fullops route`로 분류한다. 결과는 `direct`(역할 worker에게 바로), `design`·`product`(설계 역할이 먼저), `unresolved` 가운데 하나다. 분류는 추천이다. 요청 글은 4,000자 이하로 요약한다.
-2. 분류가 틀렸으면 `--force --class <값> --role <역할> --reason "<근거>"`로 바꾼다. `unresolved`는 배정할 수 없다.
-3. 모델은 `.fullops/guide/orca-agents.md`의 모델 후보에서 고르고 `--agent --model --effort`를 셋 다 준다. 분류 없이 모델만 기록하려면 `fullops route <KEY> --tuple-only --role <역할|reviewer> --agent … --model … --effort …`다.
+2. 분류가 틀렸으면 `--force --class <값> --role <역할> --reason "<근거>"`로 바꾼다. `unresolved`는 배정할 수 없다. `direct`는 파일 소유권·완료 기준·검증 명령이 요청만으로 분명하고 한 역할 안에서 끝나는 작업이다(버그 한 건, 문구·수치 변경, 기존 패턴을 따르는 기능, 에셋 교체). 설계 판단이 필요하거나 공유 계약(API·스키마·데이터 형식·씬 구조)을 바꾸거나 여러 역할에 걸치거나 요청이 모호하면 `design`이다. 지시서를 쓰다가 셋 중 하나라도 못 정하면 `design`으로 바꾼다. `routing = "split"`이면 확정된 제품 요구 안의 기술 작업은 기술 난도와 무관하게 담당 worker(`direct`)에, 제품 규칙·범위 변경만 제품 기획 역할(`product`)에 보낸다.
+3. 모델은 `fullops.toml`의 `[models].<역할>` 후보에서 고르고 `--agent --model --effort`를 셋 다 준다. 후보는 약한 것부터 적혀 있다. 범위와 완료 기준이 확정된 작은 작업은 앞쪽을, 설계 판단·여러 모듈·위험한 변경은 뒤쪽을 고른다. 사용자나 과제가 조합을 정했으면 그대로 쓰고, 목록 밖이면 `--why "<근거>"`를 붙인다(없으면 RT-06·D-14로 거절된다). 후보가 하나인 역할은 생략해도 dispatch가 그 후보를 쓴다. 후보가 없는 역할은 기획·설계에 고성능 모델을, 확정된 구현에 비용이 낮은 모델을 고르고, 정하지 못하면 사용자에게 묻는다. 리뷰 모델은 `reviewer` 후보에서 고르고, 없으면 가장 강한 구현 역할 후보를 쓴다. 분류 없이 모델만 기록하려면 `fullops route <KEY> --tuple-only --role <역할|reviewer> --agent … --model … --effort …`다.
 4. 분류만 하고 턴을 끝내면 종료가 막힌다. 배정하거나, 지금 할 수 없으면 `PLANS.md`에 대기 행으로 적는다(`fullops plan add`).
 5. 지시서 작성은 `fullops-work`를 따른다. `design`·`product` 과제의 다른 역할 지시서는 설계 역할이 쓴다.
 
@@ -35,11 +35,11 @@ fullops route <KEY> (--request-file <경로> | --request "<글>")
 
 ```
 fullops dispatch <KEY> [--role <역할>] [--purpose build|fix|review|research] [--run <ID>]
-        [--terminal <핸들>] [--agent <CLI> --model <모델> --effort <effort>] [--sha <40자>] [--reason limit] [--dry-run]
+        [--terminal <핸들>] [--agent <CLI> --model <모델> --effort <effort> --why "<이유>"] [--sha <40자>] [--reason limit] [--dry-run]
 ```
 
 1. `fullops dispatch <KEY>`가 선행 조건을 검사하고, 준비 커밋을 만들어 게시하고, 대상 워크트리를 기본 브랜치에 맞추고, 환경 파일을 연결하고, Orca에 worker를 띄운다. 걸린 조건은 `FullOps[D-nn]`과 탈출구로 한꺼번에 나온다.
-2. 자주 걸리는 것: 분류가 없다(`fullops route`), 인박스가 없거나 키가 다르다(`fullops task new`), 다른 키의 통합 대기가 있다(`fullops merge <그 키>` 또는 `fullops hold`), 그 역할에 끝나지 않은 다른 과제가 있다(끝난 뒤 배정하거나 `fullops plan add`), 대상 워크트리가 더럽다(그 worker의 완료 뒤 `fullops sync --role <역할>`).
+2. 자주 걸리는 것: 모델을 정하지 않았다(D-09. 거절 문구에 그 자리의 후보가 나온다), 목록 밖 조합에 `--why`가 없다(D-14), 분류가 없다(`fullops route`), 인박스가 없거나 키가 다르다(`fullops task new`), 다른 키의 통합 대기가 있다(`fullops merge <그 키>` 또는 `fullops hold`), 그 역할에 끝나지 않은 다른 과제가 있다(끝난 뒤 배정하거나 `fullops plan add`), 대상 워크트리가 더럽다(그 worker의 완료 뒤 `fullops sync --role <역할>`).
 3. 새 세션이 기본이다. 있는 터미널에 이어서 맡길 때만 `--terminal <핸들>`을 준다. 끝난 worker의 터미널은 Orca가 곧 놓으므로 거절되면 `--terminal`을 빼고 다시 배정한다.
 4. 결과를 확인하지 못했다고 나오면 같은 명령을 다시 실행한다. 같은 요청 ID로 결과를 받으므로 worker가 두 번 뜨지 않는다. Orca가 실패 영수증을 냈으면 Orca의 `next`를 읽고 정한다. 다른 CLI나 호스트로 자동 전환하지 않는다.
 5. 한도로 worker가 끝났으면 같은 모델을 기다렸다가 `fullops dispatch <KEY> --reason limit`으로 다시 배정한다. 과제당 2회까지이고 3회째는 결정이 열려 사용자에게 올라간다. 다른 모델로 바꾸는 재배정은 거절된다.
