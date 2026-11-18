@@ -11,6 +11,23 @@
           "capabilities": [
             "workspace:read"
           ],
+          "commit": "ab1b6b5f9298c65a66603b5f97b672e7583bcc6f",
+          "contentHash": "c7e2170da2cebb565e05283f9a025b98f317b9ed914dfb81a284af83dbd1c320",
+          "contributes": [
+            {
+              "kind": "panels",
+              "name": "fullops"
+            }
+          ],
+          "execution": "trusted-worker",
+          "minimumOrca": "1.4.256",
+          "name": "fullops",
+          "version": "2.2.2"
+        },
+        {
+          "capabilities": [
+            "workspace:read"
+          ],
           "commit": "883c560651146f2124c737dc3f4fe8b5fe1ee1de",
           "contentHash": "ee62dc655fc5e417324127c8bdd002bc8f61fe70a2ccbe64f423bf1a6e2ae00f",
           "contributes": [
