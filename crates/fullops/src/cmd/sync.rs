@@ -2,12 +2,14 @@
 
 use super::hold::{known, load_state, refused, value};
 use crate::cli::{CliError, Ctx, EXIT_OK};
+use fullops_core::layout;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{RoleId, Sha, State, path_text, same_path};
 use fullops_ext::{Git, GitCli, MergeMode, MergeOutcome, Worktree};
 use lexopt::prelude::*;
 use serde_json::json;
 use std::path::Path;
+use std::time::Duration;
 
 pub(super) enum Synced {
     Done,
@@ -41,13 +43,52 @@ fn merge_base_into(worktree: &Path, role: Option<&RoleId>, base_tip: &Sha) -> Sy
     Synced::Done
 }
 
+/// 새 자리(`.fullops/`)가 된 워크트리에 남은 옛 폴더를 `.fullops/local/legacy/`로 옮긴다(지우지 않는다).
+/// 옛 `.gitignore`가 사라져 무시되던 파일이 드러나 워크트리를 더럽히기 때문이다. 추적 파일이 남았으면 두고 사람이 본다.
+fn tidy_legacy(worktree: &Path) {
+    let old = worktree.join(layout::LEGACY_DIR);
+    if !worktree.join(layout::config_toml()).is_file() || std::fs::symlink_metadata(&old).is_err() {
+        return;
+    }
+    let argv = ["git", "ls-files", "--", layout::LEGACY_DIR].map(String::from);
+    let listed = fullops_ext::run(&argv, worktree, Duration::from_secs(60), &[], None);
+    if !listed.ok() || !listed.stdout.is_empty() {
+        return;
+    }
+    let local = worktree.join(layout::local_dir());
+    let to = (1..)
+        .map(|n| {
+            local.join(if n == 1 {
+                "legacy".into()
+            } else {
+                format!("legacy-{n}")
+            })
+        })
+        .find(|to| std::fs::symlink_metadata(to).is_err())
+        .expect("빈 이름이 있다");
+    let _ = std::fs::create_dir_all(&local).and_then(|()| std::fs::rename(&old, to));
+}
+
 /// 역할 워크트리 하나의 동기화(M-11). 정산되지 않은 dispatch가 있거나 깨끗하지 않으면 예약으로 남긴다.
+/// 반영한 뒤 옛 폴더 잔재를 옮기고 원본 체크아웃(`main`)의 `.env*`를 다시 잇는다.
 pub(super) fn sync_role(
     state: &State,
     role: &RoleId,
     worktree: &Worktree,
     base_tip: &Sha,
+    main: &Path,
 ) -> Synced {
+    let synced = sync_role_inner(state, role, worktree, base_tip);
+    if matches!(synced, Synced::Done) {
+        tidy_legacy(&worktree.path);
+        super::env::link_env(main, &worktree.path);
+    }
+    synced
+}
+
+fn sync_role_inner(state: &State, role: &RoleId, worktree: &Worktree, base_tip: &Sha) -> Synced {
+    // 지난 동기화가 잔재를 옮기지 못했으면 깨끗하지 않다고 남기 전에 다시 옮긴다
+    tidy_legacy(&worktree.path);
     let path = path_text(&worktree.path);
     let working = |d: &fullops_core::model::Dispatch| {
         d.settled.is_none() && !d.is_reservation() && same_path(&d.worktree, &path)
@@ -93,6 +134,7 @@ pub(super) fn sync_roles(
     )?;
     let worktrees = known(git.worktrees(), "워크트리 목록")?;
     let state = load_state(ctx)?;
+    let main = super::dispatch::main_checkout(ctx.repo()?);
     let mut report = SyncReport::default();
     for (role, def) in &config.roles {
         if only.is_some_and(|only| !only.contains(role)) || def.branch == config.base {
@@ -102,7 +144,7 @@ pub(super) fn sync_roles(
         let Some(worktree) = worktrees.iter().find(checkout) else {
             continue;
         };
-        match sync_role(&state, role, worktree, &base_tip) {
+        match sync_role(&state, role, worktree, &base_tip, &main) {
             Synced::Done => report.done.push(role.clone()),
             Synced::Pending(why) => report.pending.push((role.clone(), why)),
             Synced::Conflict => report.conflict.push(role.clone()),
