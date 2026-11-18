@@ -43,7 +43,20 @@ fullops init --roles <역할,…> [--kind <역할>=<worker|design|tester|coordin
 1. `.fullops/guide/FULLOPS.md`와 `.fullops/guide/rules/common/README.md`, 거기 연결된 세 규칙을 읽고 프로젝트 정본을 `.fullops/guide/project.md`에 연결한다.
 2. `.fullops/guide/lint.md`의 순서로 스택·패키지 매니저·기존 설정·CI를 확인해 `.fullops/config/lint.json`의 `commands`를 구성한다. 기존 사용자 설정은 보존한다.
 3. `.fullops/config/review.json`에 제품별 리뷰 대상과 제외, 경로별 규칙 문장을 적는다.
-4. `.fullops/guide/orca-agents.md`의 배정표에 역할마다 책임·워크트리·기동 방식을 적고, `## 모델 후보`에 역할마다 모델과 effort를 약한 것부터 적는다. 병합 전 독립 리뷰 세션의 모델은 `reviewer` 키로 적는다. 기계는 이 표를 읽지 않는다. lead가 읽고 고른 값을 `fullops route`·`fullops dispatch`가 기록한다.
+4. 역할마다 책임을 `.fullops/fullops.toml`의 `[roles.<역할>]` `about`에, 쓸 수 있는 모델을 `[models]`에 적는다. 병합 전 독립 리뷰 세션의 모델은 `reviewer` 키로 적는다. 역할마다 약하고 싼 후보부터 강한 후보 순으로 적고, `about`에 어떤 작업에 쓰는지 적는다. `agent`는 Orca 에이전트 ID(`claude`·`codex`·`grok`·`antigravity`)이고 `model`은 그 CLI가 받는 값이다. 사용자와 정한 후보만 적는다.
+
+   ```toml
+   [models]
+   dev = [
+     { agent = "claude", model = "claude-sonnet-5-5", effort = "medium", about = "기존 패턴을 따르는 일반 구현" },
+     { agent = "claude", model = "claude-opus-5-5", effort = "high", about = "설계 판단이 섞이거나 여러 모듈에 걸친 구현" },
+   ]
+   reviewer = [
+     { agent = "claude", model = "claude-opus-5-5", effort = "high", about = "병합 전 고정 SHA 독립 리뷰" },
+   ]
+   ```
+
+   후보가 하나인 자리는 `dispatch`가 그 후보를 쓰고, 후보가 있는 자리에 목록 밖 조합을 주면 `--why`가 있어야 받는다.
 5. UI 작업이 있는 레포는 `fullops-frontend`로 디자인 정본을 연결한다.
 
 ## 4. 모드 전환과 이행
@@ -51,6 +64,7 @@ fullops init --roles <역할,…> [--kind <역할>=<worker|design|tester|coordin
 - coor에서 dev로: `fullops mode dev --primary-role <역할>`. 떠 있는 세션은 정책 오류가 되므로 새 세션을 연다. dev에서 coor로 돌아가는 전환은 없다.
 - Python판(`fullops-squad` 1.24.0)을 쓰던 레포: 역할 인박스를 모두 비우고 통합 대기를 정리한 과제 경계에서 `fullops migrate --from-python --dry-run`으로 보고서를 본다. 문제가 없으면 기준 브랜치를 체크아웃한 lead 체크아웃에서 `--dry-run`을 빼고 실행한다. 전환을 커밋하고 같은 실행에서 레포 폴더를 `.fullops/`로 옮겨 커밋 둘이 생긴다(`fullops: Python판에서 전환`, `fullops: .fullops 자리로 옮김`). 보고서와 변경을 확인한 뒤 push한다. 되돌리기는 자리 옮김 커밋을 `git revert`한 뒤 `fullops migrate --rollback`과 커밋이다.
 - 옛 자리(`.fullops-squad/fullops.toml`)의 2.0.x 레포: hook과 명령이 돌지 않고 세션 시작 때 옮기라는 안내가 나온다. 인박스를 비우고 열린 배정과 보류를 정리한 과제 경계에서, 기준 브랜치를 체크아웃한 lead 체크아웃에서 `fullops migrate --layout --dry-run`으로 옮길 것을 보고 `fullops migrate --layout`을 실행한다. 커밋 하나(`fullops: .fullops 자리로 옮김`)가 생긴다. 사람 승인 뒤 push하고 `fullops sync`로 역할 워크트리를 맞춘다. 되돌리기는 그 커밋의 `git revert`다.
+- 2.1.x까지의 레포는 모델 후보가 `.fullops/guide/orca-agents.md`에 있다. `fullops migrate --models --dry-run`으로 본 뒤 `fullops migrate --models`로 `[models]`에 옮긴다(커밋 하나. 나머지가 기본 글이면 그 파일을 지운다).
 - 기존 레포의 FullOps 갱신은 `update-fullops`를 쓴다.
 
 ## 5. 보고
