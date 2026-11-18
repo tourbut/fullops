@@ -485,7 +485,7 @@ parallel: on
 - `seq`: `update_state`가 쓸 때마다 1 올린다.
 - `null`일 수 있는 필드: `dispatches[]`의 `task_id`(예약 기록), `terminal`, `reason`, `bound_session`, `reported`, `settled`, `sub_of`, `brief`, `reported.lint_head`(`--no-checks`), `settled.outcome`·`settled.message`(`how`가 `done`이 아닐 때). `completions[]`의 `dispatch`·`role`(직접 작업, dispatch를 찾지 못한 보고), `key`, `sha`, `hold`, `released_hold`, `landed_at`, `drift`. 그 밖의 필드는 항상 값이 있다.
 - `completions[].id`: 그 `worker_done` 메시지의 ID다. dev 직접 작업의 기록은 메시지가 없으므로 `direct:<sha 앞 12자>`다.
-- hold의 형태: `completions[].hold`와 `released_hold`는 `{ "reason", "owner", "resume", "at" }`이다. `snapshots[].hold`는 `{ "reason", "at" }`이다.
+- hold의 형태: `completions[].hold`와 `released_hold`는 `{ "reason", "owner", "resume", "at" }`이다. `snapshots[].hold`는 `{ "reason", "at" }`이고, 정리를 `--abandon`으로 청했으면 그 중단 사유 `abandon`이 더 있다.
 - `decisions[].status`: `open`·`answered`·`dropped`. `decision add --repository`의 값은 `repository`에, `decision drop --reason`의 값은 `drop_reason`에 쓴다(둘 다 값이 있을 때만 있는 필드다).
 - 경로(`dispatches[].worktree`, `snapshots[].path`): 슬래시 표기의 절대 경로이고 Windows의 `\\?\` 접두어는 뗀다(`path_text`). 비교는 `same_path`로 한다(Windows는 대소문자를 가리지 않는다. 심볼릭 링크는 풀지 않는다). 7.3절 2·3번이 이 비교를 쓴다.
 - `completions[].sha_source`: `done`(`fullops done` 기록), `body`(메시지 본문), `branch_tip`(역할 브랜치 로컬 ref), `manual`(`completion set-sha`). `sha`가 `null`이면 통합 대기로 센다.
@@ -1593,11 +1593,11 @@ fullops sync [--role <R>] [--self]
 | M-05 | lint 증거: `reported.lint_head`가 `sha`를 덮는다(같거나, 조상이고 차이가 기록 경로뿐). 없으면 worker 워크트리의 `lint/pass.json`으로 같은 확인을 하되, 시작점을 merge-base로 준 `pass_covers`(6.6절)라 `pass.base`가 merge-base와 같거나 그 조상이고 설정 지문이 같아야 한다(R1-1). 그 과제의 `changed`가 비어 있으면(문서만) 통과 | 거절. 탈출구: worker 워크트리에서 `fullops lint`, 또는 `--accept-missing-lint "<사유>"` |
 | M-06 | 기본 워크트리에서 `git merge --no-edit <sha>`(fast-forward 허용, squash·cherry-pick 금지) | 충돌이면 병합을 진행 중 상태로 두고 종료 코드 3. 해결 뒤 `--continue`, 포기는 `--abort`(`git merge --abort`) |
 | M-07 | 병합 결과의 tree가 `sha`의 tree와 다르면 기본 워크트리에서 `fullops lint --from <병합 전 base tip>`을 한 번 돌린다. 같으면 worker lint를 재사용한다. LLM 리뷰는 더하지 않는다 | 실패하면 `git reset --keep <병합 전 tip>` 뒤 종료 코드 2. 탈출구: 그 보고의 역할(`--role <그 역할>`. 역할을 모르면 `<역할>`)로 `fullops task reopen --role <R> --key <KEY> --goal …` → `fullops dispatch <KEY> --role <R> --purpose fix`(8.3절 `fix_round`. 반려된 보고가 설계 역할의 것이면 `route --force --request` → 설계 역할 배정), 또는 `fullops hold` |
-| M-08 | 병합 기록 커밋 하나(`fullops: 병합 기록 <KEY>`): `PLANS.md`에서 그 키의 행 상태를 `완료(<sha 7자>)`로 바꾸고(행이 있을 때), `## 배정 기록`에 그 과제의 dispatch 줄을 덧붙이고, `reported.followups`를 `## 완료 보고 후속 요청`에 덧붙이고, `reviews/<KEY>/…`의 미커밋 파일을 넣는다. 커밋 본문에 리뷰 판정 사유(`need.reason`)와 lint 재사용 여부를 적는다 | 종료 코드 1 |
+| M-08 | 병합 기록 커밋 하나(`fullops: 병합 기록 <KEY>`): `PLANS.md`에서 그 키의 행 상태를 `완료(<sha 7자>)`로 바꾸고(행이 있을 때), `## 배정 기록`에 그 과제의 dispatch 줄을 덧붙이고, `reported.followups`를 `## 완료 보고 후속 요청`에 덧붙이고, `tasks/<KEY>/reviews/…`의 미커밋 파일을 넣는다. 리뷰 기록은 lead 체크아웃에 쓰이므로, lead가 기본 워크트리가 아니면(coordinator 역할 워크트리) 그 체크아웃의 미커밋 리뷰 파일을 기본 워크트리의 같은 경로로 복사해 이 커밋에 넣고, 커밋한 뒤 lead 쪽 사본을 치운다(미추적 파일은 지우고 추적되던 파일은 lead 브랜치의 것으로 되돌린다. 남기면 M-11이 lead 체크아웃을 '깨끗하지 않다'로 예약만 남긴다. M-11의 동기화가 커밋된 기록을 lead 체크아웃에 가져온다). 커밋 본문에 리뷰 판정 사유(`need.reason`)와 lint 재사용 여부를 적는다 | 종료 코드 1 |
 | M-09 | 원격이 있고 `--no-push`가 아니면 `git push <remote> refs/heads/<base>:refs/heads/<base>`. force는 쓰지 않는다 | 종료 코드 4. completion은 통합 대기로 남는다. 다시 실행하면 M-06~M-08을 건너뛰고 push만 한다. 오프라인이라 fetch를 못 해 거절된 push면 'FULLOPS_OFFLINE 없이 다시 실행' 한 문장을 붙인다 |
 | M-10 | `landing(sha) == Landed`를 확인하고 `landed_at`을 쓴다. hold가 있었으면 `released_hold`로 옮긴다. 처리 표시: 그 completion의 메시지(`messages[]`에서 `id`가 completion의 `id`와 같은 것)와, `messages[].dispatch`가 이 과제 키의 dispatch(목적 무관)인 `worker_done` 메시지 가운데 `acked_at`이 없는 것 전부에 쓴다. 병합이 끝났으면 그 과제의 리뷰 보고와 앞선 실패 보고도 처리된 것이기 때문이다. 같은 키의 다른 통합 대기 보고 가운데 이미 `Landed`인 것(병합한 SHA에 담긴 앞선 보고)도 함께 닫는다(R4-3). 다른 종류(`question`·`escalation` 등)와 다른 과제의 메시지는 건드리지 않는다. 과제에 열린 dispatch가 없으면 `archive.jsonl`로 옮긴다 | - |
 | M-11 | 동기화: 등록 역할의 워크트리마다(lead의 coordinator 브랜치 포함) `settled` 없는 dispatch가 없고 깨끗하면 `git merge --ff-only <base>`, ff가 아니면 `git merge --no-edit <base>`(충돌이면 abort). 그 밖은 `sync_pending[R] = <base tip>`. 강제 reset과 삭제는 쓰지 않는다 | 예약만 남기고 계속 |
-| M-12 | 그 과제의 `active` snapshot이 있으면 8.9절의 `cleanup --finished`를 한다 | 정리하지 못하면 snapshot에 hold 사유를 적고 계속 |
+| M-12 | 그 과제의 `active` snapshot이 있으면 8.9절의 `cleanup --finished`를 한다. 앞서 정리하지 못해 `hold`가 남은 다른 과제의 snapshot도 다시 정리해 본다(8.9절 cleanup의 '다시 보기') | 정리하지 못하면 snapshot에 hold 사유를 적고 계속 |
 | M-13 | 결과 요약, 그 Run에 남은 미처리 메시지 ID와 미정산 dispatch, 준비된 행 목록을 출력한다. 다음 할 일은 준비된 행이 있으면 "`fullops task new` → `fullops dispatch`", 미정산 dispatch가 남았으면 8.6절 반환값의 `next`와 같은 문장이다 | - |
 
 M-04에서 `need.required`일 때:
@@ -1613,7 +1613,7 @@ M-04에서 `need.required`일 때:
 | 그 SHA의 결정 답이 `생략`이다 | 거절. 탈출구: `fullops review waive <KEY> --decision <ID> --reason …` |
 | 그 SHA의 결정 답이 `진행`이다 | 거절. 탈출구: `fullops review snapshot <KEY>` |
 
-`hold`: 통합 대기 completion에 세 값을 모두 받아 쓰고(`--completion <ID>`가 있으면 KEY를 생략할 수 있고 그때는 메시지 ID로만 고른다. 키 없는 보고를 미루는 길이다. R3-1), 그 completion의 메시지에 `acked_at`이 없으면 쓴다(lead가 그 보고를 처리했다는 뜻이다). 보류는 병합 완료가 아니다. `resume`: hold를 `released_hold`로 옮긴다(사유는 지우지 않는다). `settle`: 원격이 있으면 fetch한 뒤 모든 미통합 completion의 `landing()`을 다시 계산해 통합된 것을 닫는다(`landed_at`을 쓰고 그 completion의 메시지에 `acked_at`이 없으면 쓴다. X-06의 효과와 같은 일이다). 건수 상한이 없다. `completion set-sha`: SHA를 40자로 풀어 쓰고 `sha_source = "manual"`. `sync`: `sync_pending`의 역할마다 M-11과 같은 일을 한다. `--self`는 lead의 브랜치에 기본 브랜치를 반영한다.
+`hold`: 통합 대기 completion에 세 값을 모두 받아 쓰고(`--completion <ID>`가 있으면 KEY를 생략할 수 있고 그때는 메시지 ID로만 고른다. 키 없는 보고를 미루는 길이다. R3-1), 그 completion의 메시지에 `acked_at`이 없으면 쓴다(lead가 그 보고를 처리했다는 뜻이다). 보류는 병합 완료가 아니다. `resume`: hold를 `released_hold`로 옮긴다(사유는 지우지 않는다). `settle`: 원격이 있으면 fetch한 뒤 모든 미통합 completion의 `landing()`을 다시 계산해 통합된 것을 닫는다(`landed_at`을 쓰고 그 completion의 메시지에 `acked_at`이 없으면 쓴다. X-06의 효과와 같은 일이다). 건수 상한이 없다. 끝에 `hold`가 남은 snapshot을 다시 정리해 본다(8.9절 cleanup의 '다시 보기'). `completion set-sha`: SHA를 40자로 풀어 쓰고 `sha_source = "manual"`. `sync`: `sync_pending`의 역할마다 M-11과 같은 일을 한다. `--self`는 lead의 브랜치에 기본 브랜치를 반영한다.
 
 날것 `git merge`·`git push`로 통합해도 X-06과 `settle`이 조상 관계로 인식한다. 그때 기본 브랜치가 보고 SHA 뒤의 역할 브랜치 커밋(기록 경로만 바꾼 커밋 제외)을 함께 담았으면 `drift`에 수를 쓰고 lead의 다음 Stop·`status`에서 한 번 알린다(1.24.0의 병합 SHA 어긋남 알림).
 
@@ -1652,7 +1652,9 @@ fullops review prune
 - `result.json` 뼈대: `{"v":1,"key","base","head","reviewer_session":null,"implementer_session","snapshot_path","snapshot_head","read_only":true,"conclusion":null,"files":[{"path","status","review_status":null,"reason":""}],"findings":[]}`. `findings[]`의 필드는 `path`, `content`, `severity`(`critical`·`high`·`medium`·`low`), `resolved`, `start_line`, `end_line`이다.
 - `report.md` 틀과, 찾을 수 있으면 `lint.json`(같은 base·head의 `lint/result.json` 사본. 등록된 모든 워크트리의 Git 디렉터리에서 찾는다).
 
-리뷰어는 snapshot만 읽고 결과는 lead 체크아웃의 리뷰 폴더(spec의 `Review folder`)에 쓴다. lint·테스트를 다시 돌리지 않는다. 끝나면 preamble의 `worker_done`을 보낸다(본문 `[리뷰] <KEY> | SHA <head> | 결론 accept|reject | high <n>`).
+리뷰어는 snapshot만 읽고 결과는 lead 체크아웃의 리뷰 폴더(spec의 `Review folder`)에 쓴다. lint·테스트를 다시 돌리지 않는다: snapshot은 방금 만든 detached 워크트리라 설치된 의존성(`node_modules` 등)이 없어 lint 명령이 환경 탓에 실패하고, 실행 산출물이 snapshot을 더럽혀 check 5번과 cleanup을 막는다. 그래서 snapshot 안의 `fullops lint`는 실행 없이 거절한다(8.11절 0번). lint 증거는 리뷰 폴더의 `lint.json`(구현자의 결과 사본)이다. 끝나면 preamble의 `worker_done`을 보낸다(본문 `[리뷰] <KEY> | SHA <head> | 결론 accept|reject | high <n>`).
+
+**check**의 리뷰 폴더: 부른 체크아웃에 그 리뷰의 `targets.json`이 있으면 그 체크아웃의 것이다. 없으면(리뷰어가 snapshot 안에서 불렀다. 병합 전의 기록은 lead 체크아웃에만 있다) 등록된 워크트리 가운데 `targets.json`이 있는 체크아웃의 폴더를 쓰고, 8번의 `config/review.json`도 그 체크아웃의 것을 읽는다. 어디에도 없으면 `RV-00`이다.
 
 **check**가 실패하는 경우(하나라도):
 
@@ -1673,9 +1675,11 @@ fullops review prune
 
 **cleanup**: Orca `terminal list --worktree path:<snapshot>`(10초)으로 살아 있는 터미널이 없는지 확인한다(없어질 때까지 최대 8초 다시 확인). 리뷰어가 채팅 방식으로 떠서 터미널이 없는 경우에는 목록이 비므로 이 확인은 그대로 통과한다. 그때 남는 보호는 아래의 미커밋·미추적 파일 확인이다. 확인하지 못했거나 snapshot에 미커밋·미추적·무시 파일이 있으면 지우지 않고 snapshot의 `hold`에 사유를 쓴다. 통과하면 `git worktree remove <경로>`(force 없음)를 하고 `removed`(또는 `--abandon`이면 `abandoned`와 `abandoned.json`)로 바꾼다.
 
+다시 보기: `hold`가 남은 `active` snapshot은 정리를 청했으나 못 한 것이다. 리뷰어 터미널은 `worker_done` 뒤 Orca가 스스로 놓는데(약 2분. `docs/contracts/orca.md` 2.3절) lead는 그 전에 `merge`를 하므로 M-12는 보통 터미널이 살아 있는 snapshot을 만난다. fullops는 터미널을 닫지 않는다(계약에 터미널이나 worker를 끝내는 명령이 없고, 살아 있는 세션의 워크트리를 지우지 않는다). 대신 `merge`(M-12)·`settle`·`review prune`이 `hold`가 남은 snapshot마다 위 확인을 한 번씩 다시 하고(이때는 8초를 기다리지 않는다) 통과하면 지운다. `--abandon`으로 청했던 것은 `hold.abandon`의 사유로 `abandoned`가 된다. 터미널이 계속 살아 있으면(`--keep-open` 등) 계속 남는다.
+
 **supersede**: 새 head가 옛 head의 후손이고 새 리뷰의 `accepted.json`이 유효할 때 옛 폴더에 `superseded.json`(`{"by","old_result_sha256","new_result_sha256","at"}`)을 쓴다. 옛 `result.json`은 고치지 않는다. 실패한 리뷰를 후속 수락에 연결하는 회복 경로다.
 
-**prune**: S-03과 같은 일을 하고 남은 `active` snapshot 목록을 낸다. 있는 워크트리는 지우지 않는다.
+**prune**: `hold`가 남은 snapshot을 다시 정리해 보고(cleanup의 '다시 보기'), S-03과 같은 일을 하고, 남은 `active` snapshot 목록을 낸다. 정리를 청한 적 없는 워크트리는 지우지 않는다.
 
 리뷰 정책(세 관점, 심각도 처분, nit 5건)은 스킬 문서의 규약이고 `check`가 판정하지 않는다.
 
@@ -1723,6 +1727,7 @@ fullops decision list [--open]
 fullops lint [--from <ref>] [--level <레벨>] [--out <경로>]
 ```
 
+0. 리뷰 snapshot 안(좌석 `Reviewer`)에서는 실행하지 않는다(`FullOps[LINT]`, 종료 코드 2. 탈출구는 리뷰 폴더의 `lint.json`). 사유는 8.9절에 있다. 그 밖의 체크아웃에는 영향이 없다.
 1. 작업 트리가 깨끗해야 한다(아니면 `FullOps[LINT]`, 종료 코드 2). 기록 경로(6.6절 5번의 다섯 경로)의 미커밋 변경은 세지 않는다(M-03과 같은 예외다. 리뷰 뒤의 lead 체크아웃에는 미커밋 리뷰 파일이 있고 M-07이 그 상태에서 lint를 돌린다. lint는 커밋된 차이만 검사하므로 결과는 달라지지 않는다). `--from` 기본값은 `changed()`의 시작점(6.6절 1~3번: 역할 인박스의 `base`, 없으면 세션 anchor, 바닥은 통합 기준 ref와의 merge-base)이다. 예외: 설계 역할 좌석은 세션 anchor를 쓰지 않고 인박스의 `base`, 없으면 바닥이다(설계 역할을 다시 배정하면 리뷰 범위가 이전 세션의 반려된 커밋까지 담아 anchor로는 덮지 못하고 `review check`가 RV-09에 멈춘다). X-01·R-03·hook의 `changed()` 시작점은 그대로라 lint가 더 넓은 범위를 검사할 뿐이다. 인박스도 anchor도 없으면 바닥을 쓰고, 바닥도 없으면 `--from`을 요구한다(종료 코드 1).
 2. `lint/lock`을 잡는다(못 잡으면 종료 코드 1). 이전 `result.json`·`pass.json`을 지운다.
 3. `mb = merge-base(from, HEAD)`. 설정은 `mb` 시점의 `lint/lint.json`과 `fullops.toml`이다. 한 번의 `git cat-file --batch`로 읽는다. `mb`에 `lint.json`이 없으면 바이너리에 내장한 템플릿의 `lint/lint.json`을 쓴다(1.24.0과 같다). 제외 목록은 `lint_excludes`(10.2절) 하나가 만들고 `lint`·`changed()`·`review_need`·탐색 색인이 함께 쓴다. `HEAD`의 `lint.json`이 `mb`와 다르면 LINT-001 경고를 낸다.

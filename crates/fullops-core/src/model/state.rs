@@ -384,6 +384,9 @@ pub struct Snapshot {
 pub struct SnapshotHold {
     pub reason: String,
     pub at: i64,
+    /// 정리를 `--abandon`으로 청했으면 그 중단 사유. 다시 정리할 때 `abandoned`로 닫는다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abandon: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }

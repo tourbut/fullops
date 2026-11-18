@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 struct World {
     sb: Sandbox,
     seq: u32,
+    /// lead가 명령을 실행하는 체크아웃의 이름. `lead`는 기본 브랜치 체크아웃이다.
+    lead: &'static str,
 }
 
 fn out(run: &fullops_testkit::Run) -> Value {
@@ -37,11 +39,26 @@ impl World {
         Self {
             sb: Sandbox::with(&Setup::default()),
             seq: 0,
+            lead: "lead",
+        }
+    }
+
+    /// lead가 기본 브랜치 체크아웃이 아니라 coordinator 역할 워크트리 `coor`(브랜치 `fullops/coor`)에서 일한다.
+    fn under_coordinator() -> Self {
+        let roles = [("dev", "worker"), ("coor", "coordinator")];
+        let setup = Setup {
+            roles: roles.map(|(a, b)| (a.to_string(), b.to_string())).into(),
+            ..Setup::default()
+        };
+        Self {
+            sb: Sandbox::with(&setup),
+            seq: 0,
+            lead: "coor",
         }
     }
 
     fn lead(&self) -> PathBuf {
-        self.sb.path("lead")
+        self.sb.path(self.lead)
     }
 
     fn dev(&self) -> PathBuf {
@@ -1678,4 +1695,110 @@ fn merge_rerun_joins_a_remote_that_moved_first() {
         (&json!("ran"), &json!("landed"))
     );
     assert!(w.contains(next.as_str(), "origin/main"));
+}
+
+/// lead가 coordinator 워크트리에 있으면 리뷰 기록은 그 체크아웃에 쓰이고 병합 기록 커밋은 기본 워크트리에서 만든다.
+/// 기록이 그 커밋에 들어가고 lead 체크아웃에 미커밋으로 남지 않는다(남으면 M-11의 동기화도 막힌다).
+#[test]
+fn merge_commits_review_records_written_in_coordinator_worktree() {
+    let mut w = World::under_coordinator();
+    let sha = w.work("src/big.py", 400);
+    w.lint_result(&sha);
+    w.report("A-1", &sha);
+    expect(&w.cli(&["review", "snapshot", "A-1"]), 0, &[]);
+    let dir = w.review_dir("A-1", &sha);
+    assert!(dir.starts_with(w.sb.path("coor")) && dir.join("targets.json").is_file());
+    w.review("A-1", &sha, "sid-reviewer", None);
+    expect(&w.cli(&["review", "check", "A-1"]), 0, &["accepted.json"]);
+    w.no_terminals();
+    let run = w.cli(&["merge", "A-1", "--json"]);
+    expect(&run, 0, &[]);
+
+    assert_eq!(subjects(&w, "lead")[0], "fullops: 병합 기록 A-1");
+    let files = w.git("lead", &["show", "--name-only", "--format=", "HEAD"]);
+    for name in [
+        "targets.json",
+        "result.json",
+        "report.md",
+        "lint.json",
+        "accepted.json",
+    ] {
+        assert!(files.contains(name), "{name}: {files}");
+    }
+    // lead 체크아웃은 깨끗하고 기본 브랜치를 받아 기록을 커밋된 파일로 갖는다
+    assert_eq!(w.git("coor", &["status", "--porcelain"]), "");
+    assert_eq!(out(&run)["sync_pending"], json!([]));
+    assert_eq!(
+        w.git("coor", &["rev-parse", "HEAD"]),
+        w.git("lead", &["rev-parse", "HEAD"])
+    );
+    assert!(dir.join("accepted.json").is_file());
+}
+
+/// 리뷰어 터미널이 살아 있는 동안에는 snapshot을 지우지 않고 hold만 남긴다(M-12).
+/// 터미널이 닫힌 뒤의 다음 `merge`가 그 snapshot을 마저 정리한다.
+#[test]
+fn held_snapshot_is_removed_by_a_later_merge() {
+    let mut w = World::new();
+    let sha = w.work("src/a.py", 3);
+    w.report("A-1", &sha);
+    let run = w.cli(&["review", "snapshot", "A-1", "--json"]);
+    expect(&run, 0, &[]);
+    let snapshot = PathBuf::from(out(&run)["snapshot"].as_str().unwrap());
+    let path = path_text(&snapshot);
+    fullops_testkit::sandbox::bin("fake-orca");
+    let script = |live: bool| {
+        let terminals = orca_shapes::terminals(&[("term_reviewer", live, &path)]);
+        let rules = json!({ "rules": [{ "when": ["terminal", "list"], "stdout": terminals }] });
+        w.sb.write(&w.sb.orca_dir.join("script.json"), &rules.to_string());
+    };
+    script(true);
+    expect(
+        &w.cli(&["merge", "A-1"]),
+        0,
+        &["살아 있는 터미널", "term_reviewer"],
+    );
+    let held = w.state().snapshots[0].clone();
+    assert!(snapshot.is_dir() && held.state == SnapshotState::Active && held.hold.is_some());
+
+    // 터미널이 아직 살아 있으면 다음 기회에도 지우지 않는다
+    expect(&w.cli(&["settle"]), 0, &[]);
+    assert!(snapshot.is_dir());
+
+    // Orca가 터미널을 놓은 뒤: 다른 과제의 병합이 남은 snapshot을 정리한다
+    script(false);
+    let next = w.work("src/b.py", 3);
+    w.report("B-2", &next);
+    expect(&w.cli(&["merge", "B-2"]), 0, &["A-1@"]);
+    assert!(!snapshot.exists());
+    let state = w.state();
+    assert!(
+        state.snapshots[0].state == SnapshotState::Removed && state.snapshots[0].hold.is_none()
+    );
+}
+
+/// 리뷰 사본 안에서 부른 `review check`는 lead 체크아웃의 리뷰 폴더를 찾아 검사한다.
+/// 사본에는 설치된 의존성이 없으므로 `lint`는 돌지 않고 구현자의 `lint.json`을 보라고 알린다. 사본은 깨끗한 채다.
+#[test]
+fn review_snapshot_finds_lead_records_and_refuses_lint() {
+    let mut w = World::new();
+    let sha = w.work("src/big.py", 400);
+    w.lint_result(&sha);
+    w.report("A-1", &sha);
+    let run = w.cli(&["review", "snapshot", "A-1", "--json"]);
+    expect(&run, 0, &[]);
+    let snapshot = PathBuf::from(out(&run)["snapshot"].as_str().unwrap());
+    w.review("A-1", &sha, "sid-reviewer", None);
+
+    let lint = w.sb.cli(&snapshot, &["lint", "--from", "main"]);
+    expect(&lint, 2, &["FullOps[LINT]", "리뷰 사본", "lint.json"]);
+    let snap = fullops_store::discover(&snapshot).unwrap().unwrap();
+    assert!(!snap.lint_dir().join("result.json").exists());
+
+    let check = w.sb.cli(&snapshot, &["review", "check", "A-1"]);
+    expect(&check, 0, &["accepted.json"]);
+    assert!(w.review_dir("A-1", &sha).join("accepted.json").is_file());
+    assert!(!snapshot.join(".fullops/tasks").exists());
+    let status = ["status", "--porcelain", "--ignored"];
+    assert_eq!(w.sb.git_ok(&snapshot, &status), "");
 }

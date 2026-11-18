@@ -482,6 +482,20 @@ fn snapshot(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     Ok(EXIT_OK)
 }
 
+/// 그 리뷰의 기록 폴더가 있는 체크아웃. 기록은 snapshot을 만든 lead 체크아웃에만 있다(병합 전에는 커밋되지 않는다).
+/// 리뷰 사본 안에서 부르면 이 체크아웃에는 없으므로 등록된 워크트리에서 `targets.json`이 있는 곳을 찾는다. 없으면 이 체크아웃이다.
+fn record_home(repo: &Repo, git: &GitCli, key: &TaskKey, head: &Sha) -> Repo {
+    let has = |r: &Repo| r.review_dir(key, head).join("targets.json").is_file();
+    if has(repo) {
+        return repo.clone();
+    }
+    let registered = git.worktrees().yes().unwrap_or_default();
+    let found = registered
+        .iter()
+        .find_map(|w| fullops_store::discover(&w.path).ok().flatten().filter(has));
+    found.unwrap_or_else(|| repo.clone())
+}
+
 fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     let parsed = Parsed::new(args, &["sha"], &[])?;
     let key = task_key(parsed.key.clone())?;
@@ -489,6 +503,8 @@ fn check(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     let git = GitCli::cli(repo.root.clone());
     let state = load_state(ctx)?;
     let subject = subject(ctx, &git, &state, &key, parsed.get("sha"))?;
+    let home = record_home(repo, &git, &key, &subject.head);
+    let repo = &home;
     let dir = repo.review_dir(&key, &subject.head);
     let files: (Option<Targets>, Option<ReviewResult>) = (
         read(&dir.join("targets.json")),
@@ -718,7 +734,13 @@ fn waive(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
         s.review == review && matches!(s.state, SnapshotState::Creating | SnapshotState::Active)
     };
     if state.snapshots.iter().any(open)
-        && let Some(why) = cleanup(ctx, &git, &review, Some("사용자 결정으로 리뷰를 면제했다"))?
+        && let Some(why) = cleanup(
+            ctx,
+            &git,
+            &review,
+            Some("사용자 결정으로 리뷰를 면제했다"),
+            true,
+        )?
     {
         ctx.note(&format!(
             "snapshot {review}를 정리하지 못해 사유를 적었습니다: {why}"
@@ -734,10 +756,10 @@ fn waive(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     Ok(EXIT_OK)
 }
 
-/// snapshot에 살아 있는 터미널. 없어질 때까지 최대 8초 다시 본다.
-fn live_terminals(repo: &Repo, path: &Path) -> Result<Vec<String>, String> {
+/// snapshot에 살아 있는 터미널. `patient`면 없어질 때까지 최대 8초 다시 본다.
+fn live_terminals(repo: &Repo, path: &Path, patient: bool) -> Result<Vec<String>, String> {
     let orca = OrcaCli::new(repo.root.clone(), Duration::from_secs(10));
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let deadline = Instant::now() + Duration::from_secs(if patient { 8 } else { 0 });
     loop {
         match orca.terminals_in(path) {
             Ok(live) if live.is_empty() || Instant::now() >= deadline => return Ok(live),
@@ -748,12 +770,14 @@ fn live_terminals(repo: &Repo, path: &Path) -> Result<Vec<String>, String> {
 }
 
 /// snapshot을 지운다(설계 8.9절 cleanup). 지우지 못하면 snapshot의 `hold`에 사유를 쓰고 그 사유를 돌려준다.
-/// `abandon`은 중단 사유다. 있으면 `abandoned`로 닫고 `abandoned.json`을 쓴다.
+/// `abandon`은 중단 사유다. 있으면 `abandoned`로 닫고 `abandoned.json`을 쓴다. 없으면 앞선 시도가 hold에 남긴 사유를 쓴다.
+/// `patient`가 거짓이면 터미널이 닫히기를 기다리지 않는다(`sweep`의 다시 보기).
 pub(super) fn cleanup(
     ctx: &Ctx,
     git: &GitCli,
     review: &str,
     abandon: Option<&str>,
+    patient: bool,
 ) -> Result<Option<String>, CliError> {
     let repo = ctx.repo()?;
     let open = |s: &Snapshot| {
@@ -763,11 +787,13 @@ pub(super) fn cleanup(
     let Some(snapshot) = state.snapshots.iter().find(|s| open(s)) else {
         return Err(refused("RV-00", "nosnapshot", &[review]));
     };
+    let held = snapshot.hold.as_ref().and_then(|h| h.abandon.as_deref());
+    let abandon = abandon.or(held);
     let path = PathBuf::from(&snapshot.path);
     let problem = if !path.exists() {
         None
     } else {
-        match live_terminals(repo, &path) {
+        match live_terminals(repo, &path, patient) {
             Err(e) => Some(format!("터미널을 확인하지 못했습니다({e}).")),
             Ok(live) if !live.is_empty() => {
                 Some(format!("살아 있는 터미널이 있습니다: {}.", live.join(", ")))
@@ -802,6 +828,7 @@ pub(super) fn cleanup(
                     snapshot.hold = Some(SnapshotHold {
                         reason: reason.clone(),
                         at: now,
+                        abandon: abandon.map(str::to_string),
                         extra: Default::default(),
                     })
                 }
@@ -824,6 +851,33 @@ pub(super) fn cleanup(
         )?;
     }
     Ok(problem)
+}
+
+/// 끝난 리뷰의 snapshot을 정리한다: `key`가 있으면 그 과제의 것(M-12), 그리고 앞서 정리하지 못해 hold가 남은 것 전부.
+/// 리뷰어 터미널은 `worker_done` 뒤 Orca가 스스로 놓으므로(계약 2.3절) 그 뒤의 `merge`·`settle`·`review prune`이 다시 본다.
+/// 살아 있는 터미널이나 남은 파일이 있으면 여전히 지우지 않고 hold만 고쳐 쓴다.
+pub(super) fn sweep(ctx: &Ctx, git: &GitCli, key: Option<&str>) {
+    let snapshots = load_state(ctx).map(|s| s.snapshots).unwrap_or_default();
+    for snapshot in snapshots
+        .iter()
+        .filter(|s| s.state == SnapshotState::Active)
+    {
+        let own = key == Some(snapshot.key());
+        if !own && snapshot.hold.is_none() {
+            continue;
+        }
+        match cleanup(ctx, git, &snapshot.review, None, own) {
+            Ok(Some(why)) if own => ctx.note(&format!(
+                "snapshot {}를 정리하지 못해 사유를 적었습니다: {why} 터미널이 닫힌 뒤의 `fullops merge`·`settle`·`review prune`이 다시 정리합니다.",
+                snapshot.review
+            )),
+            Ok(None) if !own => ctx.note(&format!(
+                "앞서 정리하지 못한 snapshot {}를 정리했습니다.",
+                snapshot.review
+            )),
+            _ => {}
+        }
+    }
 }
 
 fn cleanup_command(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
@@ -858,7 +912,7 @@ fn cleanup_command(ctx: &Ctx, args: lexopt::Parser) -> Result<u8, CliError> {
     let (Some(snapshot), None) = (found.next(), found.next()) else {
         return Err(refused("RV-00", "nosnapshot", &[key.as_str()]));
     };
-    if let Some(why) = cleanup(ctx, &git, &snapshot.review, abandon)? {
+    if let Some(why) = cleanup(ctx, &git, &snapshot.review, abandon, true)? {
         return Err(refused("RV-00", "held", &[&snapshot.review, &why]));
     }
     ctx.print(
@@ -922,8 +976,9 @@ fn prune(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         return Err(arg.unexpected().into());
     }
     let git = GitCli::cli(ctx.repo()?.root.clone());
+    sweep(ctx, &git, None);
     let registered = known(git.worktrees(), "워크트리 목록")?;
-    // S-03과 같다: 경로와 Git 등록이 모두 사라진 snapshot을 닫는다. 있는 워크트리는 지우지 않는다
+    // S-03과 같다: 경로와 Git 등록이 모두 사라진 snapshot을 닫는다. 정리를 청하지 않은 워크트리는 지우지 않는다
     let gone = |s: &Snapshot| {
         matches!(s.state, SnapshotState::Creating | SnapshotState::Active)
             && !Path::new(&s.path).exists()
