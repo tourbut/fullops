@@ -16,7 +16,7 @@
             "type": "command"
           }
         ],
-        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|Agent|Task|Workflow"
+        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|Agent|Task|Workflow|AskUserQuestion"
       }
     ],
     "SessionStart": [
