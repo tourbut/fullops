@@ -48,6 +48,12 @@ const REQUIRED: &[RequiredApply] = &[
         check: |root| !super::models::has_section(&read(root, &layout::guide("orca-agents.md"))),
         hint: "모델 후보가 아직 `.fullops/guide/orca-agents.md`에 있다. lead 체크아웃에서 `fullops migrate --models --dry-run`으로 본 뒤 `fullops migrate --models`로 `fullops.toml`의 `[models]`에 옮긴다.",
     },
+    RequiredApply {
+        since: "2.2.2",
+        id: "question-card",
+        check: |root| read(root, "AGENTS.md").contains("질문 카드"),
+        hint: "`AGENTS.md`·`CLAUDE.md`·`GEMINI.md`의 관리 블록에 질문 카드 규칙이 없다. `fullops init`을 다시 실행해 블록을 새 글로 바꾸고 커밋한다.",
+    },
 ];
 
 fn triple(version: &str) -> (u64, u64, u64) {

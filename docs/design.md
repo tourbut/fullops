@@ -495,7 +495,7 @@ parallel: on
 - `messages`: 처리할 메시지(`heartbeat`·`status`가 아닌 모든 종류)만 넣는다. 본문은 넣지 않는다. `acked_at`이 `null`이면 미처리다. `acked_at`은 fullops 자신의 처리 표시이고 Orca의 읽음 표시와 별개다. 쓰는 곳은 넷이다. (1) `merge`의 M-10: 그 completion의 메시지와, 같은 과제 키의 dispatch에 딸린 `worker_done` 메시지 전부(리뷰 보고와 앞선 실패 보고 포함). (2) `hold`: 그 completion의 메시지. (3) `landed_at`을 쓰는 모든 곳(X-06의 효과, `settle`, `status`): 그 completion의 메시지. 날것 `git merge`·`git push`로 통합한 보고도 이것으로 처리 표시가 된다. (4) `wait --ack`: 지정한 메시지. 누가 표시하는지는 메시지마다 `ack_by`(8.6절)로 갈린다.
 - `messages[].delivery`: Orca가 전달 ID(`deliveryId`)를 준 경우의 값. 현재 Orca(1.4.256)는 주지 않으므로 보통 `null`이다. 읽음 표시를 스스로 하지 않는 옛 Orca에서만 값이 온다.
 - `snapshots[].state`: `creating`·`active`·`removed`·`abandoned`·`missing`.
-- `decisions[]`: 필드 뜻은 8.10절. 답한 결정에는 `human_turn`(bool)이 붙는다: 결정을 연 뒤의 사람 턴을 확인하고 받은 답이면 참이다(DC-04. 8.10절). 예시에 없는 필드라 모르는 필드처럼 보존되는 자리(`extra`)에 쓴다.
+- `decisions[]`: 필드 뜻은 8.10절. 답한 결정에는 `human_turn`(bool)이 붙는다: 결정을 연 뒤의 사람 턴을 확인하고 받은 답이면 참이다(DC-04. 8.10절). 예시에 없는 필드라 모르는 필드처럼 보존되는 자리(`extra`)에 쓴다. 질문 카드로 물은 결정에는 `card: true`가 같은 자리에 붙는다(T-16. 7.5절).
 - `v`가 바이너리가 아는 값보다 크면 읽는 쪽은 `Unknown`으로 본다. 모르는 필드는 보존한다(`serde(flatten)`으로 받아 다시 쓴다).
 
 통합되고 열린 dispatch가 없는 과제는 `merge`·`settle`·`gc`가 `archive.jsonl`로 옮긴다. 줄 형식은 `{"key","role","sha","received_at","landed_at","rounds","dispatches":[{"purpose","started_at","reason","sub":bool}],"direct":bool}`이다. `sub`는 하위 배정이었는지다. 13.2절 4단계가 넣는 줄은 `landed_at`에 전환 시각을 쓴다(`stage_of` 1번은 `landed_at`이 있는 줄만 본다). `archive_keys`는 줄마다 `key`와 `landed_at`만 뽑는 줄 훑기로 읽는다(줄 전체를 타입으로 풀지 않는다).
@@ -772,13 +772,14 @@ pub struct HookInput {
 }
 pub struct ToolCall {                    // 어댑터가 호스트의 도구 이름과 인자를 이 꼴로 옮긴다. 7.4·7.5절은 이것만 본다
     pub name: String,                    // 호스트가 준 도구 이름(추적용)
-    pub kind: ToolKind,                  // Shell(Dialect) | Write | Edit | Patch | SubAgent | Workflow | Other
+    pub kind: ToolKind,                  // Shell(Dialect) | Write | Edit | Patch | SubAgent | Workflow | Ask | Other
     pub command: Option<String>,         // Shell의 명령 글, Patch의 패치 본문
     pub file_path: Option<String>,       // Write·Edit의 대상 경로
     pub content: Option<String>,         // Write의 전체 내용
     pub edits: Vec<EditOp>,              // Edit: EditOp { old: String, new: String, replace_all: bool }. 여러 곳 편집은 여러 원소
     pub text: Option<String>,            // SubAgent의 지시 글(인자가 여럿이면 줄바꿈으로 이은 것)
     pub truncated: bool,                 // 호스트가 입력을 잘랐다(grok의 toolInputTruncated)
+    pub cards: Vec<Card>,                // Ask의 질문들: Card { question: String, options: Vec<String> }. options는 선택지 label(적힌 순서). 모양을 읽지 못하면 비어 있다
 }
 ```
 
@@ -810,9 +811,12 @@ pub struct ToolCall {                    // 어댑터가 호스트의 도구 이
 | `Patch` | - | `apply_patch`(패치 본문이 `tool_input.command`에 온다. 경로는 `cwd` 기준 상대 경로일 수 있다) | - | - |
 | `SubAgent` | `Agent`, `Task`(글은 `prompt`·`description`) | `spawn_agent`(글은 `message`, 있으면 `prompt`) | `spawn_subagent`(글은 `prompt`·`description`) | `invoke_subagent`(인자 이름 미확인. `text = None`) |
 | `Workflow` | `Workflow` | - | - | - |
-| PreToolUse 매처 | `Bash\|PowerShell\|Write\|Edit\|MultiEdit\|Agent\|Task\|Workflow` | `Bash\|apply_patch\|spawn_agent` | `run_terminal_command\|search_replace\|hashline_edit\|write\|spawn_subagent` | `run_command\|write_to_file\|replace_file_content\|multi_replace_file_content\|invoke_subagent` |
+| `Ask` (2.2.2) | `AskUserQuestion`(질문 카드. `questions[]`의 `question`과 `options[].label`. 추정) | - | - | - |
+| PreToolUse 매처 | `Bash\|PowerShell\|Write\|Edit\|MultiEdit\|Agent\|Task\|Workflow\|AskUserQuestion` | `Bash\|apply_patch\|spawn_agent` | `run_terminal_command\|search_replace\|hashline_edit\|write\|spawn_subagent` | `run_command\|write_to_file\|replace_file_content\|multi_replace_file_content\|invoke_subagent` |
 
 grok이 Cursor preset으로 돌 때의 도구 이름(`Shell`·`StrReplace`·`Task`)은 v1에서 다루지 않는다(모르는 도구 = 통과).
+
+질문 카드(`Ask`)는 `claude`에만 대응이 있다(2.2.2). 다른 호스트는 질문 도구가 hook에 걸려 있지 않아 동작이 그대로이고, 스킬과 관리 블록의 규칙(묻기 전에 `fullops decision add`. 8.10절)으로 맞춘다. `AskUserQuestion`의 인자 모양은 공식 문서로 확인하지 못해 추정이다(`docs/contracts/claude-code.md` 3.3절). 모양이 다르면 `cards`가 비고 T-15·T-16이 걸리지 않는다.
 
 **능력 표** `caps_of(host)`. 규칙은 호스트 이름이 아니라 이 값을 보고, 닿지 않는 안내는 만들지 않는다.
 
@@ -945,7 +949,7 @@ pub struct EditTarget { pub path: PathBuf, pub before: Option<String>, pub after
 - `ToolKind::Edit`: 현재 파일 글에 `edits`를 차례로 적용한다. 원소마다 `old`의 첫 일치(`replace_all`이면 전부)를 `new`로 바꾼다. 일치가 없거나 `edits`가 비었으면 `after = Unknown`.
 - `apply_patch`: 본문은 `*** Begin Patch` 줄로 시작해 `*** End Patch` 줄로 끝난다(끝 줄의 줄바꿈은 없어도 된다). 그 사이에서 `*** Environment ID: <글>` 줄은 건너뛴다. `*** Add File: <경로>`(뒤의 `+` 줄이 내용), `*** Delete File: <경로>`(`after = None`), `*** Update File: <경로>`(선택적 `*** Move to: <경로>`와 `@@` 묶음)를 읽는다. 묶음 머리줄은 `@@` 또는 `@@ <문맥 글>`이고 `*** End of File` 줄은 건너뛴다. 표식 앞뒤의 공백은 봐준다. Update는 묶음의 `-`·공백 줄을 현재 글에서 찾아 바꾼다. 못 찾으면 `after = Unknown`. `*** Move to:`가 있으면 옛 경로는 삭제, 새 경로는 바뀐 글로 본다. 본문이 `*** Begin Patch`로 시작하지 않으면 대상 목록이 비고 통과다. 문법의 근거는 `docs/contracts/codex.md` 3.1절이다.
 
-PreToolUse의 규칙 후보는 다음 가운데 하나라도 있을 때 생긴다: `Other`·`Unparsed`가 아닌 Intent, 경로가 `.fullops/inbox/`나 `.fullops/tasks/` 아래인 편집, 좌석이 설계 역할일 때의 모든 편집, 하위 에이전트 도구(`SubAgent`)와 `Workflow` 도구, 정책 오류 상태, 프롬프트 이벤트가 없는 호스트에서 `prompt`의 지문이 세션의 `prompt_fp`와 다른 호출(7.5절). 후보가 없으면 설정 파일, `HEAD`, 세션 파일(정책 오류의 모드 변경과 `prompt_fp` 확인용)만 읽고 끝낸다.
+PreToolUse의 규칙 후보는 다음 가운데 하나라도 있을 때 생긴다: `Other`·`Unparsed`가 아닌 Intent, 경로가 `.fullops/inbox/`나 `.fullops/tasks/` 아래인 편집, 좌석이 설계 역할일 때의 모든 편집, 하위 에이전트 도구(`SubAgent`)와 `Workflow` 도구, 질문 카드(`Ask`), 정책 오류 상태, 프롬프트 이벤트가 없는 호스트에서 `prompt`의 지문이 세션의 `prompt_fp`와 다른 호출(7.5절). 후보가 없으면 설정 파일, `HEAD`, 세션 파일(정책 오류의 모드 변경과 `prompt_fp` 확인용)만 읽고 끝낸다.
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
@@ -1042,6 +1046,9 @@ P-02의 분류. 프롬프트의 앞 공백과 줄바꿈을 뗀 글을 P라 한�
 | T-11 | lead | `OrcaCheck { peek: false }` | 효과: Orca `orchestration check [--run R] --peek`(2.5초)를 불러 8.6절과 같은 방법으로 completion과 메시지를 기록한다. 판정은 통과 | 통과 | - |
 | T-12 | 전부 | Intent에 `Fullops`가 있다 | 효과: `current.json` 쓰기. 판정은 통과 | 통과 | - |
 | T-13 | 전부 | 도구가 `SubAgent` 또는 `Workflow`이고 T-00·T-08에 걸리지 않았다 | 효과: `turns.jsonl`에 `{"at","sid","kind":"subagent"}`(`Workflow`면 `"kind":"workflow"`) 한 줄(6.7절의 병렬 사용 지표). 실패는 무시한다. 판정은 통과 | 통과 | - |
+| T-14 | dispatch가 묶인 세션 | 도구가 질문 카드(`Ask`)다 | Deny | - | preamble의 `ask`로 lead에게 묻는다. 되돌릴 수 있는 선택은 묻지 않고 추천안으로 진행해 완료 보고에 적는다 |
+| T-15 | lead | 질문 카드의 질문 가운데 1번 선택지의 label에 `(추천)`도 `(Recommended)`도 없는 것이 있다(아래) | Deny | 통과(카드의 모양을 읽지 못했다) | 추천하는 선택지를 1번에 두고 그 label에 `(추천)`을 붙여 다시 묻는다 |
+| T-16 | lead | 질문 카드이고 T-15에 걸리지 않았다 | 효과: 질문마다 `state.json`에 열린 결정을 적는다(아래). `status.json`이 함께 바뀐다. 판정은 통과 | 통과 | - |
 
 T-05의 조건:
 
@@ -1063,6 +1070,17 @@ T-08의 조건: 글은 `ToolCall.text`다.
 T-09의 계산: `git status --porcelain -z --untracked-files=all -- .fullops/tasks`를 한 번 부른다. 커밋 대상은 git이 실제로 담을 항목이다: 인덱스 칸이 공백·`?`가 아닌 항목(이미 인덱스에 든 것), `GitCommit { all: true }`(`commit -a`)나 `git add -u`가 있으면 추적 중인 항목(`??` 제외) 전부, 같은 명령의 `git add <경로>`가 있으면 그 경로(작업 위치 기준을 레포 상대로 푼 것) 아래의 항목은 `??`까지. `.`과 상대 경로는 hook의 `cwd` 기준으로 푼다(git의 실제 뜻이다. 하위 폴더에서 친 `git add .`은 그 폴더로 좁힌 add라 통과할 수 있다). 셸 분류가 레포 전체 표식 `:/`로 넓힌 add(`-A`·`--all`·`--pathspec-from-file`, `git -C`, 풀리지 않은 확장, 경로 없는 add. 7.4절 9번), 그 밖의 pathspec 마법(`:`로 시작)과 glob(`*`·`?`·`[`), 같은 명령의 작업 위치 이동(`cd`·`pushd`·`Set-Location`), 레포 밖이나 풀지 못한 경로는 레포 전체로 본다(1.24.0의 `harness_gate`도 `add`의 범위로 좁혔다). 이름에 `$`·`%`·백틱이 든 실제 파일을 add해도 레포 전체로 보므로, 링크 없는 QA 캡처가 따로 있으면 그 커밋이 막힐 수 있다(과잉 거부 쪽. glob 꼴의 `git add '*.png'`도 같다). 그 가운데 확장자가 `.png`·`.jpg`·`.jpeg`·`.webp`·`.gif`·`.mp4`·`.webm`·`.mov`이고 경로에 `/raw/` 부분이 없는 파일이 미디어다. 대상은 그 가운데 `tasks/<KEY>/qa/` 아래의 미디어다. 그 과제의 `tasks/<KEY>/qa/report.md`가 그 파일의 `qa/` 기준 상대 경로(슬래시 표기)를 글 안에 담고 있으면 링크된 것이다. 링크 안 된 미디어가 하나라도 있으면 걸린다. 문구에는 최대 5개를 적는다.
 
 T-10의 계산: 편집 대상이 `.fullops/tasks/<N>/qa/…`이고 폴더 `tasks/<N>`이 없다. N을 `-`로 나눈 둘째 조각부터 처음 나오는 차수 접미사 `FIX`·`RECHECK`·`RETEST`·`LOWS`·`R<숫자>`(대소문자 무시)의 앞까지를 B라 한다. `tasks/<B>`가 있으면 걸린다(2.0.x의 `qa-reports/<KEY>-FIX-test/` 차수 폴더와 같은 것을 막는다).
+
+질문 카드(T-14~T-16. 2.2.2). 레포 주인 결정: lead가 사용자에게 묻는 일은 질문 카드로만 하고, 1번 선택지가 추천안이며, 답하지 않은 카드는 선택지와 함께 패널에 남는다. hook에 걸리는 카드는 Claude Code의 `AskUserQuestion`뿐이다(7.2절).
+
+- PostToolUse를 되살리지 않는다(11.1절). hook은 카드의 답을 보지 못한다: 묻는 순간(PreToolUse)에 열린 결정으로 적고, 닫는 것은 lead의 `fullops decision answer`다(8.10절).
+- T-15의 표시는 label 안의 `(추천)` 또는 `(Recommended)`다(영문은 대소문자 무시). 한 카드에 질문이 여럿이면 하나라도 어기면 카드 전체를 거부하고 아무것도 적지 않는다. 문구에는 어긴 질문 글의 앞 60자를 넣는다.
+- T-16의 기록: 질문마다 `question` = 질문 글, `options` = 선택지 label(적힌 순서), `key` = 질문 글에 낱말로 적힌 아는 과제 키(진행 중인 배정의 키와 `PLANS.md` 행의 키)가 하나일 때 그 키, 아니면 `null`. `state.json`에 같은 질문 글의 열린 결정이 있으면 새로 열지 않고 그 결정을 쓴다(같은 카드를 다시 내거나, 새 세션이 열린 결정을 다시 묻거나, `merge`·`decision add`가 연 결정을 카드로 물을 때). 새로 연 것과 다시 쓴 것 모두에 `card: true`를 적는다(8.10절의 사람 턴 확인이 본다). 다시 쓰는 결정에 선택지가 없으면(`decision add`가 선택지 없이 열었다) 카드의 선택지를 넣고, 있는 선택지는 바꾸지 않는다. 여는 함수는 `decision add`와 같다(ID, `next_decision`).
+- 비용: git 0, Orca 0, `state.json` 쓰기 한 번(`HOOK_WAIT` 안에 잠금을 못 얻으면 적지 않고 추적에 `lock_busy`를 남긴다. 판정은 통과다). 읽는 것은 `state.json`과 `PLANS.md`다.
+- 통과에는 글을 싣지 않는다(7.2절의 판정 출력 표에 PreToolUse의 `Context`가 없다). lead는 `fullops decision list --open`으로 ID를 본다.
+- 카드의 모양을 읽지 못하면(`cards`가 빈다) T-15·T-16은 걸리지 않는다: 적지도 막지도 않는다. T-14는 도구 종류만 본다.
+- T-14: dispatch를 받은 세션에는 답할 사람이 없어 카드가 worker를 멈춘다. Orca의 preamble도 질문 카드를 쓰지 말라고 한다. worker의 질문은 preamble의 `ask`로 lead에게 간다. dispatch 없이 역할 워크트리에서 사람이 연 세션과 좌석 `Other`·`Reviewer`의 카드에는 규칙이 없다(통과, 기록 없음).
+- T-00은 질문 카드를 막지 않는다. 정책 오류에서도 사용자에게 물을 수 있어야 한다.
 
 #### Stop (차단)
 
@@ -1113,7 +1131,7 @@ F-01의 `<오류 글>`은 `HookInput.error`(종류 이름)와 `HookInput.error_d
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
-- T-00: 모르는 도구(`ToolKind::Other`)는 정책 오류에서도 통과한다(7.8절의 '모르는 도구는 통과'가 먼저다).
+- T-00: 모르는 도구(`ToolKind::Other`)는 정책 오류에서도 통과한다(7.8절의 '모르는 도구는 통과'가 먼저다). 질문 카드(`ToolKind::Ask`)도 통과한다(2.2.2).
 - T-05 (b)는 바뀐 뒤의 글을 모르는 편집(없는 인박스에 대한 Edit, 잘린 입력)에서는 걸지 않는다. T-10의 '차수 접미사를 뗀 것'은 접미사부터 끝까지 떼는 것이다(`A-1-R2-1` → `A-1`).
 - T-11: C의 `record_message`를 그대로 부른다. Run을 주지 않은 날것 `check`는 lead의 열린 Run이 하나일 때만 그 Run으로 기록한다.
 - S-04의 효과는 프로세스를 띄우지 않고 hook 프로세스 안에서 F의 `cmd::runtime_stage`(10.2절)를 부르는 것이다(통합에서 바꿨다. `install --only runtime`과 같은 함수다). 실패는 추적에만 남는다(`self_install`).
@@ -1219,7 +1237,7 @@ F-01의 `<오류 글>`은 `HookInput.error`(종류 이름)와 `HookInput.error_d
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
-- 거절 ID는 두 종류다. hook 규칙 ID(S·P·T·X·F, 34개)는 7.5절의 표가 정본이고 `fullops rules`가 내는 표가 그것과 같다. CLI의 거절 ID는 이 절(8.3~8.14절, 10·13절)의 명령별 표가 정본이고 `fullops rules`에는 나오지 않는다(`rules`는 hook 규칙 표만 낸다).
+- 거절 ID는 두 종류다. hook 규칙 ID(S·P·T·X·F, 37개)는 7.5절의 표가 정본이고 `fullops rules`가 내는 표가 그것과 같다. CLI의 거절 ID는 이 절(8.3~8.14절, 10·13절)의 명령별 표가 정본이고 `fullops rules`에는 나오지 않는다(`rules`는 hook 규칙 표만 낸다).
 - 설계가 ID를 주지 않았던 CLI 거절에 구현 묶음이 붙인 ID: `review`의 `RV-00`~`RV-09`(8.9절. `RV-10`은 2.1.0에서 없어졌다), `resume`·`completion set-sha`의 `HD-01`·`HD-02`(8.8절), `decision`의 `DC-00`~`DC-04`(8.10절. `DC-04`는 검증 뒤 수정에서 더했다). `sync`가 반영하지 못한 역할은 `M-11`, `hold`의 대상 없음은 `M-02`를 그대로 쓴다.
 - 단계 이름을 ID 자리에 쓰는 거절도 있다(번호가 없다): `FullOps[publish]`·`FullOps[sync]`(`dispatch` 3·4단계), `FullOps[wait]`(열린 Run이 여럿), `FullOps[LINT]`(`lint`의 더러운 작업 트리), `FullOps[install]`(마켓플레이스 출처 충돌), `FullOps[migrate]`(전제 위반). `FullOps[packet]`은 2.1.0에서 패킷과 함께 없어졌다. 검증 뒤 수정에서 더한 것: `FullOps[reopen]`(병합 전 `task reopen`이 기록을 덮어쓰게 되는 두 경우. 8.4절), `FullOps[init]`(Python판 레포와 사용자 홈의 `init`. 10.6절). 2.1.0에서 더한 것: `FullOps[layout]`(옛 자리 레포에서 부른 명령. 13.6절). `FullOps[wait]`는 남의 Run을 `--run`으로 준 경우에도 쓴다(8.6절).
 - `FULLOPS_OFFLINE=1`이면 `doctor`와 `install --check`는 호스트 CLI(`--version`, `plugin list --json`)를 부르지 않고 버전과 플러그인 목록을 '모름'으로 둔다(10.3·10.6절).
@@ -1689,6 +1707,14 @@ fullops decision list [--open]
 
 - 거절 ID(종료 코드 2. 기록은 바뀌지 않는다): `DC-00`은 없는 결정 ID, `DC-01`은 `--sha`가 결정의 `sha`와 다름, `DC-02`는 만료, `DC-03`은 `--by`가 `allow` 밖, `DC-04`는 사람 턴이 없다(아래). 문구는 `messages/merge.rs`에 있다.
 
+**질문 카드**(2.2.2. 레포 주인 결정).
+
+- lead가 사용자에게 묻는 일은 질문 카드로만 한다. 1번 선택지가 추천안이고 그 label에 `(추천)`을 붙인다.
+- Claude Code에서는 카드(`AskUserQuestion`)를 내면 hook이 질문마다 열린 결정으로 적는다(T-16. 추천 표시가 없으면 T-15가 거부한다. 7.5절). `decision add`를 따로 하지 않는다. 답을 받으면 `fullops decision list --open`에서 ID를 보고 `fullops decision answer <ID> --answer "<고른 선택지>"`로 닫는다.
+- 답하지 않은 카드는 열린 채 `status.json`과 패널에 선택지와 함께 남는다. 새 세션은 `fullops status`의 열린 결정을 같은 질문 글의 카드로 다시 묻는다(같은 글이면 그 결정을 다시 쓴다). 더 물을 일이 없어진 결정은 `decision drop`으로 닫는다.
+- 그 밖의 호스트(Codex, grok, agy)는 카드 도구가 hook에 걸려 있지 않다. 묻기 전에 `fullops decision add --question … --option "<1안 (추천)>" --option …`으로 적고, 호스트에 질문 UI가 있으면 그것으로 묻는다.
+- 사람 턴 확인과 카드: 카드의 답은 UserPromptSubmit이 아니라 도구 결과로 돌아와 `human` 턴을 남기지 않는다. 그래서 `card: true`인 결정은 사람 턴이 없어도 `answer`를 받고 `human_turn: false`로 남긴다. `sha`가 있는 결정(리뷰 면제)은 예외 없이 사람 턴을 요구한다: `card`는 카드를 띄울 때 적히므로 카드가 거절되거나 화면이 없는 세션에서 도구가 실패해도 남는다(R1-5의 구멍을 다시 열지 않는다). 한계: SHA 고정 결정을 카드로 물으면 사용자가 채팅에 한 줄을 입력한 뒤에야 닫힌다.
+
 **사람 턴 확인**(검증 뒤 수정 R1-5. M-04가 연 리뷰 결정을 lead 에이전트가 스스로 닫던 것). `turns.jsonl`에 줄이 있으면(hook이 도는 레포) 결정의 `asked_at`보다 뒤(같은 초는 아니다)의 `human` 턴이 있어야 `answer`를 받는다. 없으면 `DC-04`이고 탈출구는 '사용자에게 물어 답을 받은 뒤 다시 실행'이다. `human` 턴은 lead 세션의 사람 입력만 그 종류로 적히므로 세션을 따로 맞추지 않는다. `--via bot`은 결정의 `origin`이 `bot`일 때만 이 확인을 건너뛴다. 턴 기록이 없으면 답을 받되 stderr에 알리고 결정에 `human_turn: false`를 남긴다(6.2.1절). 한계: 사람이 터미널에서 직접 `decision answer`를 쳐도 lead 세션에 사람 입력이 없으면 거절된다. `turns.jsonl`은 지울 수 있는 로컬 파일이라 지우면 '턴 기록 없음' 길로 들어온다. 봇 진입 과제에서는 에이전트가 `--via bot`으로 스스로 답할 수 있다(기록에는 via bot으로 남는다). 17절 H22.
 
 ### 8.11 `lint`
@@ -1779,14 +1805,14 @@ fullops doc stamp --path <경로> [--owner <담당>] [--summary "<요약>"] [--t
 
 - `plan list`: 과제 표의 행을 낸다. `plan ready`: `ready()`. `plan check`: 문법 오류의 줄 번호.
 - `plan add <KEY> --role <R> --goal "…" --source "…" [--after K,…] [--status "…"]`: 과제 표 끝에 행을 더한다. 상태 기본값은 `대기`다. `plan set <KEY> "<상태 칸 글>"`: 상태 칸을 바꾼다. 둘 다 표의 다른 부분을 건드리지 않는다. 커밋하지 않는다.
-- `status [--fetch]`: `status.json`과 같은 내용을 사람용으로 낸다. `--json`이면 그대로 낸다. 통합 대기 건마다 `landing`을 다시 계산하고 `metrics`를 계산해 `status.json`에 넣는다(6.2.3절). `--fetch`는 원격을 fetch한 뒤 계산한다. 사람용 출력의 첫머리에는 호출자의 역할 한 줄(7.3절), 현재 인박스 경로와 과제 키, 병렬 방침 문구(`parallel_brief`)를 내고, lead면 S-01의 lead 항목(준비된 행, 열린 결정, 통합 대기·보류, 열린 Run)을 이어 낸다. SessionStart 안내가 모델에게 닿지 않는 호스트(grok)와 hook이 돌지 않는 세션에서는 이 출력이 S-01을 대신한다.
+- `status [--fetch]`: `status.json`과 같은 내용을 사람용으로 낸다. `--json`이면 그대로 낸다. 통합 대기 건마다 `landing`을 다시 계산하고 `metrics`를 계산해 `status.json`에 넣는다(6.2.3절). `--fetch`는 원격을 fetch한 뒤 계산한다. 사람용 출력의 첫머리에는 호출자의 역할 한 줄(7.3절), 현재 인박스 경로와 과제 키, 병렬 방침 문구(`parallel_brief`)를 내고, lead면 S-01의 lead 항목(준비된 행, 열린 결정, 통합 대기·보류, 열린 Run)을 이어 낸다. 열린 결정 줄에는 선택지를 함께 낸다(새 세션이 같은 질문 글과 선택지의 카드로 다시 묻는다. 8.10절. 2.2.2). SessionStart 안내가 모델에게 닿지 않는 호스트(grok)와 hook이 돌지 않는 세션에서는 이 출력이 S-01을 대신한다.
 - `why [--session <sid>] [--last <N>] [--rule <ID>]`: 추적 줄과 이벤트별 실행 표식을 낸다.
 - `rules [--markdown|--json]`: 규칙 표. 사람용 출력과 `--markdown`은 같은 Markdown 표(ID, 이벤트, 강도, 탈출구, 1.24.0의 대응 기능)다. `--json`은 `{"ok":true,"rules":[{"id","event","strength","escapes":[{"case","escape"}],"origin"}]}`이고 `RULES`의 순서 그대로다. `event`는 `SessionStart`·`UserPromptSubmit`·`PreToolUse`·`Stop`·`StopFailure`, `strength`는 `Context`·`Effect`·`Deny`·`BlockOnce`·`BlockAlways`다.
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
 - `plan add`는 같은 키의 행이 있으면 사용법 오류(종료 코드 1)다. `plan check`는 오류가 있어도 종료 코드 0이다(오류 목록을 낸다).
-- `rules`가 내는 표는 hook 규칙 34개뿐이다. CLI의 거절 ID(RT, H, D, R, M, J, RV, HD, DC와 단계 이름)는 8절의 명령별 표가 정본이다(8.1절).
+- `rules`가 내는 표는 hook 규칙 37개뿐이다. CLI의 거절 ID(RT, H, D, R, M, J, RV, HD, DC와 단계 이름)는 8절의 명령별 표가 정본이다(8.1절).
 
 ### 8.14 탐색: `find`, `context`
 
@@ -2203,7 +2229,8 @@ pub enum Effect { CreateSession, TouchSession, BumpTurn, BindDispatch { id, task
                   MarkLanded(Vec<MessageId>), MarkSettled(DispatchId), CloseRuns(Vec<RunId>),
                   CloseLostSnapshots, GcSessions, SelfInstall, PeekCompletions { run: Option<RunId> },
                   SendLimitEscalation { dispatch: DispatchId, task: Option<String>, error: String },
-                  SetPromptFp(String) /* 프롬프트 이벤트가 없는 호스트의 prompt_fp. 7.5절 */ }
+                  SetPromptFp(String) /* 프롬프트 이벤트가 없는 호스트의 prompt_fp. 7.5절 */,
+                  RecordCards(Vec<(Card, Option<TaskKey>)>) /* T-16: 질문 카드를 열린 결정으로. 7.5절 */ }
         // TurnKind { Human, OrcaMessage, TaskNotification, Subagent, Workflow }. 문자열은 6.2.2절의 kind
 pub fn parse_plan(text: &str, template: &str) -> Plan;
 pub fn ready(plan: &Plan, state: &State, archive: &BTreeSet<TaskKey>, inbox_exists: &dyn Fn(&RoleId) -> bool) -> Vec<TaskKey>;
@@ -3567,7 +3594,7 @@ Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 | 완성본으로 두는 것 | `GitCli`의 메서드 전부, `OrcaCli`의 메서드 전부, `proc::run`(기본 구현), `caps_of`·`host_of_agent`, `parallel_brief`·`spec_command`, `baseline`(store의 글을 받는 함수와 core의 고르는 함수), `resolve_actor`(`sub` 포함), `State::sub_open`, `orca_wakes`·`ack_by`, `fixed_bin`, `load_deps`·`parse_deps`, `parse_packet`·`parse_packet_outcomes`, `skill_roots`(agy 포함), `path_text`·`same_path`, `stage_of`·`ready`, `fullops::assets`의 네 상수와 네 파일(10.1절), 네 호스트 어댑터의 `pass` |
 | 저장 | `fullops-store`의 `discover`, `load_config`, `read_state`·`update_state(repo, wait, derived, f)`(잠금·원자 교체·6.2.3절의 `status.json`), 세션 읽기·쓰기(모르는 필드 보존, `prompt_fp`), `read_plan(repo, template)`, `read_packet`·`read_packet_outcomes`, `load_deps(plugin_root, builtin)`(`deps.toml`의 TOML 해석과 10.7절 필드 규칙 검증. `fullops-core`는 `toml` 크레이트를 쓰지 않는다), 10.2절에 적은 그 밖의 함수 |
 | 파서 | `frontmatter`(6.1.3절의 1.24.0 문법과 쓰는 규칙), `plan`(6.1.2절), `config` 검증과 `baseline`. `deps.toml`의 파서는 위 저장 행의 `fullops-store::load_deps`다 |
-| 규칙 표 골격 | `RULES`에 모든 ID(S-00~S-06, P-00~P-03, T-00~T-13, X-00~X-07, F-01)·이벤트·강도·`escapes`·`origin`을 넣고 `check`는 `Finding::None`. `fullops rules` |
+| 규칙 표 골격 | `RULES`에 모든 ID(S-00~S-06, P-00~P-03, T-00~T-16, X-00~X-07, F-01)·이벤트·강도·`escapes`·`origin`을 넣고 `check`는 `Finding::None`. `fullops rules` |
 | 문구 골격 | `messages/mod.rs`(공통 조립 함수와 `parallel_brief`)와 묶음별 파일 여섯(`hook`·`flow`·`merge`·`lint`·`explore`·`install`. 빈 골격) |
 | 시험 도구 | `fullops-testkit`: 임시 레포·원격·워크트리·임시 홈 빌더, `fake-orca`(각본 파일 규약. 소비형과 `--peek`의 차이, `--retry-request`를 흉내 낸다), `fake-host`, `fake-curl`, `ScriptJudge`, 시나리오 파일 형식(12.1절. `pending` 포함), `rs` 구동기의 동사 목록. `Setup.host`의 네 호스트마다 `scenarios/fixtures/host/`의 입력 모양과 등록 인자로 hook을 부르고 출력 글을 `verdict` 어휘로 옮긴다. `Setup.parallel` |
 | CLI 규약 | 8.1절: 종료 코드, 출력 자리, `--json`의 네 형태, 거절 출력, 호출자 판정 함수, 인자 없는 실행의 종료 코드 0, 활성 표식·정책 오류의 예외 목록 |

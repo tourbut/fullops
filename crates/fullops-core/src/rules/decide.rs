@@ -86,7 +86,10 @@ fn candidate(input: &HookInput, facts: &mut dyn Facts) -> bool {
     let Some(tool) = &input.tool else {
         return false;
     };
-    if matches!(tool.kind, ToolKind::SubAgent | ToolKind::Workflow) {
+    if matches!(
+        tool.kind,
+        ToolKind::SubAgent | ToolKind::Workflow | ToolKind::Ask
+    ) {
         return true;
     }
     let relevant = |i: &Intent| !matches!(i, Intent::Other | Intent::Unparsed);

@@ -1,10 +1,31 @@
 //! Claude Code 어댑터(설계 7.2절 표의 `claude` 열).
 
 use super::{DecodeError, Host, decode_snake, edit_op, encode_claude, joined, text, tool};
-use fullops_core::model::{Dialect, EventKind, HookInput, HostId, ToolCall, ToolKind, Verdict};
+use fullops_core::model::{
+    Card, Dialect, EventKind, HookInput, HostId, ToolCall, ToolKind, Verdict,
+};
 use serde_json::Value;
 
 pub struct Claude;
+
+/// `AskUserQuestion`의 질문 글과 선택지 label(`questions[].question`, `questions[].options[].label`).
+/// 모양이 다른 질문이 하나라도 있으면 빈 목록이다: 기록도 거부도 하지 않는다.
+fn cards_of(args: &Value) -> Vec<Card> {
+    let card = |q: &Value| {
+        let labels = q["options"].as_array().filter(|o| !o.is_empty())?;
+        Some(Card {
+            question: text(q, "question").filter(|t| !t.trim().is_empty())?,
+            options: labels
+                .iter()
+                .map(|o| text(o, "label"))
+                .collect::<Option<_>>()?,
+        })
+    };
+    let questions = args["questions"].as_array();
+    questions
+        .and_then(|list| list.iter().map(card).collect())
+        .unwrap_or_default()
+}
 
 fn tool_of(name: &str, args: &Value) -> ToolCall {
     let shell = |dialect| ToolCall {
@@ -41,6 +62,10 @@ fn tool_of(name: &str, args: &Value) -> ToolCall {
             ..tool(name, ToolKind::SubAgent)
         },
         "Workflow" => tool(name, ToolKind::Workflow),
+        "AskUserQuestion" => ToolCall {
+            cards: cards_of(args),
+            ..tool(name, ToolKind::Ask)
+        },
         _ => tool(name, ToolKind::Other),
     }
 }

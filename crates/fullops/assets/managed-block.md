@@ -8,4 +8,5 @@
 - 코드를 바꾸면 커밋하고 `fullops lint --from <기준>`을 통과시킨다. 통과 기록 없이 턴을 끝내면 종료가 막힌다.
 - 맡은 과제가 끝나면 `fullops done`을 실행하고 출력된 본문으로 Orca preamble의 `worker_done`을 한 번 보낸다.
 - 배정은 `fullops dispatch`, 완료 보고의 병합은 `fullops merge`로 한다. 날것 `worker-start`와 터미널에 지시서를 붙여 넣는 배정은 쓰지 않는다.
+- lead가 사용자에게 물을 때는 질문 카드로만 묻고(Claude Code는 `AskUserQuestion`) 추천안을 1번 선택지에 두어 label에 `(추천)`을 붙인다. 카드는 열린 결정으로 기록된다. 답을 받으면 `fullops decision list --open`의 ID로 `fullops decision answer <ID> --answer "<답>"`을 실행한다. 카드 도구가 없는 호스트는 묻기 전에 `fullops decision add`로 적는다.
 - 막힌 이유는 `fullops why`로 본다.

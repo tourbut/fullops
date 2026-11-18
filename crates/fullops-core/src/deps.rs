@@ -139,7 +139,9 @@ pub const HOOK_TIMEOUTS: [(&str, u32); 5] = [
 /// PreToolUse 매처(설계 7.2절의 표).
 pub fn pre_tool_matcher(host: HostId) -> &'static str {
     match host {
-        HostId::Claude => "Bash|PowerShell|Write|Edit|MultiEdit|Agent|Task|Workflow",
+        HostId::Claude => {
+            "Bash|PowerShell|Write|Edit|MultiEdit|Agent|Task|Workflow|AskUserQuestion"
+        }
         HostId::Codex => "Bash|apply_patch|spawn_agent",
         HostId::Grok => "run_terminal_command|search_replace|hashline_edit|write|spawn_subagent",
         // agy의 매처는 정규식이 아니라 `|`를 못 쓴다: 등록은 `AGY_PRE_TOOLS`로 이름마다 한 항목이다

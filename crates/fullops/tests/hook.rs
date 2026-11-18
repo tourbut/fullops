@@ -93,9 +93,13 @@ fn every_rule_has_a_hit_scenario() {
         "S-00", "S-01", "S-02", "S-03", "S-04", "S-05", "S-06", "P-00", "P-01", "P-02", "P-03",
         "T-11", "T-12", "T-13", "F-01",
     ];
+    // 질문 카드는 Claude Code에만 있는 도구라 시나리오의 동사가 없다. `question_cards_become_open_decisions`가 직접 본다
+    let by_card = ["T-14", "T-15", "T-16"];
     for rule in fullops_core::rules::RULES {
         assert!(
-            expected.iter().any(|id| id == rule.id) || by_effect.contains(&rule.id),
+            expected.iter().any(|id| id == rule.id)
+                || by_effect.contains(&rule.id)
+                || by_card.contains(&rule.id),
             "{}의 걸림 시나리오가 없다",
             rule.id
         );
@@ -1174,6 +1178,190 @@ fn turns_are_counted_without_bodies() {
     assert_eq!(
         (session.turn, session.dispatch.map(|d| d.id.to_string())),
         (4, Some("ctx_9".to_string()))
+    );
+}
+
+/// 2.2.2: lead의 질문 카드는 열린 결정으로 남는다(T-16). 1번 선택지에 추천 표시가 없는 카드(T-15)와 worker의 카드(T-14)는 거부된다.
+#[test]
+fn question_cards_become_open_decisions() {
+    let h = Hooks::new(&Setup::default());
+    let question = |text: &str, labels: &[&str]| {
+        let options: Vec<Value> = labels
+            .iter()
+            .map(|label| json!({"label": label, "description": "설명"}))
+            .collect();
+        json!({"question": text, "header": "결정", "multiSelect": false, "options": options})
+    };
+    let ask = |who: &str, sid: &str, questions: Value| {
+        let more = json!({"tool_name": "AskUserQuestion", "tool_input": {"questions": questions}});
+        h.claude(who, sid, "PreToolUse", more, &[])
+    };
+    let open = || {
+        let status: Value =
+            serde_json::from_str(&std::fs::read_to_string(h.repo("lead").status_path()).unwrap())
+                .unwrap();
+        status["decisions"].clone()
+    };
+    // 진행 중인 배정의 키(A-1)는 아는 과제 키다
+    h.set_state(json!({"v": 1, "runs": [run_of("run_1", "lead", None)],
+        "dispatches": [dispatch("ctx_1", "run_1", "term_w", &h.sb.path("dev"), json!({}))]}));
+    h.claude(
+        "lead",
+        "s",
+        "SessionStart",
+        json!({"source": "startup"}),
+        &[],
+    );
+    // 사람 턴 기록이 있는 레포다: 카드가 아닌 결정은 그 뒤의 사람 턴이 있어야 닫힌다(DC-04)
+    h.prompt("lead", "s", "재시도를 넣어 줘");
+
+    // 추천 표시가 1번에 있는 카드는 통과하고, 질문마다 선택지 순서 그대로 열린 결정이 된다
+    let retry = question(
+        "A-1의 재시도 횟수를 몇 번으로 할까?",
+        &["3번 (추천)", "5번"],
+    );
+    let cache = question("캐시를 둘까?", &["둔다 (Recommended)", "두지 않는다"]);
+    assert_eq!(
+        ask("lead", "s", json!([retry.clone(), cache.clone()])),
+        json!({})
+    );
+    let decisions = h.state().decisions;
+    let seen: Vec<_> = decisions
+        .iter()
+        .map(|d| {
+            (
+                d.id.as_str(),
+                d.status,
+                d.question.as_str(),
+                d.options.join("|"),
+                d.key.as_ref().map(|k| k.as_str()),
+                &d.extra["card"],
+            )
+        })
+        .collect();
+    let card = json!(true);
+    assert_eq!(
+        seen,
+        [
+            (
+                "D001",
+                DecisionStatus::Open,
+                "A-1의 재시도 횟수를 몇 번으로 할까?",
+                "3번 (추천)|5번".to_string(),
+                Some("A-1"),
+                &card
+            ),
+            (
+                "D002",
+                DecisionStatus::Open,
+                "캐시를 둘까?",
+                "둔다 (Recommended)|두지 않는다".to_string(),
+                None,
+                &card
+            ),
+        ]
+    );
+    // 패널이 읽는 status.json에 선택지와 함께 나온다
+    assert_eq!(
+        open(),
+        json!([
+            {"id": "D001", "key": "A-1", "question": "A-1의 재시도 횟수를 몇 번으로 할까?",
+             "options": ["3번 (추천)", "5번"], "asked_at": decisions[0].asked_at, "expires_at": null},
+            {"id": "D002", "key": null, "question": "캐시를 둘까?",
+             "options": ["둔다 (Recommended)", "두지 않는다"], "asked_at": decisions[1].asked_at, "expires_at": null},
+        ])
+    );
+
+    // 같은 카드를 다시 내도(새 세션이 열린 결정을 다시 물어도) 결정은 늘지 않는다
+    assert_eq!(ask("lead", "s2", json!([retry.clone()])), json!({}));
+    assert_eq!(h.state().decisions, decisions);
+
+    // 1번 선택지에 추천 표시가 없으면 카드 전체를 거부하고 아무것도 적지 않는다
+    let unmarked = question("로그를 남길까?", &["남긴다", "남기지 않는다 (추천)"]);
+    let out = ask("lead", "s", json!([cache, unmarked.clone()]));
+    assert_eq!(
+        reason(&out),
+        "FullOps[T-15]: 질문 카드의 1번 선택지에 추천 표시가 없다: \"로그를 남길까?\". 다음: 추천하는 선택지를 1번에 두고 그 label에 `(추천)`을 붙여 다시 묻는다"
+    );
+    assert_eq!(out["hookSpecificOutput"]["permissionDecision"], "deny");
+    // 모양을 읽지 못한 카드는 적지도 막지도 않는다
+    for odd in [
+        json!("x"),
+        json!([{"question": "선택지가 없다"}]),
+        json!([{"options": []}]),
+    ] {
+        assert_eq!(ask("lead", "s", odd), json!({}));
+    }
+    assert_eq!(h.state().decisions, decisions);
+
+    // worker(dispatch가 묶인 세션)의 카드는 거부한다. dispatch 없이 역할 워크트리에서 연 세션은 그대로 둔다
+    h.prompt("dev", "w", PREAMBLE);
+    let out = ask("dev", "w", json!([retry]));
+    assert!(
+        reason(&out).starts_with("FullOps[T-14]") && reason(&out).contains("preamble의 `ask`"),
+        "{out}"
+    );
+    assert_eq!(ask("dev", "w2", json!([unmarked])), json!({}));
+    assert_eq!(h.state().decisions, decisions);
+
+    // 답을 받으면 `decision answer`로 닫는다. 카드의 답은 사람 턴으로 잡히지 않아도 받는다
+    let lead = h.sb.path("lead");
+    let answered = h.sb.cli(
+        &lead,
+        &["decision", "answer", "D001", "--answer", "3번 (추천)"],
+    );
+    assert_eq!(answered.code, Some(0), "{}", answered.stderr);
+    let closed = &h.state().decisions[0];
+    assert_eq!(
+        (
+            closed.status,
+            closed.answer.as_deref(),
+            &closed.extra["human_turn"]
+        ),
+        (DecisionStatus::Answered, Some("3번 (추천)"), &json!(false))
+    );
+    // 답하지 않은 카드는 열린 채 패널에 남는다
+    let left = open();
+    assert_eq!(
+        (left.as_array().unwrap().len(), &left[0]["id"]),
+        (1, &json!("D002"))
+    );
+    // 카드가 아닌 결정과 SHA를 고정한 결정은 전과 같이 사람 턴을 요구한다
+    let add = ["decision", "add", "--question", "배포할까?"];
+    assert_eq!(h.sb.cli(&lead, &add).code, Some(0));
+    let plain =
+        h.sb.cli(&lead, &["decision", "answer", "D003", "--answer", "예"]);
+    assert!(
+        plain.code == Some(2) && plain.stderr.contains("FullOps[DC-04]"),
+        "{}",
+        plain.stderr
+    );
+    let head = h.head("lead");
+    let pinned = [
+        "decision",
+        "add",
+        "--question",
+        "리뷰를 생략할까?",
+        "--sha",
+        &head,
+    ];
+    assert_eq!(h.sb.cli(&lead, &pinned).code, Some(0));
+    // `decision add`가 연 결정을 같은 질문 글의 카드로 물으면 그 결정을 다시 쓰고, 비어 있던 선택지를 채운다
+    let again = question("리뷰를 생략할까?", &["진행 (추천)", "생략"]);
+    assert_eq!(ask("lead", "s", json!([again])), json!({}));
+    let all = h.state().decisions;
+    assert_eq!(
+        (all.len(), all[3].options.join("|"), &all[3].extra["card"]),
+        (4, "진행 (추천)|생략".to_string(), &json!(true))
+    );
+    let waive = [
+        "decision", "answer", "D004", "--answer", "생략", "--sha", &head,
+    ];
+    let waived = h.sb.cli(&lead, &waive);
+    assert!(
+        waived.code == Some(2) && waived.stderr.contains("FullOps[DC-04]"),
+        "{}",
+        waived.stderr
     );
 }
 

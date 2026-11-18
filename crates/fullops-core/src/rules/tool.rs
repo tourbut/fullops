@@ -6,9 +6,10 @@ use crate::config::is_code;
 use crate::facts::{CommitScope, Facts};
 use crate::frontmatter::{inbox_of, parse_front_matter};
 use crate::model::{
-    HookInput, Intent, Known, Parallel, RoleId, RouteClass, RunId, TaskKey, ToolKind, TurnKind,
+    Card, HookInput, Intent, Known, Parallel, RoleId, RouteClass, RunId, TaskKey, ToolKind,
+    TurnKind,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// 정책 오류에서도 받는 하위 명령(CLI의 복구 명령 목록과 같다).
 const RECOVERY: [&str; 9] = [
@@ -58,8 +59,8 @@ pub(super) fn t00(input: &HookInput, facts: &mut dyn Facts) -> Finding {
     let (Some(error), Some(tool)) = (facts.policy_error(), &input.tool) else {
         return Finding::None;
     };
-    // 모르는 도구는 통과다
-    if tool.kind == ToolKind::Other {
+    // 모르는 도구는 통과다. 질문 카드도 받는다(사용자에게 묻는 것이 복구의 길이다)
+    if matches!(tool.kind, ToolKind::Other | ToolKind::Ask) {
         return Finding::None;
     }
     if let [Intent::Fullops { sub }] = call::intents().as_slice()
@@ -384,5 +385,71 @@ pub(super) fn t13(input: &HookInput, _facts: &mut dyn Facts) -> Finding {
         _ => return Finding::None,
     };
     call::effect(Effect::RecordTurn(kind));
+    hit("", Vec::new())
+}
+
+/// 질문 카드의 질문들. 질문 카드가 아니거나 모양을 읽지 못했으면 비어 있다.
+fn cards(input: &HookInput) -> &[Card] {
+    match &input.tool {
+        Some(tool) if tool.kind == ToolKind::Ask => &tool.cards,
+        _ => &[],
+    }
+}
+
+/// T-14: dispatch를 받은 세션에는 답할 사람이 없다. 카드를 띄우면 worker가 멈춘다.
+pub(super) fn t14(input: &HookInput, _facts: &mut dyn Facts) -> Finding {
+    if input.tool.as_ref().is_some_and(|t| t.kind == ToolKind::Ask) {
+        hit("", Vec::new())
+    } else {
+        Finding::None
+    }
+}
+
+/// T-15
+pub(super) fn t15(input: &HookInput, _facts: &mut dyn Facts) -> Finding {
+    let marked = |card: &Card| {
+        card.options.first().is_some_and(|first| {
+            let first = first.to_lowercase();
+            first.contains("(추천)") || first.contains("(recommended)")
+        })
+    };
+    match cards(input).iter().find(|card| !marked(card)) {
+        Some(card) => hit("", vec![card.question.chars().take(60).collect()]),
+        None => Finding::None,
+    }
+}
+
+/// T-16
+pub(super) fn t16(input: &HookInput, facts: &mut dyn Facts) -> Finding {
+    let cards = cards(input);
+    if cards.is_empty() {
+        return Finding::None;
+    }
+    // 아는 과제 키: 진행 중인 배정과 `PLANS.md`의 행
+    let mut known: BTreeSet<TaskKey> = BTreeSet::new();
+    if let Known::Yes(state) = facts.state() {
+        known.extend(state.dispatches.iter().map(|d| d.key.clone()));
+    }
+    if let Known::Yes(plan) = facts.plan() {
+        known.extend(plan.rows.iter().map(|r| r.key.clone()));
+    }
+    // 질문 글에 낱말로 적힌 아는 키가 하나일 때만 그 과제의 결정으로 적는다
+    let key_of = |question: &str| {
+        let words: BTreeSet<&str> = question
+            .split(|c: char| !(c.is_ascii_alphanumeric() || "._-".contains(c)))
+            .map(|word| word.trim_matches(['.', '_', '-']))
+            .collect();
+        let mut found = known.iter().filter(|key| words.contains(key.as_str()));
+        match (found.next(), found.next()) {
+            (Some(only), None) => Some(only.clone()),
+            _ => None,
+        }
+    };
+    call::effect(Effect::RecordCards(
+        cards
+            .iter()
+            .map(|card| (card.clone(), key_of(&card.question)))
+            .collect(),
+    ));
     hit("", Vec::new())
 }

@@ -338,16 +338,22 @@
       const tile = (count, label, tone) =>
         html`<div class="tile ${count > 0 ? tone : 'zero'}"><b>${count}</b><span>${label}</span></div>`
 
+      // 1번 선택지가 추천안이다. label의 추천 표시는 배지로 옮긴다
+      const RECOMMENDED = /\s*\((추천|recommended)\)/i
+      const optionChip = (option, first) =>
+        first && RECOMMENDED.test(String(option))
+          ? html`<span class="chip">${String(option).replace(RECOMMENDED, '')} ${badge('추천', 'ok')}</span>`
+          : html`<span class="chip">${option}</span>`
       function decisionRow(now) {
         return (d) =>
           html`<li>
             <div class="row">
-              <span class="key">${d.id}</span><span class="grow mono">${d.key}</span>
+              <span class="key">${d.id}</span><span class="grow">${d.key != null && taskLink(d.key, null)}</span>
               ${typeof d.expires_at === 'number' &&
               badge(d.expires_at > now ? `${span(d.expires_at - now)} 남음` : '만료됨', 'warn')}
             </div>
             <p class="q">${d.question}</p>
-            <div class="chips">${list(d.options).map((option) => html`<span class="chip">${option}</span>`)}</div>
+            <div class="chips">${list(d.options).map((option, i) => optionChip(option, i === 0))}</div>
             <div class="sub">${when(d.asked_at, now)} 질문</div>
           </li>`
       }

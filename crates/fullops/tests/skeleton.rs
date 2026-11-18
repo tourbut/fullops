@@ -285,11 +285,11 @@ fn rules_table_matches_design() {
         })
         .collect();
     let design = design_rules();
-    assert_eq!(design.len(), 34, "설계 표에서 읽은 규칙 수");
+    assert_eq!(design.len(), 37, "설계 표에서 읽은 규칙 수");
     assert_eq!(printed, design);
     assert_eq!(
         out["rules"].as_array().unwrap().len(),
-        34,
+        37,
         "ID가 겹치지 않는다"
     );
     for rule in out["rules"].as_array().unwrap() {

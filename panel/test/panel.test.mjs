@@ -151,6 +151,27 @@ test('빈 상태와 계산하지 않은 지표, 모르는 어휘에서도 죽지
   }
 })
 
+test('결정의 1번 선택지는 추천 배지로, 과제 키는 버튼으로 그린다', async () => {
+  const html = await render(
+    okRepo({
+      decisions: [
+        { id: 'D001', key: 'A-1', question: '재시도 횟수는?', options: ['3번 (추천)', '5번 (추천)'], asked_at: 1 },
+        { id: 'D002', key: null, question: '리뷰를 진행할까?', options: ['Go (Recommended)', '생략'], asked_at: 1 },
+        { id: 'D003', question: '기계가 연 결정', options: ['진행', '생략'], asked_at: 1 }
+      ]
+    })
+  )
+  // 표시는 배지로 옮기고, 1번이 아닌 선택지의 글은 그대로 둔다
+  assert.ok(html.includes('<span class="chip">3번 <span class="badge ok">추천</span></span>'), html)
+  assert.ok(html.includes('<span class="chip">5번 (추천)</span>'))
+  assert.ok(html.includes('<span class="chip">Go <span class="badge ok">추천</span></span>'))
+  // 표시가 없는 1번 선택지에는 배지를 붙이지 않는다
+  assert.ok(html.includes('<span class="chip">진행</span>'))
+  assert.equal(html.split('class="badge ok">추천').length - 1, 2)
+  assert.match(html, /<span class="key">D001<\/span><span class="grow"><button type="button" class="open key " data-key="A-1" data-role=""/)
+  assert.equal(html.split('data-key=').length - 1, 1)
+})
+
 test('과제 키를 누르면 그 과제의 글을 열고 목록으로 돌아온다', async () => {
   const { app, context } = mount()
   const asked = []

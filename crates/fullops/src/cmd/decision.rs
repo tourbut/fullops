@@ -12,9 +12,9 @@ use serde_json::json;
 /// SHA에 고정된 결정이 열려 있는 시간(초).
 const TTL: i64 = 24 * 60 * 60;
 
-/// 새 결정의 내용. `merge`의 M-04도 이것으로 연다.
+/// 새 결정의 내용. `merge`의 M-04와 hook의 T-16(질문 카드)도 이것으로 연다.
 #[derive(Default)]
-pub(super) struct Ask {
+pub(crate) struct Ask {
     pub key: Option<TaskKey>,
     pub question: String,
     pub options: Vec<String>,
@@ -27,7 +27,7 @@ pub(super) struct Ask {
 }
 
 /// 결정을 연다. `update_state`의 잠금 안에서 부른다.
-pub(super) fn open(state: &mut State, ask: Ask, now: i64) -> DecisionId {
+pub(crate) fn open(state: &mut State, ask: Ask, now: i64) -> DecisionId {
     let id = DecisionId::from_number(state.next_decision);
     state.next_decision += 1;
     state.decisions.push(Decision {
@@ -187,9 +187,13 @@ fn close(ctx: &Ctx, mut args: lexopt::Parser, drop: bool) -> Result<u8, CliError
         }
         // 봇이 연 결정에 봇이 답하는 길(8.10절)은 턴 기록과 무관하다
         let bot = via == Some(Origin::Bot) && decision.origin == Origin::Bot;
+        // 질문 카드로 물은 결정(T-16이 `card`를 적는다)은 카드의 답이 사람 턴으로 잡히지 않아도 받는다.
+        // SHA를 고정한 결정(리뷰 면제)은 카드를 띄웠다는 것만으로 받지 않는다(R1-5)
+        let card = decision.sha.is_none() && decision.extra.get("card") == Some(&json!(true));
         match human_turn(ctx, decision)? {
             _ if bot => {}
-            Some(false) => return Err(refused("DC-04", "", &[&id])),
+            Some(false) if !card => return Err(refused("DC-04", "", &[&id])),
+            Some(false) => {}
             Some(true) => verified = true,
             None => ctx.note(
                 "사람 턴 기록이 없어(hook이 돌지 않는 환경) 사람의 답인지 확인하지 못했습니다. 기록에 `human_turn: false`로 남깁니다.",

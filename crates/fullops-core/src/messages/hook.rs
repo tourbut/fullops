@@ -59,6 +59,8 @@ pub fn reason(id: &str, args: &[String]) -> Option<String> {
             a(0),
             a(1)
         ),
+        "T-14" => "dispatch를 받은 세션은 질문 카드로 사용자에게 직접 묻지 않는다.".into(),
+        "T-15" => format!("질문 카드의 1번 선택지에 추천 표시가 없다: \"{}\".", a(0)),
         "X-00" => format!("정책 오류: {}", a(0)),
         "X-01" => format!(
             "lint 통과 기록이 덮지 못하는 변경이 있다(시작점 {}): {}.",

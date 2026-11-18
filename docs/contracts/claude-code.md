@@ -124,6 +124,7 @@ P124의 모든 hook은 `python3 -I -X utf8 -c "…Path.home()/'.fullops-squad/ru
 | `Write` | `file_path`, `content` |
 | `Edit` | `file_path`, `old_string`, `new_string`, `replace_all` |
 | `Agent` | `prompt`, `description`, `subagent_type`, `model` |
+| `AskUserQuestion` | **추정**(2.2.2. 문서로 확인하지 못했다): `questions[]`. 원소는 `question`, `header`, `multiSelect`, `options[]`(`label`, `description`) |
 
 - `file_path`는 항상 절대 경로다. **Windows에서는 역슬래시로 온다**(Git Bash에서 hook이 돌아도 그렇다). 슬래시로 쓴 비교는 맞지 않으므로 구분자를 맞춘 뒤 비교해야 한다.
 - Windows에서 PowerShell 도구가 켜져 있으면 Claude는 PowerShell을 주 셸로 쓴다. Git Bash가 없는 Windows에서는 Bash 도구가 아예 등록되지 않는다. 셸 명령을 보는 hook은 `Bash|PowerShell`을 함께 걸어야 한다.
@@ -191,3 +192,4 @@ Orca가 worker에게 넣는 배정 프롬프트는 "첫 줄 안내 + 붙여 넣�
 | `<task-notification>`이 UserPromptSubmit의 `prompt`에 실리는가, 그 글의 형식 | 문서에 없고 실제 세션의 본문은 복사하지 않기로 했다 | `FULLOPS_TRACE=1`로 hook을 돌려 `turns.jsonl`의 분류를 본다(본문은 저장하지 않는다) |
 | Stop 차단으로 이어 갈 때 UserPromptSubmit이 정말 안 불리는가 | 문서에 명시가 없다 | X-07 시나리오를 실환경에서 한 번 돌린다 |
 | `onFailure`를 모르는 옛 버전(v2.1.295 미만)이 이 필드를 무시하는가 | 문서에 없다 | 최소 지원 버전을 2.1.295로 정하면 확인할 필요가 없다 |
+| `AskUserQuestion`의 `tool_input` 모양, 그 도구에 PreToolUse가 불리는가, 카드에 답했을 때 UserPromptSubmit이 불리지 않는가(추정: 도구 결과로 돌아온다) | 2.2.2에서 네트워크와 세션 없이 넣었다 | `FULLOPS_TRACE=1`로 lead 세션에서 카드를 한 번 내고 `fullops decision list --open`과 `turns.jsonl`을 본다. 모양이 다르면 hook은 적지도 막지도 않는다 |

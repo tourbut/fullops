@@ -999,3 +999,36 @@ hook 규칙 표(`RULES`)는 34개가 된다: 뼈대의 32개에 S-06과 T-13을 
 ### 11.3 남은 것
 
 - jevpet의 `orca-agents.md`에는 후보 절을 뺀 뒤 약 110줄의 레포 전용 운영 규칙이 남는다(옛 이름 `handovers/to_<역할>.md`, `packet-outcomes.json`, `PLANS.md`, `--override-role`이 섞여 있다). 정리와 자리는 레포 주인이 정한다.
+
+## 12. 2.2.2: 질문 카드를 열린 결정으로 (2026-11-19)
+
+레포 주인 결정(2026-11-19): (1) lead가 사용자에게 묻는 일은 질문 카드로만 한다(Claude Code는 `AskUserQuestion`). (2) 답하지 않은 카드는 선택지와 함께 Orca 패널에 남는다. (3) 1번 선택지가 추천안이다. 기록은 hook이 하고(자동), 추천 규칙도 hook이 강제한다. PostToolUse는 되살리지 않는다. Codex·grok·agy는 hook을 바꾸지 않고 글로 된 규칙으로 맞춘다.
+
+### 12.1 바뀐 것
+
+- 도구 대응(7.2절): `ToolKind::Ask`, `ToolCall.cards`(`Card { question, options }`). Claude Code의 PreToolUse 매처에 `AskUserQuestion`을 더했다. 규칙 후보(7.4절)에 질문 카드를 더했다.
+- 규칙 셋(7.5절. hook 규칙은 37개가 된다): T-14(dispatch가 묶인 세션의 카드 거부), T-15(lead 카드의 1번 선택지에 추천 표시가 없으면 거부), T-16(lead 카드를 열린 결정으로 적는 효과). T-00은 질문 카드를 막지 않는다.
+- `Effect::RecordCards`. hook은 판정을 낸 뒤 `state.json`을 한 번 쓰고 `status.json`이 함께 바뀐다. 여는 함수는 `decision add`와 같다(`cmd::decision::open`).
+- `decision answer`의 사람 턴 확인(8.10절): `card: true`이고 `sha`가 없는 결정은 사람 턴 없이도 받는다.
+- `status`의 열린 결정 줄에 선택지를 낸다.
+- 관리 블록 한 줄, `upgrade`의 필수 적용 `question-card`(`AGENTS.md`의 블록에 그 줄이 있는가), 스킬 `fullops-orca`의 "질문: lead가 전달한다"·"사용자 결정 기록".
+- 패널 2.2.2: 결정의 1번 선택지에 추천 배지, 결정의 과제 키가 버튼.
+
+### 12.2 정한 것
+
+| 항목 | 정한 것 | 이유 |
+|---|---|---|
+| worker의 카드 | 거부(T-14) | dispatch를 받은 세션에는 답할 사람이 없어 카드가 worker를 멈춘다. Orca의 preamble도 쓰지 말라고 하고, X-03의 탈출구가 이미 preamble의 `ask`를 가리킨다. dispatch 없이 역할 워크트리에서 사람이 연 세션은 그대로 둔다 |
+| 통과에 싣는 글 | 없다 | 어댑터와 7.2절의 판정 출력 표에 PreToolUse의 `Context`가 없다. 계약 문서(`docs/contracts/claude-code.md` 4.2절)는 PreToolUse의 `additionalContext`를 적고 있으나, 결정 ID를 실으려면 기록을 판정 출력 전에 써야 한다. lead는 `fullops decision list --open`으로 ID를 본다 |
+| 같은 질문의 범위 | 세션이 아니라 레포(`state.json`)의 열린 결정 | 결정에는 세션이 없다. 새 세션이 열린 결정을 다시 물을 때 같은 결정을 써야 한다 |
+| 사람 턴 확인(DC-04) | `card: true`이고 `sha`가 없는 결정만 사람 턴 없이 받는다 | 카드의 답은 도구 결과로 돌아와 `human` 턴을 남기지 않는다. 그대로 두면 hook이 도는 레포에서 카드로 받은 답이 모두 DC-04로 거절된다. `card`는 카드를 띄울 때 적히므로 SHA 고정 결정(리뷰 면제)에는 증거로 쓰지 않는다(R1-5) |
+| 과제 키 | 질문 글에 낱말로 적힌 아는 키가 하나일 때만 | 카드에는 과제 칸이 없다. 틀린 키보다 빈 키가 낫다 |
+| 읽지 못한 카드 | 적지도 막지도 않는다 | `AskUserQuestion`의 인자 모양을 문서로 확인하지 못했다(추정) |
+| 패널의 추천 배지 | 1번 선택지의 label에 표시가 있을 때만 | `merge`·`dispatch`·`route`가 여는 결정의 선택지(`진행`·`생략` 등)는 추천 순서가 아니다 |
+
+### 12.3 남은 것
+
+- `AskUserQuestion`의 `tool_input` 모양과 그 도구에 PreToolUse가 불리는지는 실환경에서 확인하지 못했다(`docs/contracts/claude-code.md` 6절).
+- lead가 답을 받고 `decision answer`를 하지 않으면 결정이 열린 채 남는다. 이것을 막는 Stop 규칙은 없다(S-01과 `status`, 패널에 나온다).
+- 기계가 여는 결정(M-04의 `진행`·`생략` 등)의 선택지에는 추천 표시가 없다. 카드로 다시 물을 때 lead가 1번에 `(추천)`을 붙인다.
+- 시나리오 구동기에는 질문 카드의 동사가 없다. `tests/hook.rs`의 `question_cards_become_open_decisions`가 직접 본다.

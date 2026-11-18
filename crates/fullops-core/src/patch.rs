@@ -277,6 +277,7 @@ mod tests {
             edits: Vec::new(),
             text: None,
             truncated: false,
+            cards: Vec::new(),
         }
     }
 
