@@ -1360,7 +1360,7 @@ fullops dispatch <KEY> [--role <R>] [--purpose build|fix|review|research] [--run
 
 `--terminal <핸들>`은 있는 터미널에 다시 배정할 때만 쓴다(`session_mode = "retain"`). 끝난 worker의 터미널은 `worker_done`이 받아들여지고 약 2분 뒤 Orca가 놓으며, 그 뒤의 재사용은 Orca가 거절한다. 그때는 `--terminal`을 빼고 새 세션으로 배정한다. `--terminal`을 주면 `--agent`·`--model`·`--effort`를 Orca에 넘기지 않는다(Orca가 함께 받지 않는다). tuple은 기록에만 쓴다.
 
-거절 조건(D-01~D-10과 D-14는 바깥 호출 전에 모두 검사해 걸린 것을 한꺼번에 보고한다. D-11은 4단계 뒤에 검사한다). 호출자가 dispatch가 묶인 세션이면 하위 배정이고, 그때는 D-04·D-08·D-09·D-13만 검사한다(8.15절):
+거절 조건(D-01~D-10과 D-14는 바깥 호출 전에 모두 검사해 걸린 것을 한꺼번에 보고한다. D-11은 4단계 뒤에 검사한다. 3~5단계는 준비 커밋 앞의 0단계에서 먼저 밟으므로 그 거절은 커밋이 생기기 전에 난다). 호출자가 dispatch가 묶인 세션이면 하위 배정이고, 그때는 D-04·D-08·D-09·D-13만 검사한다(8.15절):
 
 | ID | 조건 | 예외 | 탈출구 |
 |---|---|---|---|
@@ -1387,8 +1387,9 @@ D-13(하위 배정에만 적용한다): (a) 호출자가 하위 worker다(`sub`)
 
 하위 배정은 아래에서 1·7·8·9·10단계만 한다. 대상이 호출자 자신의 워크트리이고 인박스를 새로 만들지 않기 때문이다(8.15절).
 
+0. **미리 맞추기.** Run과 준비 커밋을 만들기 전에 3~5단계를 지금 있는 커밋으로 한 번 밟는다. 준비 커밋에 넣을 것(2단계의 경로 가운데 바뀐 것, 새 tuple 기록)이 있으면 올릴 것이 아직 없어도 3단계의 조건(lead의 `HEAD`가 기본 브랜치를 담는다, 기본 브랜치 워크트리가 깨끗하다)과 4단계의 조건(대상 워크트리가 깨끗하다)을 본다. 여기서 거절되면(`FullOps[publish]`, `FullOps[sync]`, 병합 충돌, D-11, push 실패) Run도 준비 커밋도 tuple 기록도 생기지 않는다. 걸림을 풀고 다시 실행한다.
 1. **Run 정하기.** `--run`이 있으면 그것. 없으면 호출자가 소유한 열린 Run이 하나면 그것, 없으면 Orca `orchestration run-create --objective "<글>"`로 만든다(`--objective`는 필수다). 글은 `fullops <KEY>: <인박스의 goal 앞 80자>`이고 인박스가 없으면 `fullops <KEY>`다. 만든 Run의 `coordinator`에 호출한 세션의 세션 핸들을 쓴다. dispatch 받은 세션은 항상 자기 소유(`owner = "dispatch:<ID>"`) Run을 쓴다. 상위 Run의 ID를 `--run`으로 주면 거절한다(D-04). Orca도 worker가 자기 Run이나 조상 Run을 묶지 못하게 한다.
-2. **준비 커밋.** lead 체크아웃에서 `.fullops/tasks/<KEY>/route.json`(과 요청 파일 `tasks/<KEY>/request.md`), `.fullops/inbox/to_<R>.md`, `.fullops/PLANS.md` 가운데 바뀐 것만 골라 `git commit --only`로 커밋 하나를 만든다(메시지 `fullops: 배정 준비 <KEY>`). tuple 기록은 이 커밋에 들어가도록 먼저 쓴다. 바뀐 것이 없으면 건너뛴다. 탐색 결과는 2.1.0부터 넣지 않는다: Git 공용 디렉터리에 있어 worker의 워크트리가 같은 파일을 본다(6.1.5절).
+2. **준비 커밋.** lead 체크아웃에서 `.fullops/tasks/<KEY>/route.json`(과 요청 파일 `tasks/<KEY>/request.md`), `.fullops/inbox/to_<R>.md`, `.fullops/PLANS.md` 가운데 바뀐 것만 골라 `git commit --only`로 커밋 하나를 만든다(메시지 `fullops: 배정 준비 <KEY>`). tuple 기록은 이 커밋에 들어가도록 커밋 바로 앞에 쓴다(0단계가 거절하면 쓰지 않는다). 바뀐 것이 없으면 건너뛰고, 그때는 3~5단계도 다시 하지 않는다(0단계가 이미 했다). 탐색 결과는 2.1.0부터 넣지 않는다: Git 공용 디렉터리에 있어 worker의 워크트리가 같은 파일을 본다(6.1.5절).
 3. **기록 게시**(`publish_records`). lead의 브랜치가 기본 브랜치가 아니면 lead의 `HEAD`가 `refs/heads/<base>`를 조상으로 가져야 한다(아니면 종료 코드 2, 탈출구 `fullops sync --self`). 기본 브랜치가 다른 워크트리에 체크아웃돼 있고 깨끗하면 거기서 `git merge --ff-only <lead HEAD>`를 하고, 체크아웃돼 있지 않으면 `git update-ref refs/heads/<base> <lead HEAD> <이전 값>`을 한다. 그 워크트리가 더러우면 종료 코드 2. 원격이 있으면 `git push <remote> <base>`를 한다. 실패하면 종료 코드 4.
 4. **대상 워크트리 동기화.** 대상 워크트리가 깨끗하면 `git merge --ff-only <base tip>`, ff가 아니면 `git merge --no-edit <base tip>`. 충돌하면 `git merge --abort` 뒤 `sync_pending[R]`에 기록하고 종료 코드 3. 대상이 더러우면 `sync_pending[R]`에 기록하고 종료 코드 2(탈출구: 그 worker의 완료 뒤 `fullops sync --role <R>`). 성공하면 `sync_pending[R]`을 지운다. Review는 이 단계를 건너뛴다.
 5. **기준선 확인.** D-11을 검사한다. 걸리면 종료 코드 2.
@@ -1417,7 +1418,9 @@ D-13(하위 배정에만 적용한다): (a) 호출자가 하위 worker다(`sub`)
 9. **상태 쓰기.** 예약 기록의 `id`를 Orca의 `dispatchId`로 바꾸고 `task_id`, `terminal`(없으면 `null`)을 채운다. Run(없으면 추가), `tasks[KEY].last_tuple`, `--reason limit`이면 `limit_redispatch += 1`. Orca의 영수증에는 `dispatchId`·`taskId`·`runId`가 항상 있다. 없으면 응답 형식 오류로 보고 8단계의 "결과를 모른다"로 처리한다.
 10. run id, task id, dispatch id, worker 핸들(없으면 "터미널 없음")과 다음 할 일을 출력한다. 다음 할 일은 호출한 세션의 세션 핸들이 Run의 `coordinator`와 같으면 "턴을 끝내면 Orca가 깨운다", 아니면 "`fullops wait --run <R>`"다.
 
-다시 실행해도 안전하다. 2~6은 이미 된 일을 건너뛰고, 8은 예약 기록의 요청 ID로 같은 요청을 다시 보낸다. Orca가 실패한 시작을 다시 실행하지 말라고 안내하는 경우(종료 코드가 0이 아니고 `result`가 있는 경우)와 Orca가 `error`로 거절한 경우에는 예약 기록을 지웠으므로 다음 `dispatch`가 새 요청이 된다. 그 판단은 호출한 쪽이 Orca의 `next`를 읽고 한다.
+준비 커밋 뒤에 멈추는 경우는 셋이다. (1) 준비 커밋의 push 실패(종료 코드 4). (2) 준비 커밋의 파일(인박스·route·`PLANS.md`)이 대상 브랜치의 같은 파일과 충돌하거나(종료 코드 3), 반영 뒤에도 `Handover` 파일이 없다(D-02 `target`). (3) 8단계의 Orca 실패. 0단계가 기본 브랜치의 나머지를 이미 반영했으므로 4단계에 남는 충돌은 준비 커밋의 파일뿐이다. 이때는 커밋을 되돌리지 않는다: 기본 브랜치에 있어야 `fullops sync --role <R>`이 같은 충돌을 대상 워크트리에 다시 만들어 사람이 풀 수 있다.
+
+다시 실행해도 안전하다. 0~6은 이미 된 일을 건너뛰고(준비 커밋 뒤에 멈춘 게시와 동기화는 다음 실행의 0단계가 잇는다), 8은 예약 기록의 요청 ID로 같은 요청을 다시 보낸다. Orca가 실패한 시작을 다시 실행하지 말라고 안내하는 경우(종료 코드가 0이 아니고 `result`가 있는 경우)와 Orca가 `error`로 거절한 경우에는 예약 기록을 지웠으므로 다음 `dispatch`가 새 요청이 된다. 그 판단은 호출한 쪽이 Orca의 `next`를 읽고 한다.
 
 spec 문자열(한 문단, 이 순서):
 
@@ -1596,7 +1599,7 @@ fullops sync [--role <R>] [--self]
 | M-08 | 병합 기록 커밋 하나(`fullops: 병합 기록 <KEY>`): `PLANS.md`에서 그 키의 행 상태를 `완료(<sha 7자>)`로 바꾸고(행이 있을 때), `## 배정 기록`에 그 과제의 dispatch 줄을 덧붙이고, `reported.followups`를 `## 완료 보고 후속 요청`에 덧붙이고, `tasks/<KEY>/reviews/…`의 미커밋 파일을 넣는다. 리뷰 기록은 lead 체크아웃에 쓰이므로, lead가 기본 워크트리가 아니면(coordinator 역할 워크트리) 그 체크아웃의 미커밋 리뷰 파일을 기본 워크트리의 같은 경로로 복사해 이 커밋에 넣고, 커밋한 뒤 lead 쪽 사본을 치운다(미추적 파일은 지우고 추적되던 파일은 lead 브랜치의 것으로 되돌린다. 남기면 M-11이 lead 체크아웃을 '깨끗하지 않다'로 예약만 남긴다. M-11의 동기화가 커밋된 기록을 lead 체크아웃에 가져온다). 커밋 본문에 리뷰 판정 사유(`need.reason`)와 lint 재사용 여부를 적는다 | 종료 코드 1 |
 | M-09 | 원격이 있고 `--no-push`가 아니면 `git push <remote> refs/heads/<base>:refs/heads/<base>`. force는 쓰지 않는다 | 종료 코드 4. completion은 통합 대기로 남는다. 다시 실행하면 M-06~M-08을 건너뛰고 push만 한다. 오프라인이라 fetch를 못 해 거절된 push면 'FULLOPS_OFFLINE 없이 다시 실행' 한 문장을 붙인다 |
 | M-10 | `landing(sha) == Landed`를 확인하고 `landed_at`을 쓴다. hold가 있었으면 `released_hold`로 옮긴다. 처리 표시: 그 completion의 메시지(`messages[]`에서 `id`가 completion의 `id`와 같은 것)와, `messages[].dispatch`가 이 과제 키의 dispatch(목적 무관)인 `worker_done` 메시지 가운데 `acked_at`이 없는 것 전부에 쓴다. 병합이 끝났으면 그 과제의 리뷰 보고와 앞선 실패 보고도 처리된 것이기 때문이다. 같은 키의 다른 통합 대기 보고 가운데 이미 `Landed`인 것(병합한 SHA에 담긴 앞선 보고)도 함께 닫는다(R4-3). 다른 종류(`question`·`escalation` 등)와 다른 과제의 메시지는 건드리지 않는다. 과제에 열린 dispatch가 없으면 `archive.jsonl`로 옮긴다 | - |
-| M-11 | 동기화: 등록 역할의 워크트리마다(lead의 coordinator 브랜치 포함) `settled` 없는 dispatch가 없고 깨끗하면 `git merge --ff-only <base>`, ff가 아니면 `git merge --no-edit <base>`(충돌이면 abort). 그 밖은 `sync_pending[R] = <base tip>`. 강제 reset과 삭제는 쓰지 않는다 | 예약만 남기고 계속 |
+| M-11 | 동기화: 등록 역할의 워크트리마다(lead의 coordinator 브랜치 포함) `settled` 없는 dispatch가 없고 깨끗하면 `git merge --ff-only <base>`, ff가 아니면 `git merge --no-edit <base>`(충돌이면 abort). 폴더 이름 변경 감지는 끈다(9.1절). 그 밖은 `sync_pending[R] = <base tip>`. 강제 reset과 삭제는 쓰지 않는다 | 예약만 남기고 계속 |
 | M-12 | 그 과제의 `active` snapshot이 있으면 8.9절의 `cleanup --finished`를 한다. 앞서 정리하지 못해 `hold`가 남은 다른 과제의 snapshot도 다시 정리해 본다(8.9절 cleanup의 '다시 보기') | 정리하지 못하면 snapshot에 hold 사유를 적고 계속 |
 | M-13 | 결과 요약, 그 Run에 남은 미처리 메시지 ID와 미정산 dispatch, 준비된 행 목록을 출력한다. 다음 할 일은 준비된 행이 있으면 "`fullops task new` → `fullops dispatch`", 미정산 dispatch가 남았으면 8.6절 반환값의 `next`와 같은 문장이다 | - |
 
@@ -2038,7 +2041,8 @@ fullops가 관리하는 세션(lead와 worker)은 나눌 수 있는 일을 서�
 
 - 프로세스 없이 읽는 것: 레포 루트, Git 디렉터리, 공용 디렉터리(`.git` 파일의 `gitdir:`와 그 안의 `commondir`), 현재 브랜치와 detached 여부(`HEAD` 파일).
 - 프로세스로 읽는 것: `merge-base`, `merge-base --is-ancestor`, `diff`, `status`, `cat-file --batch`, `rev-parse --verify`, `worktree list --porcelain`. 탐색(8.14절)만 `ls-tree -r -z`와 `grep -F -l -z --full-name`을 더 쓴다. hook은 이 둘을 부르지 않는다.
-- 쓰기는 CLI만 한다: `commit --only`, `mv`, `merge`(`--ff-only` 또는 `--no-edit`), `merge --abort`, `reset --keep`(M-07만), `push`(force 없음), `fetch`, `update-ref`(이전 값 확인 포함), `worktree add --detach`, `worktree remove`(force 없음). `commit_only`는 준 경로 가운데 바뀐 것(새 파일과 삭제 포함)만 `git add -A -- <경로>`로 인덱스에 넣은 뒤 `git commit --only -- <경로>`를 한다(`commit --only`는 추적되지 않은 새 파일을 받지 않는다). 그 밖의 경로의 인덱스는 건드리지 않는다. 읽기 쪽의 `diff --name-only`와 `--numstat`은 `--no-renames`로 불러 이름 변경을 삭제와 추가로 낸다(크기 판정과 `changed()`가 새 경로를 본다). 이름 변경을 찾아야 하는 곳(lint의 DEP-001 등)은 `name_status`를 쓴다.
+- 쓰기는 CLI만 한다: `commit --only`, `mv`, `merge`(`--ff-only` 또는 `--no-edit`. 아래의 폴더 이름 변경 감지 끄기), `merge --abort`, `reset --keep`(M-07만), `push`(force 없음), `fetch`, `update-ref`(이전 값 확인 포함), `worktree add --detach`, `worktree remove`(force 없음). `commit_only`는 준 경로 가운데 바뀐 것(새 파일과 삭제 포함)만 `git add -A -- <경로>`로 인덱스에 넣은 뒤 `git commit --only -- <경로>`를 한다(`commit --only`는 추적되지 않은 새 파일을 받지 않는다). 그 밖의 경로의 인덱스는 건드리지 않는다. 읽기 쪽의 `diff --name-only`와 `--numstat`은 `--no-renames`로 불러 이름 변경을 삭제와 추가로 낸다(크기 판정과 `changed()`가 새 경로를 본다). 이름 변경을 찾아야 하는 곳(lint의 DEP-001 등)은 `name_status`를 쓴다.
+- `merge`는 `-c merge.directoryRenames=false`로 부른다. `done`이 끝난 차수의 인박스를 `tasks/<KEY>/`로 옮기면(8.7절) git은 `inbox/`의 파일이 모두 한 폴더로 간 것을 폴더 이름 변경(`inbox/` → `tasks/<KEY>/`)으로 읽고, 반대쪽이 새로 만든 인박스까지 그 폴더로 옮기려 한다. git의 기본값(`conflict`)에서는 충돌(`CONFLICT (file location)`)이고 `true`면 말없이 옮긴다. 파일 이름 변경 감지는 끄지 않는다(`-X no-renames`를 쓰지 않는다): 코드 병합에서 옮긴 파일과 고친 파일을 잇는 데 쓴다. fullops의 병합은 모두 이 호출이다: 8.5절 3·4단계, `sync`(역할과 `--self`), M-03·M-06·M-11, `task recover`.
 - 모든 호출의 환경: `GIT_TERMINAL_PROMPT=0`, `GIT_NO_LAZY_FETCH=1`, `LC_ALL=C`. 인자에 `-c core.quotepath=false`.
 - 인자 주입 막기(검증 뒤 수정 R2-1): 레포·설정·인자에서 온 값이 `-`로 시작하면 git을 부르지 않는다(읽기는 `Unknown("git_arg")`, 쓰기는 `Err`). 값 앞이나 뒤에 `--`를 넣는다(rev를 받는 diff 계열과 `reset --keep`·`grep`은 값 뒤에 넣어 없는 rev가 같은 이름의 파일로 읽히는 것도 막는다). `rev-parse`는 `--end-of-options`를 쓴다. `fetch`는 `refs/heads/<base>`로, `push`는 `:` 없는 이름이면 `refs/heads/x:refs/heads/x`로 넘기고 `+`(강제)·`-`로 시작하는 refspec을 거절한다. 원격은 원격 이름의 꼴(6.1.1절)이면서 이 레포에 등록된 이름(`git remote get-url -- <이름>`)이어야 한다(등록되지 않은 이름을 git이 경로로 읽어 커밋된 폴더의 hook이 도는 길을 막는다). 그래서 8.5절 3단계·R-07·M-03·M-09의 `git push <remote> <base>`·`git fetch <remote> <base>`는 실제로는 온전한 ref로 간다. `[git].remote`에 URL이나 경로를 적던 레포는 정책 오류나 fetch·push 실패(종료 코드 4)가 된다(17절 H24). `init`이 사용자가 친 인자로 부르는 git(`remote get-url`, `ls-remote`, `push`)에는 `--`를 넣지 않았다(커밋된 값이 아니다).
 - diff 계열(`--name-only`·`--numstat`·`--name-status`·`-U0`)은 한 함수가 부르고 `-c core.attributesFile= --attr-source=<빈 트리 4b825dc…> --no-ext-diff --no-textconv --no-relative`를 고정한다(R1-2·R1-3. `--attr-source`는 git 2.40 이상이고 최소 버전 2.41 안이다). `-U0`은 `--inter-hunk-context=0 --src-prefix=a/ --dst-prefix=b/`도 고정한다. 작업 트리·커밋된 `.gitattributes`, `diff.noprefix`·`diff.mnemonicPrefix`·`diff.external`, XDG 속성 파일이 lint·리뷰 판정을 가리지 못한다. `--text`는 쓰지 않는다(실제 바이너리의 diff가 통째로 나온다). 남는 통로(`info/attributes`)는 lint의 안전망(8.11절 4번)과 리뷰의 '줄 수를 세지 못한 코드 파일'(8.9절)이 받는다. `FileStat`에 `binary`(git이 줄 수를 세지 못함)가 있다.
@@ -2371,7 +2375,7 @@ pub trait Git {   // 구현: GitCli { repo_root, timeout }. A가 메서드 전�
     fn grep_files(&self, rev: &str, literals: &[String]) -> Known<Vec<String>>;         // 탐색. grep -F -l -z --full-name
     fn commit_only(&self, paths: &[String], message: &str) -> Result<Option<Sha>, ExtError>;
         // 준 경로 가운데 바뀐 것(새 파일·삭제 포함)만 add -A로 인덱스에 넣고 commit --only. 바뀐 것이 없으면 None(9.1절)
-    fn merge(&self, cwd: &Path, rev: &str, mode: MergeMode) -> Result<MergeOutcome, ExtError>; // FfOnly | NoEdit → Done | Conflict
+    fn merge(&self, cwd: &Path, rev: &str, mode: MergeMode) -> Result<MergeOutcome, ExtError>; // FfOnly | NoEdit → Done | Conflict. merge.directoryRenames=false(9.1절)
     fn push(&self, remote: &str, refspec: &str) -> Result<(), ExtError>;
     fn fetch(&self, remote: &str, branch: &str) -> Result<(), ExtError>;
     fn name_status(&self, from: &str, to: &str) -> Known<Vec<NameStatus>>;      // diff --name-status -z. NameStatus { status: char, path: String, old_path: Option<String> }

@@ -2166,6 +2166,9 @@ fn sync_after_reopen_keeps_the_record_apart_from_the_new_inbox() {
          [[step]]\nact = \"lead_dispatches\"\nkey = \"A-1\"\nrole = \"dev\"\npurpose = \"fix\"\nbare = true\nexpect = { verdict = \"deny\", rule = \"sync\", escape = \"fullops sync --role dev\" }\n",
     );
     std::fs::remove_file(dev.join("stray.txt")).unwrap();
+    // 거절된 배정은 준비 커밋을 남기지 않는다. lead가 새 인박스를 직접 커밋한 경우를 본다
+    d.sb.git_ok(&lead, &["add", "-A"]);
+    d.sb.git_ok(&lead, &["commit", "-q", "-m", "다음 차수 인박스"]);
     let synced = d.sb.cli(&lead, &["sync", "--role", "dev"]);
     assert_eq!(synced.code, Some(0), "{}{}", synced.stdout, synced.stderr);
     assert_eq!(read(&log), record);
@@ -3834,4 +3837,80 @@ fn rework_guidance_skips_the_tester() {
         "{}",
         rework.stderr
     );
+}
+
+/// 거절된 배정은 준비 커밋도 Run도 남기지 않는다. 걸림을 풀고 다시 실행하면 worker가 한 번만 뜬다.
+#[test]
+fn refused_dispatch_leaves_no_preparation_commit_or_run() {
+    let mut d = Driver::new(&Setup::default());
+    let (lead, dev) = (d.sb.path("lead"), d.sb.path("dev"));
+    // 대상 워크트리가 더러워 준비 커밋을 반영하지 못한다
+    d.sb.write(&dev.join("stray.txt"), "치우지 않은 파일\n");
+    let refused = "[[step]]\nact = \"lead_dispatches\"\nkey = \"A-1\"\nrole = \"dev\"\nagent = \"claude\"\nmodel = \"other-model\"\neffort = \"medium\"\n\
+                   expect = { verdict = \"deny\", rule = \"sync\" }\n";
+    for _ in 0..2 {
+        steps(&mut d, refused);
+        let log = d.sb.git_ok(&lead, &["log", "--format=%s", "--all"]);
+        assert!(!log.contains("배정 준비"), "{log}");
+        // 커밋에 넣으려던 tuple 기록도 쓰지 않았다
+        let route = read(&lead.join(".fullops/tasks/A-1/route.json"));
+        assert!(!route.contains("other-model"), "{route}");
+        assert_eq!(state(&d.sb)["runs"], json!([]));
+        assert!(d.sb.orca_calls().is_empty());
+    }
+    std::fs::remove_file(dev.join("stray.txt")).unwrap();
+    steps(&mut d, DISPATCH);
+    let log = d.sb.git_ok(&lead, &["log", "--format=%s", "origin/main"]);
+    assert_eq!(log.matches("배정 준비").count(), 1, "{log}");
+    assert_eq!(head(&d.sb, "dev"), head(&d.sb, "lead"));
+    assert_eq!(calls(&d.sb, "run-create").len(), 1);
+    assert_eq!(calls(&d.sb, "worker-start").len(), 1);
+    assert_eq!(state(&d.sb)["dispatches"].as_array().map(Vec::len), Some(1));
+}
+
+/// `done`이 끝난 차수의 인박스를 모두 `tasks/<KEY>/`로 옮기면 git은 그것을 폴더 이름 변경(`inbox/` → `tasks/<KEY>/`)으로 읽는다.
+/// fullops의 병합은 그 감지를 끄므로 lead 브랜치의 새 인박스가 제자리에 남고 `sync --self`가 충돌하지 않는다.
+#[test]
+fn sync_self_keeps_a_new_inbox_when_the_base_moved_finished_rounds() {
+    let sb = Sandbox::with(&roles(&[
+        ("dev", "worker"),
+        ("art", "worker"),
+        ("coor", "coordinator"),
+    ]));
+    let (lead, coor) = (sb.path("lead"), sb.path("coor"));
+    let commit = |dir: &Path, message: &str| {
+        sb.git_ok(dir, &["add", "-A"]);
+        sb.git_ok(dir, &["commit", "-q", "-m", message]);
+    };
+    for role in ["dev", "art"] {
+        let inbox = format!(".fullops/inbox/to_{role}.md");
+        sb.write(
+            &lead.join(inbox),
+            &format!("{role}의 지시서\n하나\n둘\n셋\n"),
+        );
+    }
+    commit(&lead, "인박스 둘");
+    sb.git_ok(&coor, &["merge", "-q", "--ff-only", "main"]);
+    // lead 브랜치(coordinator)에는 다음 지시서가 있고, 기본 브랜치에서는 두 차수가 끝나 인박스가 완료 기록으로 옮겨졌다
+    sb.write(&coor.join(".fullops/inbox/to_qa.md"), "다음 지시서\n");
+    commit(&coor, "다음 인박스");
+    std::fs::create_dir_all(lead.join(".fullops/tasks/A-1")).unwrap();
+    for role in ["dev", "art"] {
+        let from = format!(".fullops/inbox/to_{role}.md");
+        let to = format!(".fullops/tasks/A-1/{role}.r0.md");
+        sb.git_ok(&lead, &["mv", &from, &to]);
+        commit(&lead, &format!("완료 {role}"));
+    }
+    // 날것 병합은 새 인박스를 옮겨진 폴더로 보내려다 충돌한다
+    let raw = sb.git(&coor, &["merge", "--no-edit", "main"]);
+    assert_ne!(raw.code, Some(0), "{}{}", raw.stdout, raw.stderr);
+    assert!(raw.stdout.contains("file location"), "{}", raw.stdout);
+    sb.git_ok(&coor, &["merge", "--abort"]);
+
+    let synced = sb.cli(&coor, &["sync", "--self"]);
+    assert_eq!(synced.code, Some(0), "{}{}", synced.stdout, synced.stderr);
+    assert!(coor.join(".fullops/inbox/to_qa.md").is_file());
+    assert!(coor.join(".fullops/tasks/A-1/dev.r0.md").is_file());
+    assert!(!coor.join(".fullops/inbox/to_dev.md").exists());
+    assert_eq!(sb.git_ok(&coor, &["status", "--porcelain"]), "");
 }

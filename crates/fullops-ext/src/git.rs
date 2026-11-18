@@ -72,6 +72,7 @@ pub trait Git {
     fn grep_files(&self, rev: &str, literals: &[String]) -> Known<Vec<String>>;
     /// 바뀐 경로만 골라 `git commit --only`. 바뀐 것이 없으면 `None`.
     fn commit_only(&self, paths: &[String], message: &str) -> Result<Option<Sha>, ExtError>;
+    /// 폴더 이름 변경 감지 없이 병합한다(`merge.directoryRenames=false`). fullops의 병합은 모두 이것을 쓴다.
     fn merge(&self, cwd: &Path, rev: &str, mode: MergeMode) -> Result<MergeOutcome, ExtError>;
     /// force를 쓰지 않는다(`+`로 시작하는 refspec은 거절한다). `remote`는 이 레포에 등록된 원격 이름이어야 한다.
     /// `refspec`이 `:` 없는 브랜치 이름이면 `refs/heads/<이름>`끼리 올린다.
@@ -631,9 +632,19 @@ impl Git for GitCli {
         if !plain(&[rev]) {
             return Err(refused(rev));
         }
+        // 폴더 이름 변경 감지를 끈다: `done`이 인박스를 `tasks/<KEY>/`로 옮긴 것을 git이 `inbox/` 폴더의 이름 변경으로 읽어
+        // 반대쪽의 새 인박스까지 옮기려다 충돌한다. 파일 이름 변경 감지는 그대로 둔다(코드 병합이 쓴다)
         let out = self.call(
             cwd,
-            &["merge", "--quiet", flag, "--", rev],
+            &[
+                "-c",
+                "merge.directoryRenames=false",
+                "merge",
+                "--quiet",
+                flag,
+                "--",
+                rev,
+            ],
             self.slow(),
             None,
             false,
