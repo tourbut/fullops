@@ -922,6 +922,11 @@ fn review_dispatch_goes_to_the_snapshot_in_a_separate_session() {
         )) && spec.contains("Purpose: review")
     );
     assert!(!spec.contains("Handover:") && spec.contains("[리뷰] A-1"));
+    // 리뷰어는 result.json을 채우고 check가 통과한 뒤에 보고한다
+    assert!(
+        spec.contains("`result.json`") && spec.contains(" review check A-1`가 통과한 뒤"),
+        "{spec}"
+    );
     // 리뷰 보고는 completion을 만들지 않는다
     let reviewer = state(&d.sb)["dispatches"][1].clone();
     assert_eq!(

@@ -81,6 +81,7 @@ fn review_gate(
                 "{k} {short}: 독립 리뷰를 진행할까요? 판정 사유: {} 예상 비용: 리뷰 worker 한 번(코드 파일 {}개, {}줄).",
                 need.reason, need.code_files, need.code_lines
             );
+            let floor = decision::floor(repo);
             let id = ctx.update_state(None, |state| {
                 // 만료된 결정은 답을 받을 수 없으므로 닫고 다시 묻는다
                 let old = |d: &&mut Decision| Some(&d.id) == stale.as_ref();
@@ -98,7 +99,7 @@ fn review_gate(
                     origin,
                     ..Ask::default()
                 };
-                decision::open(state, ask, now)
+                decision::open(state, ask, now, floor)
             })?;
             Err(ask(&id))
         }

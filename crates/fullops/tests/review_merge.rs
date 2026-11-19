@@ -904,6 +904,21 @@ fn review_of_old_sha_does_not_cover_fix_commit() {
     assert!(w.contains(new.as_str(), "origin/main"));
 }
 
+/// 새 결정 번호는 `PLANS.md`에 이미 적힌 결정 번호(옛 번호 체계의 프로젝트 결정)와 겹치지 않는다.
+#[test]
+fn decision_add_skips_numbers_already_in_plans() {
+    let w = World::new();
+    let plans = w.lead().join(".fullops/PLANS.md");
+    let text = std::fs::read_to_string(&plans).unwrap_or_default();
+    w.sb.write(
+        &plans,
+        &format!("{text}\n- D059, D160: 옛 결정. 커밋 d904655\n"),
+    );
+    let add = ["decision", "add", "--question", "배포할까요?", "--json"];
+    assert_eq!(out(&w.cli(&add))["id"], "D161");
+    assert_eq!(out(&w.cli(&add))["id"], "D162");
+}
+
 /// 결정 검증(설계 8.10절): SHA 불일치, 만료, 허용 밖, 늦은 답.
 #[test]
 fn decision_answer_is_validated() {
@@ -1194,6 +1209,9 @@ fn snapshot_cleanup_holds_when_unsure() {
     assert_eq!(w.state().snapshots[0].state, SnapshotState::Active);
     expect(&w.cli(&["review", "prune"]), 0, &["A-1@", "정리 보류"]);
     std::fs::remove_file(snapshot.join("note.txt")).unwrap();
+    // git이 무시하는 생성 캐시는 막지 않고 함께 지운다
+    w.sb.write(&w.lead().join(".git/info/exclude"), "__pycache__/\n");
+    w.sb.write(&snapshot.join("src/__pycache__/a.pyc"), "캐시\n");
     expect(
         &w.cli(&[
             "review",

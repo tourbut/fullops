@@ -769,6 +769,16 @@ fn live_terminals(repo: &Repo, path: &Path, patient: bool) -> Result<Vec<String>
     }
 }
 
+/// `git status --porcelain --ignored`의 한 줄이 무시된 생성 캐시인가. 리뷰어가 Python을 돌리면 남는다.
+/// `git worktree remove`가 무시 파일을 함께 지우므로 cleanup을 막지 않는다.
+fn ignored_cache(line: &str) -> bool {
+    const DIRS: [&str; 4] = ["__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"];
+    line.strip_prefix("!! ").is_some_and(|path| {
+        let path = path.trim_matches('"');
+        path.ends_with(".pyc") || path.split('/').any(|part| DIRS.contains(&part))
+    })
+}
+
 /// snapshot을 지운다(설계 8.9절 cleanup). 지우지 못하면 snapshot의 `hold`에 사유를 쓰고 그 사유를 돌려준다.
 /// `abandon`은 중단 사유다. 있으면 `abandoned`로 닫고 `abandoned.json`을 쓴다. 없으면 앞선 시도가 hold에 남긴 사유를 쓴다.
 /// `patient`가 거짓이면 터미널이 닫히기를 기다리지 않는다(`sweep`의 다시 보기).
@@ -810,7 +820,7 @@ pub(super) fn cleanup(
                 let status = fullops_ext::run(&argv, &path, Duration::from_secs(30), &[], None);
                 if !status.ok() {
                     Some("snapshot의 상태를 읽지 못했습니다.".into())
-                } else if !status.stdout.is_empty() {
+                } else if !status.stdout_text().lines().all(ignored_cache) {
                     Some("snapshot에 미커밋·미추적·무시 파일이 있습니다.".into())
                 } else {
                     git.worktree_remove(&path)
@@ -1014,4 +1024,33 @@ fn prune(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     };
     ctx.print(&human, json!({ "active": active }));
     Ok(EXIT_OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ignored_cache;
+
+    #[test]
+    fn only_ignored_generated_caches_pass_cleanup() {
+        for cache in [
+            "!! server/app/__pycache__/",
+            "!! server/app/__pycache__/main.cpython-312.pyc",
+            "!! .pytest_cache/",
+            "!! tools/.ruff_cache/0.6.0/abc",
+            "!! .mypy_cache/",
+            "!! \"my dir/mod.pyc\"",
+        ] {
+            assert!(ignored_cache(cache), "{cache}");
+        }
+        // 무시 파일이라도 캐시가 아니면, 캐시 경로라도 미추적·수정이면 cleanup을 막는다
+        for other in [
+            "!! .env",
+            "!! node_modules/",
+            "?? app/__pycache__/main.pyc",
+            " M src/main.py",
+            "?? notes.txt",
+        ] {
+            assert!(!ignored_cache(other), "{other}");
+        }
+    }
 }

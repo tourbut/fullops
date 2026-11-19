@@ -259,7 +259,8 @@ fn apply(facts: &RealFacts, state: &mut State, write: &Write, now: i64) {
                         question: card.question.clone(),
                         ..Default::default()
                     };
-                    crate::cmd::open_decision(state, ask, now);
+                    let floor = crate::cmd::decision_floor(&facts.repo);
+                    crate::cmd::open_decision(state, ask, now, floor);
                 }
                 if let Some(decision) = state.decisions.iter_mut().find(|d| same(d)) {
                     // 카드로 물었다는 표시. `decision answer`의 사람 턴 확인(DC-04)이 본다

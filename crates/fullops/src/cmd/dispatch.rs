@@ -519,35 +519,21 @@ fn parse(mut args: lexopt::Parser) -> Result<Options, CliError> {
 /// D-07의 횟수 초과: 결정을 한 번만 연다.
 fn open_limit_decision(ctx: &Ctx, key: &TaskKey, origin: Origin) -> Result<DecisionId, CliError> {
     let question = format!("{key} 한도 재배정 2회 초과");
+    let floor = super::decision::floor(ctx.repo()?);
     ctx.update_state(None, |s| {
         let open = |d: &&Decision| d.status == DecisionStatus::Open && d.question == question;
         if let Some(found) = s.decisions.iter().find(open) {
             return found.id.clone();
         }
-        let id = DecisionId::from_number(s.next_decision);
-        s.next_decision += 1;
-        s.decisions.push(Decision {
-            id: id.clone(),
-            status: DecisionStatus::Open,
+        let ask = super::decision::Ask {
             key: Some(key.clone()),
             question: question.clone(),
             options: vec!["같은 모델로 다시 배정".into(), "중단".into()],
             blocks: vec![key.to_string()],
-            asked_at: fullops_store::now(),
-            origin,
-            sha: None,
-            risks: Vec::new(),
-            allow: Vec::new(),
-            expires_at: None,
-            answer: None,
-            decided_by: None,
-            via: None,
-            closed_at: None,
-            repository: None,
-            drop_reason: None,
-            extra: Extra::new(),
-        });
-        id
+            origin: Some(origin),
+            ..Default::default()
+        };
+        super::decision::open(s, ask, fullops_store::now(), floor)
     })
 }
 

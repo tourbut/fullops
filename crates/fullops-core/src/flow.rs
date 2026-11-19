@@ -989,8 +989,8 @@ pub fn spec(input: &SpecInput) -> String {
     } else if input.review.is_some() {
         // 리뷰어는 좌석이 Reviewer라 `done`을 하지 못한다(R-01). 설계 8.9절의 끝맺음을 적는다
         format!(
-            "끝나면 결과를 Review folder에 쓰고 본문 `[리뷰] {} | SHA <head> | 결론 accept|reject | high <n>`으로 preamble의 worker_done을 한 번 보낸다",
-            input.key
+            "끝나면 Review folder의 `result.json`(모든 파일의 `review_status`, `conclusion`, `findings`)과 `report.md`를 채우고, snapshot 안에서 `{command} review check {key}`가 통과한 뒤 본문 `[리뷰] {key} | SHA <head> | 결론 accept|reject | high <n>`으로 preamble의 worker_done을 한 번 보낸다",
+            key = input.key
         )
     } else {
         format!(

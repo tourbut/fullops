@@ -67,6 +67,18 @@ fn entry(command: &LintCommand, status: LintStatus, reason: String) -> LintComma
     }
 }
 
+/// stdout 뒤에 stderr를 붙인다. 둘 다 있으면 경계 줄을 둔다: stderr는 시간 순서와 상관없이 끝에 모이므로,
+/// 경계가 없으면 끝줄의 stderr를 마지막 단계의 출력으로 잘못 읽는다.
+fn joined(mut stdout: String, stderr: &str) -> String {
+    if !stdout.is_empty() && !stderr.is_empty() {
+        if !stdout.ends_with('\n') {
+            stdout.push('\n');
+        }
+        stdout.push_str("--- stderr ---\n");
+    }
+    stdout + stderr
+}
+
 /// 명령 하나를 셸 없이 실행한다. 출력 전체는 `logs/<name>.log`에, 끝 40줄은 결과에 둔다(설계 8.11절 8번).
 fn execute(root: &Path, logs: &Path, command: &LintCommand, timeout: u64) -> LintCommandResult {
     let seconds = command.timeout_seconds.unwrap_or(timeout);
@@ -97,7 +109,7 @@ fn execute(root: &Path, logs: &Path, command: &LintCommand, timeout: u64) -> Lin
     let mut entry = entry(command, status, reason);
     entry.exit_code = exit_code;
     entry.seconds = tenths(clock.elapsed());
-    let output = format!("{}{}", done.stdout_text(), done.stderr_text());
+    let output = joined(done.stdout_text(), &done.stderr_text());
     let lines: Vec<&str> = output.lines().collect();
     entry.output_tail = lines
         .get(lines.len().saturating_sub(40)..)
@@ -544,4 +556,17 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         println!("{}", human(&result));
     }
     Ok(if result.passed { EXIT_OK } else { EXIT_REFUSED })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::joined;
+
+    #[test]
+    fn stderr_follows_stdout_after_a_marker_line() {
+        assert_eq!(joined("out".into(), "err\n"), "out\n--- stderr ---\nerr\n");
+        assert_eq!(joined("out\n".into(), "err"), "out\n--- stderr ---\nerr");
+        assert_eq!(joined("out\n".into(), ""), "out\n");
+        assert_eq!(joined(String::new(), "err\n"), "err\n");
+    }
 }
