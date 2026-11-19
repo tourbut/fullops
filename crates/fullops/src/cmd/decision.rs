@@ -6,6 +6,7 @@ use fullops_core::model::{
     Decision, DecisionId, DecisionStatus, Origin, Sha, State, TaskKey, TurnKind,
 };
 use fullops_ext::GitCli;
+use fullops_store::Repo;
 use lexopt::prelude::*;
 use serde_json::json;
 
@@ -26,10 +27,36 @@ pub(crate) struct Ask {
     pub repository: Option<String>,
 }
 
-/// 결정을 연다. `update_state`의 잠금 안에서 부른다.
-pub(crate) fn open(state: &mut State, ask: Ask, now: i64) -> DecisionId {
-    let id = DecisionId::from_number(state.next_decision);
-    state.next_decision += 1;
+/// 글에 적힌 결정 번호(`D` + 숫자 3~4자리, 앞뒤가 ASCII 영숫자가 아닌 것)의 최댓값. 없으면 0.
+fn highest_decision(text: &str) -> u32 {
+    let bytes = text.as_bytes();
+    let mut highest = 0;
+    for (at, _) in text.match_indices('D') {
+        let start = at + 1;
+        let digits = bytes[start..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count();
+        let end = start + digits;
+        let glued = |b: Option<&u8>| b.is_some_and(u8::is_ascii_alphanumeric);
+        let before = at.checked_sub(1).and_then(|i| bytes.get(i));
+        if (3..=4).contains(&digits) && !glued(before) && !glued(bytes.get(end)) {
+            highest = highest.max(text[start..end].parse().unwrap_or(0));
+        }
+    }
+    highest
+}
+
+/// 새 결정 번호의 하한: `PLANS.md`에 이미 적힌 결정 번호(옛 번호 체계의 프로젝트 결정 포함) 다음. 읽지 못하면 0.
+pub(crate) fn floor(repo: &Repo) -> u32 {
+    std::fs::read_to_string(repo.plan_path()).map_or(0, |text| highest_decision(&text) + 1)
+}
+
+/// 결정을 연다. `update_state`의 잠금 안에서 부른다. `floor`는 [`floor`]의 값이다.
+pub(crate) fn open(state: &mut State, ask: Ask, now: i64, floor: u32) -> DecisionId {
+    let number = state.next_decision.max(floor);
+    let id = DecisionId::from_number(number);
+    state.next_decision = number + 1;
     state.decisions.push(Decision {
         id: id.clone(),
         status: DecisionStatus::Open,
@@ -120,7 +147,8 @@ fn add(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     }
     let now = fullops_store::now();
     let expires = ask.sha.as_ref().map(|_| now + TTL);
-    let id = ctx.update_state(None, |state| open(state, ask, now))?;
+    let floor = floor(ctx.repo()?);
+    let id = ctx.update_state(None, |state| open(state, ask, now, floor))?;
     ctx.print(
         &format!("결정 {id}를 열었습니다. 답은 `fullops decision answer {id} --answer \"<답>\"`"),
         json!({ "id": id, "expires_at": expires }),
@@ -270,4 +298,18 @@ fn list(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
     };
     ctx.print(&human, json!({ "decisions": decisions }));
     Ok(EXIT_OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::highest_decision;
+
+    #[test]
+    fn highest_decision_reads_only_standalone_ids() {
+        assert_eq!(highest_decision("결정 D059, (D160)과 D0007.\n"), 160);
+        // 커밋 해시, 자릿수가 다른 것, 낱말에 붙은 것은 결정 번호가 아니다
+        let not_ids = "d904655 D904655 ABD123 D12 D160a D99999";
+        assert_eq!(highest_decision(not_ids), 0);
+        assert_eq!(highest_decision(""), 0);
+    }
 }

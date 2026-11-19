@@ -44,7 +44,7 @@
 - `commands`: `[{"name": "ruff", "run": ["ruff", "check", "."], "cwd": "backend"}]` 형식이다. 셸을 거치지 않는 인자 배열이며, `cwd`는 레포 안이어야 한다. setup은 기존 도구를 우선 연결하고 부족한 설정은 아래 레포별 구성 절차로 보완한다.
 - 프로젝트 테스트 명령도 `{"name":"test","kind":"test","run":["npm","test"]}`처럼 등록한다. 실제 프로젝트 명령과 cwd를 사용한다. lint는 각 명령의 kind·종료코드·결과를 같은 HEAD에 기록한다. 테스트 명령이 없으면 미정과 영향을 보고하고, 테스트를 실행했다고 표시하지 않는다. lint 제외를 뺀 코드 파일 변경이 없으면 `required: true`가 아닌 `kind: test` 명령은 skipped와 고정 사유로 기록하고 실행하지 않는다. 문서 변경도 검사해야 하는 테스트는 `required: true`로 등록한다.
 - `paths`(glob 배열, 예: `["server/**"]`)를 둔 명령은 바뀐 파일이 하나라도 맞을 때만 실행하고, 아니면 skipped와 고정 사유를 남긴다. `required`보다 우선한다. 모노레포에서 `server/`만 바꿨는데 web 시험이 도는 것처럼 무관한 명령을 거르는 데 쓴다.
-- 결과의 명령별 `seconds`는 실행 시간이다. 모든 명령의 출력은 stdout·stderr를 이어 붙인 뒤 마지막 40줄만 결과(`output_tail`)에 남기고 전체 출력은 `<git dir>/fullops/lint/logs/<명령>.log`(`log` 필드)에 둔다.
+- 결과의 명령별 `seconds`는 실행 시간이다. 모든 명령의 출력은 stdout 뒤에 `--- stderr ---` 줄을 두고 stderr를 이어 붙인 뒤(둘 다 있을 때. 시간 순서가 아니다) 마지막 40줄만 결과(`output_tail`)에 남기고 전체 출력은 `<git dir>/fullops/lint/logs/<명령>.log`(`log` 필드)에 둔다.
 - `fullops lint --level full`은 기준 `test_level`보다 높은 레벨로 한 번 돌릴 때 쓴다(안정된 통합 후보의 전체 회귀). `--from`에는 직전 통합 후보 SHA를 준다. 기준 이후 코드 확장자(`fullops.toml`의 `[code]`)에 해당하는 변경이 없으면(문서·설정·SQL처럼 그 밖의 파일만 바뀌면) `required`가 아닌 시험은 skipped되고 종료코드 0으로 끝나므로, 결과의 skipped를 PASS로 적지 않는다. 기준 이후 바꾼 `lint.json`은 적용되지 않으므로 새로 등록한 시험은 직접 실행하고 보고서에 적는다. 개발 과제 지시서의 lint 줄에는 넣지 않는다. 넣으면 `fullops dispatch`가 배정할 때 알린다. 기준보다 낮은 값은 무시한다. 결과의 `test_level`에 그 레벨이 남고 리뷰 check도 그 레벨로 확인한다.
 - 기존 린터가 있으면 미사용 규칙(ruff F401/F841, eslint no-unused-vars, oxlint)을 기존 설정에서 활성화해 연결한다. 기본 SLOP 규칙은 미사용 코드 분석을 대신하지 않는다.
 - `size`, `exclude`(glob), `timeout_seconds`는 프로젝트 기준에 맞게 조정한다. 기준을 낮추는 변경은 이유를 지시서에 남긴다.
