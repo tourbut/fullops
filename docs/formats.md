@@ -343,7 +343,7 @@ front matter는 파일 맨 앞의 `---` 줄과 다음 `---` 줄 사이다. 읽�
 | `sync_pending` | 객체(`RoleId` → `Sha`) | 그 역할 워크트리에 반영해야 할 기본 브랜치 SHA | `dispatch`, `merge`, `sync` |
 | `snapshots` | `Snapshot` 목록 | | `review`, S-03 효과 |
 | `decisions` | `Decision` 목록 | | `decision`, `merge`(M-04), `dispatch`(D-07) |
-| `next_decision` | 정수 | 다음 결정 ID의 번호. 없으면 1 | `decision add` |
+| `next_decision` | 정수 | 다음 결정 ID의 번호. 없으면 1. 결정을 열 때 `PLANS.md`에 적힌 가장 큰 결정 번호(`D` + 숫자 3~4자리) + 1보다 작으면 그 값을 쓴다 | `decision add` |
 
 `Run` (`runs[]`):
 
