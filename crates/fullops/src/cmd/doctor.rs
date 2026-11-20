@@ -530,10 +530,20 @@ fn repo_rows(report: &mut Report, ctx: &Ctx) {
 }
 
 /// 메모 위생(설계 6.1.6절): 역할 교훈 파일의 크기·이름, `guide/`·`templates/` 글의 깨진 경로. `merge`도 쓴다.
+/// 파일 순서는 경로 순으로 정한다(정리 과제의 담당이 파일 시스템의 나열 순서에 따라 바뀌지 않게).
 pub(super) fn memo_issues(root: &Path, config: &Config) -> Vec<Issue> {
+    fn sorted(dir: &Path) -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        paths.sort();
+        paths
+    }
     fn markdown(dir: &Path, out: &mut Vec<PathBuf>) {
-        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-            let path = entry.path();
+        for path in sorted(dir) {
             if path.is_dir() {
                 markdown(&path, out);
             } else if path.extension().is_some_and(|e| e == "md") {
@@ -543,14 +553,13 @@ pub(super) fn memo_issues(root: &Path, config: &Config) -> Vec<Issue> {
     }
     let is_role = |stem: &str| RoleId::new(stem).is_ok_and(|id| config.roles.contains_key(&id));
     let mut issues = Vec::new();
-    for entry in std::fs::read_dir(root.join(layout::roles_dir()))
-        .into_iter()
-        .flatten()
-        .flatten()
-    {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.starts_with('.') && entry.path().is_file() {
-            let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
+    for path in sorted(&root.join(layout::roles_dir())) {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if !name.starts_with('.') && path.is_file() {
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
             issues.extend(memo::note_issues(&name, &text, &is_role));
         }
     }
@@ -561,7 +570,7 @@ pub(super) fn memo_issues(root: &Path, config: &Config) -> Vec<Issue> {
     for path in files {
         let rel = path_text(path.strip_prefix(root).unwrap_or(&path));
         let text = std::fs::read_to_string(&path).unwrap_or_default();
-        issues.extend(memo::broken_refs(&rel, &text, &exists));
+        issues.extend(memo::broken_refs(&rel, &text, &exists, &is_role));
     }
     issues
 }

@@ -53,7 +53,8 @@ pub fn note_issues(name: &str, text: &str, is_role: &dyn Fn(&str) -> bool) -> Ve
     out
 }
 
-/// 글이 가리키는 경로 후보 `(경로, 링크인가)`: Markdown 링크의 대상과, 슬래시가 든 백틱 경로. 코드 펜스 안은 보지 않는다.
+/// 글이 가리키는 경로 후보 `(경로, 링크인가)`: Markdown 링크의 대상과, 슬래시가 들고 마지막 조각에 확장자나 자리표시가 있는 백틱 경로.
+/// 코드 펜스 안은 보지 않는다. 브랜치 이름(`fullops/<역할>`, `origin/…`)과 Git 공용 디렉터리의 `fullops/…`는 레포 경로가 아니라 뺀다.
 fn refs(text: &str) -> Vec<(String, bool)> {
     let mut out = Vec::new();
     let mut fenced = false;
@@ -69,14 +70,22 @@ fn refs(text: &str) -> Vec<(String, bool)> {
         while let Some(at) = rest.find("](") {
             rest = &rest[at + 2..];
             let end = rest.find(')').unwrap_or(rest.len());
-            out.push((rest[..end].trim().to_string(), true));
+            // `[글](경로 "제목")`의 제목은 경로가 아니다
+            let target = rest[..end].split_whitespace().next().unwrap_or("");
+            out.push((target.to_string(), true));
         }
         for (n, span) in line.split('`').enumerate() {
             let path_like = span.contains('/')
                 && !span.ends_with('/')
                 && !span.chars().any(char::is_whitespace)
                 && !span.contains([':', '=', '(', '|', '\\'])
-                && !span.starts_with(['~', '$', '%', '-', '/', '@']);
+                && !span.starts_with(['~', '$', '%', '-', '/', '@'])
+                && !span.starts_with("origin/")
+                && !span.starts_with("fullops/")
+                && span
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|last| last.contains(['.', '<', '*', '{']));
             if n % 2 == 1 && path_like {
                 out.push((span.to_string(), false));
             }
@@ -115,11 +124,18 @@ fn concrete(path: &str) -> (&str, bool) {
 /// 안내 글 하나(`rel`은 레포 상대 경로)에서 가리키는 곳이 없는 경로. `exists`는 레포 상대 경로의 파일·폴더가 있는가다.
 /// 자리표시가 든 경로는 앞쪽 폴더가 없고 옛 자리(설계 13.6절)를 가리킬 때만 알린다. 처음 과제 전에는 없는 폴더가 있어서다.
 /// 백틱 경로는 앞으로 쓸 파일일 수 있어 그 폴더가 있으면 넘어간다. 링크는 파일이 있어야 한다.
-pub fn broken_refs(rel: &str, text: &str, exists: &dyn Fn(&str) -> bool) -> Vec<Issue> {
+/// 역할 메모의 경고에는 그 역할을 붙인다. `is_role`(`fullops.toml`에 있는 역할인가)이 아니라고 하면 붙이지 않는다.
+pub fn broken_refs(
+    rel: &str,
+    text: &str,
+    exists: &dyn Fn(&str) -> bool,
+    is_role: &dyn Fn(&str) -> bool,
+) -> Vec<Issue> {
     let dir = rel.rsplit_once('/').map_or("", |(d, _)| d);
     let role = rel
         .strip_prefix(layout::roles_dir())
         .and_then(|n| n.strip_prefix('/')?.strip_suffix(".md"))
+        .filter(|stem| is_role(stem))
         .and_then(|stem| RoleId::new(stem).ok());
     let mut seen = Vec::new();
     let mut out = Vec::new();
@@ -160,7 +176,18 @@ pub fn broken_refs(rel: &str, text: &str, exists: &dyn Fn(&str) -> bool) -> Vec<
             {
                 continue;
             }
-            _ => format!("`{target}`가 가리키는 파일이 없다"),
+            _ => {
+                // `contexts/`에서 한 단계 깊은 `guide/roles/`로 옮긴 메모의 `../` 링크
+                let tail = target.trim_start_matches("../");
+                if tail != target && exists(&layout::at(tail)) {
+                    format!(
+                        "`{target}`가 가리키는 파일이 없다. `{}`에 있다",
+                        layout::at(tail)
+                    )
+                } else {
+                    format!("`{target}`가 가리키는 파일이 없다")
+                }
+            }
         };
         out.push(Issue {
             path: rel.to_string(),
@@ -196,6 +223,33 @@ pub fn has_mistakes(project_md: &str) -> bool {
         }
     }
     false
+}
+
+/// 역할 메모 줄의 꼬리.
+const NOTE_LINE_TAIL: &str = "`: 이 역할의 지난 결정·교훈";
+
+/// `task new`가 인박스 `## 먼저 읽을 문서`에 넣는 줄(설계 8.4절). 역할 메모(`note`)와 `project.md`(`project_md`)의 글을 받고, 내용이 있는 것만 낸다.
+pub fn inbox_lines(role: &RoleId, note: &str, project_md: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    if has_body(note) {
+        lines.push(format!("- `{}{NOTE_LINE_TAIL}", layout::role_note(role)));
+    }
+    if has_mistakes(project_md) {
+        lines.push(mistakes_line());
+    }
+    lines
+}
+
+fn mistakes_line() -> String {
+    format!("- `{}`의 `{MISTAKES_HEADING}`", layout::guide("project.md"))
+}
+
+/// `inbox_lines`가 넣은 줄인가. 탐색(`find`·`context`)은 이 줄을 작성 글로 세지 않는다(검색어가 되지 않게).
+pub fn is_inbox_line(line: &str) -> bool {
+    let line = line.trim_end();
+    line == mistakes_line()
+        || (line.starts_with(&format!("- `{}/", layout::roles_dir()))
+            && line.ends_with(NOTE_LINE_TAIL))
 }
 
 /// 알릴 것이 있으면 `PLANS.md`에 더할 정리 과제 행 `(키, 담당, 목표)`. 열린 정리 행이 이미 있으면 `None`이다.
@@ -284,7 +338,7 @@ mod tests {
 ```
 `lint/lint.json` `guide/agents/new.md` `@scope/pkg` [없는 링크](rules/common/gone.md)
 ";
-        let found: Vec<String> = broken_refs(".fullops/guide/FULLOPS.md", text, &exists)
+        let found: Vec<String> = broken_refs(".fullops/guide/FULLOPS.md", text, &exists, &role)
             .into_iter()
             .map(|i| i.text)
             .collect();
@@ -299,8 +353,35 @@ mod tests {
             "qa-reports/A-test/report.md`가 가리키는 파일이 없다",
             ""
         ));
-        let note = broken_refs(".fullops/guide/roles/art.md", "`no/such.md`", &exists);
+        let note = broken_refs(
+            ".fullops/guide/roles/art.md",
+            "`no/such.md`",
+            &exists,
+            &role,
+        );
         assert_eq!(note[0].role.as_ref().map(RoleId::as_str), Some("art"));
+        // 설정에 없는 역할(옛 `arch`)의 메모는 경고만 내고 담당을 붙이지 않는다
+        let stray = broken_refs(
+            ".fullops/guide/roles/arch.md",
+            "`no/such.md`",
+            &exists,
+            &role,
+        );
+        assert_eq!((stray.len(), stray[0].role.clone()), (1, None));
+        // 경로가 아닌 백틱: 브랜치, Git 공용 디렉터리, API 이름, 폴더
+        let words = "`fullops/dev` `origin/fullops/dev` `fullops/state.json` `turn/steer` `web/src` [t](rules/common/README.md \"제목\")";
+        assert!(broken_refs(".fullops/guide/FULLOPS.md", words, &exists, &role).is_empty());
+        // 한 단계 깊어진 메모의 `../` 링크는 `.fullops/` 기준 자리를 알린다
+        let deep = broken_refs(
+            ".fullops/guide/roles/dev.md",
+            "[q](../config/lint.json)",
+            &exists,
+            &role,
+        );
+        assert!(
+            deep[0].text.contains("`.fullops/config/lint.json`에 있다"),
+            "{deep:?}"
+        );
     }
 
     #[test]
@@ -314,6 +395,23 @@ mod tests {
         assert!(!has_mistakes(
             &template.replace("글\n", "- 다른 절의 항목\n")
         ));
+    }
+
+    #[test]
+    fn inbox_lines_are_recognised_for_search_exclusion() {
+        let dev = RoleId::new("dev").unwrap();
+        assert!(inbox_lines(&dev, "", "").is_empty());
+        let lines = inbox_lines(
+            &dev,
+            "- 교훈
+",
+            "## 자주 틀리는 것
+- 실수 → 방법
+",
+        );
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().all(|l| is_inbox_line(l)));
+        assert!(!is_inbox_line("- `.fullops/guide/roles/dev.md`를 고친다"));
     }
 
     #[test]

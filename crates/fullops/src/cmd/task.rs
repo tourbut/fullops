@@ -213,15 +213,11 @@ fn adopt_record(
 /// 파일이 없거나 내용이 없으면 적지 않는다.
 fn with_memo_paths(body: &str, root: &Path, role: &RoleId) -> String {
     let read = |rel: &str| std::fs::read_to_string(root.join(rel)).unwrap_or_default();
-    let note = layout::role_note(role);
-    let project = layout::guide("project.md");
-    let mut lines = Vec::new();
-    if memo::has_body(&read(&note)) {
-        lines.push(format!("- `{note}`: 이 역할의 지난 결정·교훈"));
-    }
-    if memo::has_mistakes(&read(&project)) {
-        lines.push(format!("- `{project}`의 `{}`", memo::MISTAKES_HEADING));
-    }
+    let lines = memo::inbox_lines(
+        role,
+        &read(&layout::role_note(role)),
+        &read(&layout::guide("project.md")),
+    );
     let heading = "## 먼저 읽을 문서\n\n";
     let Some(at) = body.find(heading) else {
         return body.to_string();

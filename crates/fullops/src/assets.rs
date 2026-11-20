@@ -283,7 +283,12 @@ mod tests {
                 p.ends_with(".md") && (p.starts_with("guide/") || p.starts_with("templates/"))
             })
             .flat_map(|(p, text)| {
-                fullops_core::memo::broken_refs(&fullops_core::layout::at(p), text, &exists)
+                fullops_core::memo::broken_refs(
+                    &fullops_core::layout::at(p),
+                    text,
+                    &exists,
+                    &|_| true,
+                )
             })
             .collect();
         assert!(issues.is_empty(), "{issues:#?}");
