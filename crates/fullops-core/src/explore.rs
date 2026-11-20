@@ -362,12 +362,13 @@ pub fn task_text(key: &TaskKey, inbox_text: &str) -> (String, bool) {
     )
 }
 
-/// 작성 글: 지시서 본문에서 내장 템플릿과 같은 줄을 뺀 것. 리터럴과 키워드는 여기서만 뽑는다.
+/// 작성 글: 지시서 본문에서 내장 템플릿과 같은 줄과 `task new`의 메모 경로 줄을 뺀 것. 리터럴과 키워드는 여기서만 뽑는다.
 pub fn authored(inbox_text: &str, template: &str) -> String {
     let known: BTreeSet<&str> = template.lines().map(str::trim_end).collect();
     without_block(body(inbox_text))
         .lines()
-        .filter(|line| !known.contains(line.trim_end()))
+        // `task new`가 넣은 메모 경로 줄도 템플릿처럼 검색어에서 뺀다
+        .filter(|line| !known.contains(line.trim_end()) && !crate::memo::is_inbox_line(line))
         .collect::<Vec<_>>()
         .join("\n")
 }

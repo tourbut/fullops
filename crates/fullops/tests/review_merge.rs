@@ -1820,3 +1820,64 @@ fn review_snapshot_finds_lead_records_and_refuses_lint() {
     let status = ["status", "--porcelain", "--ignored"];
     assert_eq!(w.sb.git_ok(&snapshot, &status), "");
 }
+
+/// M-08의 메모 정리 행(설계 6.1.6절). 메모 경고가 있으면 병합 기록 커밋에 `MEMO-TIDY-<날짜>` 행이 한 번 들어간다.
+/// 설정에 없는 역할(`arch`)의 메모는 담당이 되지 않고 coordinator가 맡는다. 열린 정리 행이 있으면 다음 병합은 더하지 않는다.
+/// doctor의 `메모` 행도 같은 경고를 낸다.
+#[test]
+fn merge_adds_one_memo_tidy_row_owned_by_a_configured_role() {
+    let mut w = World::under_coordinator();
+    w.commit(
+        "lead",
+        ".fullops/guide/roles/arch.md",
+        "# arch\n\n- [근거](../docs/gone.md)\n",
+    );
+    w.git("lead", &["push", "-q", "origin", "main"]);
+    for who in ["dev", "coor"] {
+        w.git(who, &["merge", "-q", "main"]);
+    }
+
+    let doctor = w.sb.fullops(
+        &w.lead(),
+        &["doctor", "--json"],
+        &[("FULLOPS_OFFLINE", "1")],
+        b"",
+    );
+    let items = out(&doctor)["items"].as_array().unwrap().clone();
+    let memo = items.iter().find(|i| i["item"] == "메모").unwrap();
+    let notes = memo["notes"].to_string();
+    assert!(
+        memo["ok"] == json!(false)
+            && notes.contains("roles/arch.md: 역할 ID의 메모가 아니다")
+            && notes.contains("`../docs/gone.md`가 가리키는 파일이 없다"),
+        "{memo}"
+    );
+
+    let tidy_rows = |w: &World| -> Vec<String> {
+        w.git("lead", &["show", "HEAD:.fullops/PLANS.md"])
+            .lines()
+            .filter(|l| l.starts_with("| MEMO-TIDY-"))
+            .map(str::to_string)
+            .collect()
+    };
+    let sha = w.work("src/a.py", 3);
+    w.report("A-1", &sha);
+    expect(&w.cli(&["merge", "A-1"]), 0, &["정리 과제 `MEMO-TIDY-"]);
+    assert_eq!(subjects(&w, "lead")[0], "fullops: 병합 기록 A-1");
+    let rows = tidy_rows(&w);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(
+        rows[0].contains("| coor | 대기 |") && rows[0].contains("낮은 effort"),
+        "{}",
+        rows[0]
+    );
+
+    // 열린 정리 행이 있으면 다음 병합은 더하지 않는다
+    let sha = w.work("src/b.py", 3);
+    w.report("B-2", &sha);
+    let run = w.cli(&["merge", "B-2"]);
+    expect(&run, 0, &[]);
+    assert!(!run.stderr.contains("정리 과제"), "{}", run.stderr);
+    assert_eq!(subjects(&w, "lead")[0], "fullops: 병합 기록 B-2");
+    assert_eq!(tidy_rows(&w), rows);
+}

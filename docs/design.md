@@ -196,7 +196,7 @@ pub fn host_of_agent(orca_agent: &str) -> Option<HostId>;  // "claude"·"codex"�
 | `.gitignore` | - | `init`, 사람 | `.env*`, `!.env.example`, `local/`, `**/raw/` |
 | `config/lint.json` | JSON (1.24.0 형식 그대로) | 사람 | lint 명령·크기·제외·정규식 규칙. 형식을 유지하는 이유: 레포 규칙을 변환 없이 읽어 결과 비교를 단순하게 한다 |
 | `config/review.json` | JSON (1.24.0 형식 그대로) | 사람 | 리뷰 대상 include·exclude와 경로별 규칙 문장 |
-| `guide/FULLOPS.md`, `guide/project.md`, `guide/lint.md`, `guide/rules/…`, `guide/roles/<역할>.md`, `guide/agents/…` | Markdown | 사람·에이전트 | 에이전트가 읽는 규칙과 안내. 기계는 내용을 읽지 않는다(`context`의 필수 문서 여섯은 이 아래의 고정 경로다. 8.14절) |
+| `guide/FULLOPS.md`, `guide/project.md`, `guide/lint.md`, `guide/rules/…`, `guide/roles/<역할>.md`, `guide/agents/…` | Markdown | 사람·에이전트 | 에이전트가 읽는 규칙과 안내. 기계는 메모 위생(6.1.6절)과 `task new`의 메모 경로(8.4절)만 본다(`context`의 필수 문서 여섯은 이 아래의 고정 경로다. 8.14절) |
 | `templates/handover.md`, `templates/review-report.md`, `templates/intent.md` | Markdown | 사람 | fullops가 복사해 쓰는 틀. 인박스 본문은 실행본에 내장한 틀로 만든다(레포의 사본은 사람이 읽는 것이다) |
 | `inbox/to_<역할>.md` | front matter + Markdown | `task new\|reopen`이 만들고 본문은 사람·에이전트 | 현재 지시서, 진행 체크, 완료 보고. 역할마다 하나 |
 | `tasks/<KEY>/route.json` | JSON | `route`, `dispatch`(tuple 기록) | 분류 기록(6.1.4절) |
@@ -420,6 +420,32 @@ parallel: on
 - `candidates[].id`: `c<0부터 센 --paths 순번>-<파일 이름에서 [A-Za-z0-9._-] 밖 글자를 '-'로 바꾼 앞 60자>`. 한 결과 안에서만 쓰는 이름이다.
 - `candidates[].span`: 보낸 구간의 첫 줄과 끝 줄(1부터 센다). 보내지 못한 후보는 `null`이다. `whole`: 구간이 파일 전체다.
 - `required_paths`: 필수 경로 전체(필수 문서 여섯, `--required`, 지시서 파일). `refused_paths[]`: 경로 규칙에 걸려 후보에서 뺀 경로와 사유(`sensitive path`·`outside repo`·`symlink`·`not a file`).
+
+#### 6.1.6 메모 위생
+
+역할 교훈 `guide/roles/<역할>.md`와 `guide/project.md`의 `## 자주 틀리는 것`은 다음 세션이 같은 실수를 피하게 하는 메모다(스킬 `fullops-work`의 완료 7단계). 승격은 역할 메모 → `## 자주 틀리는 것`(두 번째 실수) → `config/lint.json`의 `rules`(정규식으로 잡히는 실수) 순이고 lint 규칙에서 끝난다. 틀린 메모는 메모가 없는 것과 같은 실패를 낳고, 커진 메모는 읽히지 않는다. 그래서 기계가 세 가지를 본다. 판정은 `fullops_core::memo`에 있고 파일 읽기는 호출자가 한다.
+
+| 경고 | 조건 |
+|---|---|
+| 한도 초과 | `guide/roles/` 바로 아래 파일이 150줄 또는 10KB를 넘는다 |
+| 역할 ID가 아닌 파일 | `guide/roles/` 바로 아래 파일 이름이 `<fullops.toml에 있는 역할 ID>.md`가 아니다. `.`으로 시작하는 파일(`.gitkeep`)은 보지 않는다 |
+| 깨진 경로 | `guide/**`·`templates/**`의 `.md`에서 Markdown 링크의 대상(제목 `"…"`은 뺀다)과, 슬래시가 들고 마지막 조각에 확장자나 자리표시가 있는 백틱 경로가 가리키는 곳이 없다. 경로는 그 글의 폴더, `.fullops/`, 레포 루트 순으로 풀어 하나라도 있으면 산다. 코드 펜스 안, URL, `#` 앵커만, `~`·`$`·`%`·`-`·`/`·`@`로 시작하거나 공백·`:`·`=`가 든 백틱, 브랜치 이름과 Git 공용 디렉터리 경로(`origin/…`·`fullops/…`로 시작)는 보지 않는다 |
+
+깨진 경로의 세부:
+- 링크는 파일이 있어야 한다.
+- 백틱 경로는 앞으로 쓸 파일일 수 있어서, 그 폴더가 있으면 넘어간다.
+- 자리표시(`<KEY>`)나 glob이 든 경로는 그 앞 폴더만 본다. 첫 과제 전에는 `tasks/`가 없을 수 있어서, 옛 자리(13.6절 `layout::moved`)를 가리킬 때만 알린다.
+- 옛 자리 경로이면 지금 자리를 함께 알린다(예: `contexts/<역할>.md` → `guide/roles/<역할>.md`).
+- `../`로 시작하는 링크가 없고, `../`를 뗀 경로가 `.fullops/` 아래에 있으면 그 자리를 함께 알린다. `contexts/`에서 한 단계 깊은 `guide/roles/`로 옮긴 메모의 링크가 이 꼴이다.
+- 역할 메모의 경고에는 주인 역할을 붙이되, `fullops.toml`에 있는 역할일 때만 붙인다. 파일은 경로 순으로 읽는다. 그래서 정리 과제의 담당은 늘 설정에 있는 역할이고 파일 시스템의 나열 순서와 무관하다.
+- `init`이 까는 파일만 있는 레포에서는 경고가 없어야 한다(단위 시험이 본다).
+
+쓰는 곳:
+- `doctor`의 `메모` 행이 처음 10건을 알린다(10.6절).
+- `merge`의 M-08이 경고가 있으면 정리 과제 행을 하나 더한다(8.8절).
+- 상시 주기는 없다. LLM 호출도 없다. 정리 과제를 맡은 세션만 토큰을 쓴다.
+- 정리 행이 `완료`가 된 뒤에도 경고가 남으면, 다음 날 병합에서 새 행이 생긴다. 고칠 수 없는 경고만 남았으면 행을 `보류(<사유>)`로 둔다. 열린 행이므로 더 늘지 않는다. 행을 지우면 다시 생긴다.
+- `task new`가 넣는 메모 경로 줄(8.4절)은 `find`·`context`의 작성 글에서 뺀다(`memo::is_inbox_line`). 검색어가 되지 않게 하려는 것이다.
 
 ### 6.2 Git 공용 디렉터리 (`<git-common-dir>/fullops/`)
 
@@ -1326,7 +1352,7 @@ fullops task recover --role <R> --key <KEY>
 | H-03 | `inbox/to_<R>.md`가 이 체크아웃에 있다. 탈출구: 같은 과제면 본문을 고치고, 다른 과제면 `fullops plan add` |
 | H-04 | `tasks/<KEY>/<R>.`로 시작하는 기록이 있다. 탈출구: `fullops task reopen` |
 
-통과하면 내장 템플릿으로 인박스를 만든다. `base`는 `--base`를 40자로 푼 값이고 기본은 `refs/heads/<base 브랜치>`의 tip이다. `from`은 lead면 `lead`, 아니면 호출자의 역할 ID다. `test_level`·`parallel`은 현재 설정 값이다(기록이다. 판정은 작업 트리의 `fullops.toml`을 본다). 커밋하지 않는다(`dispatch`의 준비 커밋에 들어간다).
+통과하면 내장 템플릿으로 인박스를 만든다. `## 먼저 읽을 문서`의 안내 문단 뒤에 두 줄을 넣는다(6.1.6절). `guide/roles/<R>.md`에 front matter·제목·빈 줄 말고 내용이 있으면 그 경로를 넣고, `guide/project.md`의 `## 자주 틀리는 것` 절에 `- `·`* ` 항목이 있으면 그 절을 넣는다. 없거나 비면 넣지 않는다. `reopen`도 같다. `base`는 `--base`를 40자로 푼 값이고 기본은 `refs/heads/<base 브랜치>`의 tip이다. `from`은 lead면 `lead`, 아니면 호출자의 역할 ID다. `test_level`·`parallel`은 현재 설정 값이다(기록이다. 판정은 작업 트리의 `fullops.toml`을 본다). 커밋하지 않는다(`dispatch`의 준비 커밋에 들어간다).
 
 `task reopen`: H-01을 같게 검사하고, 인박스가 없어야 하며, `tasks/<KEY>/<R>.r<n>.md`가 있어야 한다. H-02는 lead면 class와 관계없이 통과한다(반려·lint 실패의 수정 차수는 lead가 연다. 1.24.0의 `work.py reopen`에서 coordinator가 수정 지시를 쓰는 것과 같다. 설계 역할은 코드를 고치지 않는다. 검증 보고 R4-1). `round`는 가장 큰 n + 1이다. `state.json`의 `tasks[KEY].rounds`를 1 올린다. `rounds > budget`이면 "같은 과제의 수정·재검증이 예산(<budget>)을 넘었다. 사용자에게 올려라"를 출력한다(거절이 아니다). 반복 예산은 인박스 front matter의 `budget`(기본 2)이다.
 
@@ -1596,7 +1622,7 @@ fullops sync [--role <R>] [--self]
 | M-05 | lint 증거: `reported.lint_head`가 `sha`를 덮는다(같거나, 조상이고 차이가 기록 경로뿐). 없으면 worker 워크트리의 `lint/pass.json`으로 같은 확인을 하되, 시작점을 merge-base로 준 `pass_covers`(6.6절)라 `pass.base`가 merge-base와 같거나 그 조상이고 설정 지문이 같아야 한다(R1-1). 그 과제의 `changed`가 비어 있으면(문서만) 통과 | 거절. 탈출구: worker 워크트리에서 `fullops lint`, 또는 `--accept-missing-lint "<사유>"` |
 | M-06 | 기본 워크트리에서 `git merge --no-edit <sha>`(fast-forward 허용, squash·cherry-pick 금지) | 충돌이면 병합을 진행 중 상태로 두고 종료 코드 3. 해결 뒤 `--continue`, 포기는 `--abort`(`git merge --abort`) |
 | M-07 | 병합 결과의 tree가 `sha`의 tree와 다르면 기본 워크트리에서 `fullops lint --from <병합 전 base tip>`을 한 번 돌린다. 같으면 worker lint를 재사용한다. LLM 리뷰는 더하지 않는다 | 실패하면 `git reset --keep <병합 전 tip>` 뒤 종료 코드 2. 탈출구: 그 보고의 역할(`--role <그 역할>`. 역할을 모르면 `<역할>`)로 `fullops task reopen --role <R> --key <KEY> --goal …` → `fullops dispatch <KEY> --role <R> --purpose fix`(8.3절 `fix_round`. 반려된 보고가 설계 역할의 것이면 `route --force --request` → 설계 역할 배정), 또는 `fullops hold` |
-| M-08 | 병합 기록 커밋 하나(`fullops: 병합 기록 <KEY>`): `PLANS.md`에서 그 키의 행 상태를 `완료(<sha 7자>)`로 바꾸고(행이 있을 때), `## 배정 기록`에 그 과제의 dispatch 줄을 덧붙이고, `reported.followups`를 `## 완료 보고 후속 요청`에 덧붙이고, `tasks/<KEY>/reviews/…`의 미커밋 파일을 넣는다. 리뷰 기록은 lead 체크아웃에 쓰이므로, lead가 기본 워크트리가 아니면(coordinator 역할 워크트리) 그 체크아웃의 미커밋 리뷰 파일을 기본 워크트리의 같은 경로로 복사해 이 커밋에 넣고, 커밋한 뒤 lead 쪽 사본을 치운다(미추적 파일은 지우고 추적되던 파일은 lead 브랜치의 것으로 되돌린다. 남기면 M-11이 lead 체크아웃을 '깨끗하지 않다'로 예약만 남긴다. M-11의 동기화가 커밋된 기록을 lead 체크아웃에 가져온다). 커밋 본문에 리뷰 판정 사유(`need.reason`)와 lint 재사용 여부를 적는다 | 종료 코드 1 |
+| M-08 | 병합 기록 커밋 하나(`fullops: 병합 기록 <KEY>`): `PLANS.md`에서 그 키의 행 상태를 `완료(<sha 7자>)`로 바꾸고(행이 있을 때), `## 배정 기록`에 그 과제의 dispatch 줄을 덧붙이고, `reported.followups`를 `## 완료 보고 후속 요청`에 덧붙이고, `tasks/<KEY>/reviews/…`의 미커밋 파일을 넣는다. 기본 워크트리에서 메모 위생(6.1.6절)에 경고가 있고 키가 `MEMO-TIDY`로 시작하는 열린 행(상태가 `완료`로 시작하지 않는 행)이 없으면 정리 과제 행 하나를 더한다. 행의 키는 `MEMO-TIDY-<YYYYMMDD>`이고 상태는 `대기`다. 담당은 경고가 난 역할 메모의 주인이고, 없으면 `primary_role`, 그다음 kind `coordinator`인 역할이다. 그것도 없으면 더하지 않는다. 목표에는 '낮은 effort', 경고 건수, 경로 셋, 할 일(`tasks/<KEY>/`와 대조해 고치기, 중복 합치기, 승격)을 적는다. 리뷰 기록은 lead 체크아웃에 쓰이므로, lead가 기본 워크트리가 아니면(coordinator 역할 워크트리) 그 체크아웃의 미커밋 리뷰 파일을 기본 워크트리의 같은 경로로 복사해 이 커밋에 넣고, 커밋한 뒤 lead 쪽 사본을 치운다(미추적 파일은 지우고 추적되던 파일은 lead 브랜치의 것으로 되돌린다. 남기면 M-11이 lead 체크아웃을 '깨끗하지 않다'로 예약만 남긴다. M-11의 동기화가 커밋된 기록을 lead 체크아웃에 가져온다). 커밋 본문에 리뷰 판정 사유(`need.reason`)와 lint 재사용 여부를 적는다 | 종료 코드 1 |
 | M-09 | 원격이 있고 `--no-push`가 아니면 `git push <remote> refs/heads/<base>:refs/heads/<base>`. force는 쓰지 않는다 | 종료 코드 4. completion은 통합 대기로 남는다. 다시 실행하면 M-06~M-08을 건너뛰고 push만 한다. 오프라인이라 fetch를 못 해 거절된 push면 'FULLOPS_OFFLINE 없이 다시 실행' 한 문장을 붙인다 |
 | M-10 | `landing(sha) == Landed`를 확인하고 `landed_at`을 쓴다. hold가 있었으면 `released_hold`로 옮긴다. 처리 표시: 그 completion의 메시지(`messages[]`에서 `id`가 completion의 `id`와 같은 것)와, `messages[].dispatch`가 이 과제 키의 dispatch(목적 무관)인 `worker_done` 메시지 가운데 `acked_at`이 없는 것 전부에 쓴다. 병합이 끝났으면 그 과제의 리뷰 보고와 앞선 실패 보고도 처리된 것이기 때문이다. 같은 키의 다른 통합 대기 보고 가운데 이미 `Landed`인 것(병합한 SHA에 담긴 앞선 보고)도 함께 닫는다(R4-3). 다른 종류(`question`·`escalation` 등)와 다른 과제의 메시지는 건드리지 않는다. 과제에 열린 dispatch가 없으면 `archive.jsonl`로 옮긴다 | - |
 | M-11 | 동기화: 등록 역할의 워크트리마다(lead의 coordinator 브랜치 포함) `settled` 없는 dispatch가 없고 깨끗하면 `git merge --ff-only <base>`, ff가 아니면 `git merge --no-edit <base>`(충돌이면 abort). 폴더 이름 변경 감지는 끈다(9.1절). 그 밖은 `sync_pending[R] = <base tip>`. 강제 reset과 삭제는 쓰지 않는다 | 예약만 남기고 계속 |
@@ -1835,7 +1861,7 @@ fullops context <KEY> --role <R> --paths <경로>... [--required <경로>]... [-
 
 - 지시서: `inbox/to_<R>.md`. 이 체크아웃에 없거나 front matter의 `key`가 KEY와 다르면 거절한다(J-01).
 - 과제 글: `<KEY>` 한 줄 뒤에 지시서 본문(front matter와 옛 패킷 블록을 뺀 글)을 붙인다. 본문이 3,400자를 넘으면 앞 1,700자 + `[partial: read full inbox]` 줄 + 뒤 1,700자로 줄이고 결과의 `input_partial`을 참으로 쓴다.
-- 작성 글: 지시서 본문에서 내장 템플릿과 같은 줄을 뺀 것. 리터럴과 키워드는 작성 글에서만 뽑는다(템플릿의 안내 문장이 검색어가 되지 않게 한다).
+- 작성 글: 지시서 본문에서 내장 템플릿과 같은 줄과 `task new`가 넣은 메모 경로 줄(6.1.6절)을 뺀 것. 리터럴과 키워드는 작성 글에서만 뽑는다(템플릿의 안내 문장이 검색어가 되지 않게 한다).
 - 재사용과 덮어쓰기: 결과 파일이 없으면 새로 만든다. 있으면 아래 표다. `find`·`context`는 Jev를 부르기 전에 입력(`input_sha256`)을 계산해 비교한다. 결과 파일을 모든 워크트리가 함께 보므로, lead 체크아웃에서 만든 결과가 있는 키를 역할 워크트리에서 다시 돌리면 `head`가 달라 J-04가 된다(`--force`).
 
   | 있던 파일 | `--force` | 하는 일 |
@@ -2686,6 +2712,7 @@ Claude Code 등록을 exec form으로 고른 이유는 셋이다. (1) Git Bash�
   | 병렬 방침 | 활성 레포에서 `fullops.toml`의 `parallel` | `ultra`면 "Claude Code worker를 울트라코드로 띄운다. 사용량이 빨리 준다"를 안내한다(알림일 뿐이다) |
   | Git Bash | Windows에서 Claude Code 등록이 shell form일 때만(10.4절의 대안) Git Bash의 유무 | 없으면 "hook이 돌지 않는다" |
   | 레포 | `fullops.toml` 검증, `state.json` 읽기, Git 공용 디렉터리가 네트워크·동기화 폴더에 있는지, `.fullops/` 아래에 무시 목록에 있으면서 추적되는 파일이 있는지(`git ls-files -ci --exclude-standard -- .fullops`. 수와 앞의 다섯 개를 내고 `git rm --cached`를 안내한다), 옛 자리 레포인지(13.6절. 비활성 레포의 행에 안내를 낸다) | 오류와 알림 |
+  | 메모 | 활성 레포에서 메모 위생 세 가지(6.1.6절) | 경고가 있다. 처음 10건과 나머지 건수, `merge`가 정리 과제 행을 더한다는 안내 |
   | hook 실행 | 최근 24시간 추적의 오류·시간 초과 수, 추적과 `seen` 표식이 없는 최근 세션 수 | 0이 아니다 |
   | 폐쇄망 | `FULLOPS_OFFLINE` 값 | 켜져 있으면 "Jev와 설치의 네트워크 단계를 건너뛴다" |
 

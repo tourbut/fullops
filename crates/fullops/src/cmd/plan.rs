@@ -120,6 +120,42 @@ fn split_lines(text: &str) -> Vec<String> {
     text.split_inclusive('\n').map(str::to_string).collect()
 }
 
+/// 마지막 과제 표 끝에 행 하나를 더한 줄들. 과제 표가 없으면 `None`이다. `merge`의 정리 과제 행도 이것으로 더한다.
+pub(super) fn add_row(
+    text: &str,
+    key: &TaskKey,
+    role: &str,
+    goal: &str,
+    source: &str,
+    status: &str,
+) -> Option<Vec<String>> {
+    let mut lines = split_lines(text);
+    let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let (cols, last) = tables(&refs).pop()?;
+    let mut cells = vec![String::new(); cols.count];
+    let mut put = |at: Option<usize>, text: &str| {
+        if let Some(cell) = at.and_then(|at| cells.get_mut(at)) {
+            *cell = cell_text(text);
+        }
+    };
+    put(Some(cols.key), key.as_str());
+    put(Some(cols.status), status);
+    put(cols.goal, goal);
+    put(cols.role, role);
+    put(cols.source, source);
+    // 새 행은 파일의 줄 끝 표기를 따른다. 표 마지막 줄이 줄바꿈 없이 끝나면 줄바꿈을 그 줄에 붙인다
+    let row = format!("| {} |", cells.join(" | "));
+    let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    match lines.get_mut(last) {
+        Some(line) if !line.ends_with('\n') => {
+            line.push_str(eol);
+            lines.insert(last + 1, row);
+        }
+        _ => lines.insert(last + 1, format!("{row}{eol}")),
+    }
+    Some(lines)
+}
+
 fn write_plan(ctx: &Ctx, lines: &[String]) -> Result<(), CliError> {
     Ok(fullops_store::write_atomic(
         &ctx.repo()?.plan_path(),
@@ -223,34 +259,9 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
                         .join(" ")
                 ));
             }
-            let mut lines = split_lines(&text);
-            let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
-            let Some((cols, last)) = tables(&refs).pop() else {
-                return Err(usage(
-                    "PLANS.md에 과제 표가 없다. `과제 키`와 `상태` 열이 있는 표를 먼저 둔다.",
-                ));
-            };
-            let mut cells = vec![String::new(); cols.count];
-            let mut put = |at: Option<usize>, text: &str| {
-                if let Some(cell) = at.and_then(|at| cells.get_mut(at)) {
-                    *cell = cell_text(text);
-                }
-            };
-            put(Some(cols.key), key.as_str());
-            put(Some(cols.status), &status);
-            put(cols.goal, &goal);
-            put(cols.role, &role);
-            put(cols.source, &source);
-            // 새 행은 파일의 줄 끝 표기를 따른다. 표 마지막 줄이 줄바꿈 없이 끝나면 줄바꿈을 그 줄에 붙인다
-            let row = format!("| {} |", cells.join(" | "));
-            let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
-            match lines.get_mut(last) {
-                Some(line) if !line.ends_with('\n') => {
-                    line.push_str(eol);
-                    lines.insert(last + 1, row);
-                }
-                _ => lines.insert(last + 1, format!("{row}{eol}")),
-            }
+            let lines = add_row(&text, &key, &role, &goal, &source, &status).ok_or_else(|| {
+                usage("PLANS.md에 과제 표가 없다. `과제 키`와 `상태` 열이 있는 표를 먼저 둔다.")
+            })?;
             write_plan(ctx, &lines)?;
             ctx.print(
                 &format!("PLANS.md에 `{key}` 행을 더했다."),
