@@ -263,6 +263,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fresh_init_has_no_memo_warnings() {
+        // init이 까는 파일·폴더만 있는 레포에서 `guide/`·`templates/`의 경로가 모두 살아 있다(doctor의 메모 항목)
+        let mut present: Vec<String> = REPO_FILES
+            .iter()
+            .map(|(p, _)| fullops_core::layout::at(p))
+            .chain(REPO_DIRS.iter().map(fullops_core::layout::at))
+            .chain(ENTRY_DOCS.iter().map(|d| d.to_string()))
+            .collect();
+        present.push(fullops_core::layout::config_toml().into());
+        let exists = |p: &str| {
+            present
+                .iter()
+                .any(|f| f == p || f.starts_with(&format!("{p}/")))
+        };
+        let issues: Vec<_> = REPO_FILES
+            .iter()
+            .filter(|(p, _)| {
+                p.ends_with(".md") && (p.starts_with("guide/") || p.starts_with("templates/"))
+            })
+            .flat_map(|(p, text)| {
+                fullops_core::memo::broken_refs(&fullops_core::layout::at(p), text, &exists)
+            })
+            .collect();
+        assert!(issues.is_empty(), "{issues:#?}");
+    }
+
+    #[test]
     fn stock_1_24_ignores_what_setup_stamps() {
         // 1.24.0의 docs/agents/triage-labels.md 그대로
         let stock = "# Triage labels\n\n로컬 역할 분류는 `fullops.json`의 `roles` 키를 그대로 쓴다.\n외부 트래커 라벨은 아직 설정하지 않았다. 연결 시 실제 라벨을 조회하고 역할별 대응표를 기록한다. 원본 레포의 라벨을 존재한다고 가정하지 않는다.\n";

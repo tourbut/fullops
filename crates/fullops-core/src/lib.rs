@@ -9,6 +9,7 @@ pub mod flow;
 pub mod frontmatter;
 pub mod layout;
 pub mod lint_rules;
+pub mod memo;
 pub mod messages;
 pub mod model;
 pub mod patch;

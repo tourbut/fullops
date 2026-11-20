@@ -5,7 +5,10 @@ use super::install;
 use crate::cli::{self, CliError, Ctx, EXIT_OK};
 use fullops_core::deps::ALL_HOSTS;
 use fullops_core::layout;
-use fullops_core::model::{HostId, Known, Parallel, TraceLine, same_path};
+use fullops_core::memo::{self, Issue};
+use fullops_core::model::{
+    Config, HostId, Known, Parallel, RoleId, TraceLine, path_text, same_path,
+};
 use fullops_ext::{Git, GitCli, hosts};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -526,6 +529,65 @@ fn repo_rows(report: &mut Report, ctx: &Ctx) {
     report.item("레포", repo.root.display().to_string(), notes);
 }
 
+/// 메모 위생(설계 6.1.6절): 역할 교훈 파일의 크기·이름, `guide/`·`templates/` 글의 깨진 경로. `merge`도 쓴다.
+pub(super) fn memo_issues(root: &Path, config: &Config) -> Vec<Issue> {
+    fn markdown(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                markdown(&path, out);
+            } else if path.extension().is_some_and(|e| e == "md") {
+                out.push(path);
+            }
+        }
+    }
+    let is_role = |stem: &str| RoleId::new(stem).is_ok_and(|id| config.roles.contains_key(&id));
+    let mut issues = Vec::new();
+    for entry in std::fs::read_dir(root.join(layout::roles_dir()))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with('.') && entry.path().is_file() {
+            let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
+            issues.extend(memo::note_issues(&name, &text, &is_role));
+        }
+    }
+    let mut files = Vec::new();
+    markdown(&root.join(layout::guide("")), &mut files);
+    markdown(&root.join(layout::template("")), &mut files);
+    let exists = |rel: &str| root.join(rel).exists();
+    for path in files {
+        let rel = path_text(path.strip_prefix(root).unwrap_or(&path));
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        issues.extend(memo::broken_refs(&rel, &text, &exists));
+    }
+    issues
+}
+
+fn memo_row(report: &mut Report, ctx: &Ctx) {
+    let (Ok(repo), Ok(config)) = (ctx.repo(), ctx.config()) else {
+        return;
+    };
+    let issues = memo_issues(&repo.root, config);
+    let mut notes: Vec<String> = issues
+        .iter()
+        .take(10)
+        .map(|i| format!("{}: {}", i.path, i.text))
+        .collect();
+    if issues.len() > notes.len() {
+        notes.push(format!("외 {}건", issues.len() - notes.len()));
+    }
+    if !notes.is_empty() {
+        notes.push(
+            "`fullops merge`가 정리 과제 행(`MEMO-TIDY-<날짜>`)을 `PLANS.md`에 한 번 더한다."
+                .to_string(),
+        );
+    }
+    report.item("메모", format!("경고 {}건", issues.len()), notes);
+}
+
 fn hook_row(report: &mut Report, dirs: &[PathBuf], sessions: &[(PathBuf, Value)]) {
     let since = fullops_store::now() - DAY;
     let mut errors = 0;
@@ -607,6 +669,7 @@ pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
     // Git Bash 항목은 Claude Code 등록이 shell form일 때만 본다. 지금 등록은 exec form이라 보지 않는다(설계 10.4절)
     repo_rows(&mut report, ctx);
     if active {
+        memo_row(&mut report, ctx);
         hook_row(&mut report, &dirs, &sessions);
     }
     let offline = install::offline();

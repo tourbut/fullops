@@ -6,6 +6,7 @@ use crate::cli::{CliError, Ctx, EXIT_OK};
 use fullops_core::flow;
 use fullops_core::frontmatter::{FmValue, FrontMatter};
 use fullops_core::layout;
+use fullops_core::memo;
 use fullops_core::messages;
 use fullops_core::model::{
     Completion, Config, DEFAULT_BUDGET, Extra, HeadRef, Known, RoleId, RoleKind, RouteClass, Seat,
@@ -14,6 +15,7 @@ use fullops_core::model::{
 use fullops_ext::{Git, GitCli, MergeMode, MergeOutcome};
 use lexopt::prelude::*;
 use serde_json::json;
+use std::path::Path;
 use std::time::Duration;
 
 /// 에폭 초의 UTC 날짜(`YYYY-MM-DD`). 날짜 라이브러리를 쓰지 않는다(설계 10.1절).
@@ -207,6 +209,34 @@ fn adopt_record(
     Ok(())
 }
 
+/// `## 먼저 읽을 문서`의 안내 문단 뒤에 그 역할의 교훈 메모와 `project.md`의 `## 자주 틀리는 것`을 적는다(설계 8.4절).
+/// 파일이 없거나 내용이 없으면 적지 않는다.
+fn with_memo_paths(body: &str, root: &Path, role: &RoleId) -> String {
+    let read = |rel: &str| std::fs::read_to_string(root.join(rel)).unwrap_or_default();
+    let note = layout::role_note(role);
+    let project = layout::guide("project.md");
+    let mut lines = Vec::new();
+    if memo::has_body(&read(&note)) {
+        lines.push(format!("- `{note}`: 이 역할의 지난 결정·교훈"));
+    }
+    if memo::has_mistakes(&read(&project)) {
+        lines.push(format!("- `{project}`의 `{}`", memo::MISTAKES_HEADING));
+    }
+    let heading = "## 먼저 읽을 문서\n\n";
+    let Some(at) = body.find(heading) else {
+        return body.to_string();
+    };
+    if lines.is_empty() {
+        return body.to_string();
+    }
+    // 안내 문단(제목 뒤 첫 빈 줄까지) 뒤
+    let after = at + heading.len();
+    let end = body[after..]
+        .find("\n\n")
+        .map_or(body.len(), |n| after + n + 2);
+    format!("{}{}\n\n{}", &body[..end], lines.join("\n"), &body[end..])
+}
+
 fn write_inbox(ctx: &Ctx, options: Options, reopen: bool) -> Result<u8, CliError> {
     let (repo, config) = (ctx.repo()?, ctx.config()?);
     let Options {
@@ -319,6 +349,7 @@ fn write_inbox(ctx: &Ctx, options: Options, reopen: bool) -> Result<u8, CliError
     let body = HANDOVER_TEMPLATE
         .split_once('\n')
         .map_or("", |(_, rest)| rest);
+    let body = with_memo_paths(body, &repo.root, &role);
     let path = repo.inbox_path(&role);
     fullops_store::write_atomic(
         &path,
@@ -427,5 +458,37 @@ mod tests {
         assert_eq!(super::date_of(0), "1970-01-01");
         assert_eq!(super::date_of(1_794_500_000), "2026-11-12");
         assert_eq!(super::date_of(951_782_400), "2000-02-29");
+    }
+
+    #[test]
+    fn inbox_lists_memo_paths_only_when_they_have_content() {
+        use fullops_core::model::RoleId;
+        let root = std::env::temp_dir().join(format!("fullops-memo-{}", std::process::id()));
+        let roles = root.join(".fullops/guide/roles");
+        std::fs::create_dir_all(&roles).unwrap();
+        let body = crate::assets::HANDOVER_TEMPLATE;
+        let dev = RoleId::new("dev").unwrap();
+        let stock = crate::assets::REPO_FILES
+            .iter()
+            .find(|(p, _)| *p == "guide/project.md")
+            .unwrap()
+            .1;
+        // 빈 메모와 템플릿 그대로의 project.md는 적지 않는다
+        std::fs::write(roles.join("dev.md"), "---\ntitle: dev\n---\n# dev\n").unwrap();
+        std::fs::write(root.join(".fullops/guide/project.md"), stock).unwrap();
+        assert_eq!(super::with_memo_paths(body, &root, &dev), body);
+
+        std::fs::write(roles.join("dev.md"), "# dev\n- 2026-11-20 교훈\n").unwrap();
+        let filled = stock.replace(
+            "## 자주 틀리는 것\n\n",
+            "## 자주 틀리는 것\n\n- 실수 → 방법\n\n",
+        );
+        std::fs::write(root.join(".fullops/guide/project.md"), filled).unwrap();
+        let out = super::with_memo_paths(body, &root, &dev);
+        let section = out.split("## 먼저 읽을 문서").nth(1).unwrap();
+        let section = section.split("\n## ").next().unwrap();
+        assert!(section.contains("- `.fullops/guide/roles/dev.md`"));
+        assert!(section.contains("- `.fullops/guide/project.md`의 `## 자주 틀리는 것`"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -76,6 +76,14 @@ pub const fn deliverables_index() -> &'static str {
 pub fn guide(name: impl Display) -> String {
     format!(".fullops/guide/{name}")
 }
+/// 역할 교훈 파일들이 있는 폴더(끝에 `/`가 없다).
+pub const fn roles_dir() -> &'static str {
+    ".fullops/guide/roles"
+}
+/// 그 역할의 결정·교훈 메모.
+pub fn role_note(role: impl Display) -> String {
+    format!(".fullops/guide/roles/{role}.md")
+}
 pub fn template(name: impl Display) -> String {
     format!(".fullops/templates/{name}")
 }

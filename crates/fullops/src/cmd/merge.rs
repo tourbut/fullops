@@ -13,10 +13,12 @@ use crate::assets;
 use crate::cli::{CliError, Ctx, EXIT_OK, session_handle};
 use crate::hook::changes::{self, GitGate};
 use fullops_core::layout;
+use fullops_core::memo;
 use fullops_core::messages::merge as msg;
 use fullops_core::model::{
     AckBy, Completion, Decision, DecisionId, DecisionStatus, Derived, Dispatch, DispatchId,
-    Landing, Need, NeedAction, Sha, State, TaskKey, ack_by, orca_wakes, path_text, same_path,
+    Landing, Need, NeedAction, RoleKind, Sha, State, TaskKey, ack_by, orca_wakes, path_text,
+    same_path,
 };
 use fullops_ext::{Git, GitCli, MergeMode, MergeOutcome, Worktree};
 use lexopt::prelude::*;
@@ -310,6 +312,35 @@ fn record(
         .map(|f| format!("- [ ] {}: {} ({key})", f.role, f.text))
         .collect();
     append_section(&mut text, "## 완료 보고 후속 요청", &followups);
+    // 메모 위생 경고가 있으면 정리 과제 행을 하나 더한다. 열린 정리 행이 있으면 다시 넣지 않는다(설계 6.1.6절)
+    if let Ok(config) = ctx.config() {
+        let issues = super::doctor::memo_issues(&base.repo_root, config);
+        let fallback = config.primary_role.as_ref().or_else(|| {
+            config
+                .roles
+                .iter()
+                .find(|(_, r)| r.kind == RoleKind::Coordinator)
+                .map(|(id, _)| id)
+        });
+        let plan = fullops_core::parse_plan(&text, assets::PLANS_MD);
+        let today = super::task::date_of(fullops_store::now() + offset);
+        if let Some((tidy, role, goal)) = memo::tidy_row(&issues, &plan, &today, fallback)
+            && let Some(lines) = super::plan::add_row(
+                &text,
+                &tidy,
+                role.as_str(),
+                &goal,
+                "fullops doctor 메모",
+                "대기",
+            )
+        {
+            text = lines.concat();
+            ctx.note(&format!(
+                "메모 경고 {}건: `PLANS.md`에 정리 과제 `{tidy}`({role})를 더했다.",
+                issues.len()
+            ));
+        }
+    }
     if text != before {
         std::fs::write(&plan_path, text)?;
     }
