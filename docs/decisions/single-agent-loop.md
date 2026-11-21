@@ -91,7 +91,28 @@ cargo xtask baseline --against target/baseline/before.tsv --out target/baseline/
 ## 7. 남은 위험
 
 - 기준선은 에이전트가 참조 파일을 실제로 읽는지 재지 못한다. 드문 경로(질문 전달, 복구, 모델 선택)를 놓칠 수 있다. 질문 카드·결정 기록·모델 누락은 hook과 CLI 거절(D-09, D-14 등)이 막는다.
-- 템플릿(`FULLOPS.md`, `handover.md`, `delegation.md`) 변경은 새 `init`에만 들어간다. 기존 레포에는 다음 릴리스 노트와 `update-fullops`로 알려야 한다. 릴리스 노트는 쓰지 않았다.
+- 템플릿(`FULLOPS.md`, `handover.md`, `delegation.md`) 변경은 새 `init`에만 들어간다. 기존 레포에는 다음 릴리스 노트와 `update-fullops`로 알려야 한다. 초안은 8절이다.
 - testkit 시나리오의 기본 설정은 여전히 `parallel = "on"`이다. 제품 기본값과 다르다. 시나리오 기대값을 지키려고 그대로 두었다.
 - `read`에서는 큰 과제의 완료 시간이 늘 수 있다. 그때는 사람이 `on`을 고른다.
 - 토큰 수가 아니라 글자 수로 쟀다.
+
+## 8. 릴리스 노트 초안
+
+다음 릴리스 때 `crates/fullops/assets/releases/<버전>.md`로 옮긴다. 아직 릴리스하지 않았다.
+
+```md
+## 달라진 것
+
+- 병렬 방침 기본값: 새 레포의 `parallel` 기본값이 `on`에서 `read`로 내려갔다. `read`에서는 하위 에이전트를 읽기 전용 조사·리뷰에만 쓴다(지시에 `Purpose: research` 또는 `review`와 `read only`). 구현까지 하위 에이전트로 나누려면 사람이 `on`을 고른다. 역할이 다른 준비된 행을 한 턴에 함께 배정하라는 lead 안내는 `off`가 아니면 그대로 나온다.
+- 1.24.0 레포 이행(`fullops migrate`): `subagent_level`을 `off` → `off`, `lite` → `read`, `standard`·`full` → `on`, 값 없음 → `read`로 옮긴다(전에는 `off` 말고 모두 `on`).
+- 지시서 템플릿(`.fullops/templates/handover.md`): 검증만 맡는 하위 에이전트(verifier)를 띄우지 않는다. 등록된 검사는 `fullops lint`가, 증명 방법의 명령은 worker가 직접 실행한다.
+- 세션 시작 문서(`.fullops/guide/FULLOPS.md`): 세션을 시작하면 `fullops status`만 실행하고, 나머지 문서는 그 작업을 할 때 읽는다. lint·리뷰 게이트는 그대로다.
+- 위임 기준(`.fullops/guide/rules/delegation.md`): 기본값 표기를 `read`로 바꿨다.
+- 스킬: `fullops-orca`·`fullops-work`를 핵심 본문과 필요할 때 읽는 참조 파일(`questions.md`, `recovery.md`, `models.md`, `explore.md`, `memo.md`)로 나눴다. 플러그인을 갱신하면 들어온다.
+
+## 적용
+
+1. `npx --yes github:tourbut/fullops install`을 실행하고 플러그인을 다시 읽는다.
+2. 기존 2.x 레포의 `fullops.toml`의 `parallel` 값은 바뀌지 않는다(필수 키라 기본값이 적용되지 않는다). 새 기본값을 따르려면 사람이 `parallel = "read"`로 고친다. 사람이 고른 값이므로 `update-fullops`가 대신 바꾸지 않는다.
+3. 템플릿 세 파일은 `fullops init`을 다시 실행해도 덮어쓰지 않는다(없는 파일만 만든다). 레포의 파일이 이전 템플릿 그대로면 이번 판의 템플릿 글로 바꾸고, 레포에 맞게 고친 파일이면 위 변경만 옮겨 적는다. 필수 적용 검사는 더하지 않았다.
+```
