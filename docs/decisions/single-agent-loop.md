@@ -98,7 +98,7 @@ cargo xtask baseline --against target/baseline/before.tsv --out target/baseline/
 
 ## 8. 릴리스 노트 초안
 
-다음 릴리스 때 `crates/fullops/assets/releases/<버전>.md`로 옮긴다. 아직 릴리스하지 않았다.
+2.3.0에서 `crates/fullops/assets/releases/2.3.0.md`로 옮겼다(메모 위생과 `project.md` 템플릿 변경을 함께 적었다). 아래는 옮기기 전 초안이다.
 
 ```md
 ## 달라진 것
