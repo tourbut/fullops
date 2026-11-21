@@ -186,7 +186,8 @@ pub(super) fn s01(input: &HookInput, facts: &mut dyn Facts) -> Finding {
     };
     let mut brief = Brief {
         head: vec![role_text(facts, &actor)],
-        parallel_on: matches!(config.parallel, Parallel::On | Parallel::Ultra),
+        // 역할 단위 배정은 워크트리가 갈라지는 병렬이라 기본값 read에서도 함께 배정한다(off만 뺀다)
+        parallel_on: config.parallel != Parallel::Off,
         pstack: facts.host() == HostId::Claude,
         ..Brief::default()
     };

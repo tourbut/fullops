@@ -138,7 +138,7 @@ fullops dispatch <KEY> --role <역할> --agent <CLI> --model <모델> --effort <
 
 방침은 `fullops.toml`의 `parallel`이다(`fullops-work`의 "병렬 진행" 표, 정본은 `.fullops/guide/rules/delegation.md`).
 
-- 서로 다른 워크트리가 필요한 독립 과제는 역할 단위로 배정한다. 방침이 `on`·`ultra`면 담당 역할이 서로 다른 준비된 행은 한 턴에 함께 배정한다.
+- 서로 다른 워크트리가 필요한 독립 과제는 역할 단위로 배정한다. 방침이 `off`가 아니면 담당 역할이 서로 다른 준비된 행은 한 턴에 함께 배정한다.
 - 같은 종류의 일을 동시에 여럿 돌리려면 역할(워크트리)을 늘린다(예: `dev1`, `dev2`). 역할당 인박스는 하나이고 과제 이름으로 된 지시서 파일은 만들지 않는다.
 - worker는 spec의 `Parallel:`과 병렬 문장을 보고 하위 에이전트를 쓴다. Orca의 preamble은 task가 요구하지 않으면 하위 에이전트를 쓰지 말라고 하므로, 병렬 진행의 요청은 `fullops dispatch`가 spec에 넣는 문장으로 간다. spec을 손으로 고쳐 쓰지 않는다.
 - worker의 하위 배정(`fullops dispatch <KEY> --brief "<글>"`)의 보고는 lead가 아니라 그 worker에게 간다. lead가 받는 완료 보고 하나가 하위 worker의 변경까지 담고, 통합은 `fullops merge` 한 번이다. lead는 `--brief`를 쓰지 않는다(lead의 지시는 인박스에 있다).

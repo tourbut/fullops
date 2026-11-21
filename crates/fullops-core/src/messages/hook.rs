@@ -214,7 +214,7 @@ pub struct Brief {
     pub head: Vec<String>,
     /// 준비된 행 `(키, 목표)`. lead만.
     pub ready: Vec<(String, String)>,
-    /// 병렬 방침이 `on`·`ultra`다.
+    /// 병렬 방침이 `off`가 아니다(역할 단위 동시 배정 안내).
     pub parallel_on: bool,
     /// `## 위임 범위`의 사용자 원문.
     pub delegation: Vec<String>,
