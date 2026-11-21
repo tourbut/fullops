@@ -1034,7 +1034,14 @@ fn direct_dev_needs_review_evidence() {
     );
     let base = Sha::new(h.head("lead")).unwrap();
     let head = Sha::new(h.commit("lead", "src/big.py", &"print(1)\n".repeat(400))).unwrap();
-    assert!(reason(&h.stop("lead", "s", &[])).starts_with("FullOps[X-01]: "));
+    let out = h.stop("lead", "s", &[]);
+    let x01 = reason(&out);
+    // dev 직접 작업은 BlockAlways라 "다시 끝낸다" 탈출구가 통하지 않는다고 적는다(#57)
+    assert!(
+        x01.starts_with("FullOps[X-01]: ")
+            && x01.contains("dev 직접 작업이면 다시 끝내도 통과하지 않는다"),
+        "{x01}"
+    );
     let pass = LintPass {
         v: 1,
         base: base.clone(),
