@@ -18,7 +18,7 @@
 8. 호스트는 넷이다: Claude Code, Codex, Grok Build(`grok`), Antigravity CLI(`agy`). 네 호스트 모두 hook이 돈다. 계약이 달라 어댑터와 등록 파일이 호스트마다 따로 있고, 호스트가 못 하는 것(grok은 세션 시작과 프롬프트 때 모델에게 글을 줄 수 없다. agy는 프롬프트 이벤트가 없다)은 능력 표 `Caps`로 나타내 닿지 않는 안내를 내지 않는다(7.2절). `fullops install` 하나가 PATH에 있는 호스트마다 fullops 플러그인과 hook을 등록하고 의존 플러그인·스킬을 설치한다(10.3절). 문서와 설치본으로만 확인하고 세션에서 보지 못한 것은 미정-M10·M11이다.
 9. 의존 목록은 패키지에 실린 선언 파일 `deps.toml` 하나다(10.7절). 목록이 바뀌면 이 파일만 바뀐다.
 10. Jev 탐색(`find`·`context`와 탐색 색인)은 v1에 있다(8.14절). 결과는 추천이고 게이트가 아니다. 탐색 패킷(`packet build|check`와 패킷 검사)은 2.1.0에서 뗐다(`docs/design-changes.md` 9절).
-11. 나눌 수 있는 일은 서브에이전트로 동시에 진행한다(8.15절). `fullops.toml`의 `parallel`이 방침이고 기본값은 권장(`on`)이다. 수단은 호스트의 서브에이전트 도구, Claude Code의 울트라코드(Workflow), Orca 하위 배정 셋이다. 서브에이전트가 만든 변경은 같은 워크트리에 쌓이므로 lint 통과·완료 보고·병합 전 검사는 그대로 걸린다. 리뷰와 테스트는 서브에이전트로 늘리지 않는다.
+11. 나눌 수 있는 일은 서브에이전트로 동시에 진행한다(8.15절). `fullops.toml`의 `parallel`이 방침이고 기본값은 `read`다(단일 에이전트 루프 원칙. `docs/decisions/single-agent-loop.md`). 구현 병렬(`on`)은 사람이 고를 때만 쓴다. 수단은 호스트의 서브에이전트 도구, Claude Code의 울트라코드(Workflow), Orca 하위 배정 셋이다. 서브에이전트가 만든 변경은 같은 워크트리에 쌓이므로 lint 통과·완료 보고·병합 전 검사는 그대로 걸린다. 리뷰와 테스트는 서브에이전트로 늘리지 않는다.
 12. 모션그래픽 스킬 `fullops-motion`은 v1에 있다(11.3절). 템플릿 카탈로그를 보여 주고 고른 템플릿으로 단일 HTML을 만들어 `render.mjs`로 렌더한다. hook·CLI와 무관하고 영상을 렌더할 때만 Node를 쓴다(14절).
 
 ## 2. 목표와 비목표
@@ -59,7 +59,7 @@ Windows 11, 릴리스 빌드, p95 기준이다. 수치는 측정 전 목표이�
 
 | 결정 | 설계의 위치 |
 |---|---|
-| 리뷰는 위험 기반. 테스트·리뷰는 최소·표적. LLM 호출을 늘리지 않음 | `review need`는 기준 시점 정책(400줄·15파일·always)으로만 판정한다(8.9절). 불필요 판정이면 `merge`가 리뷰 없이 진행한다. hook·`wait`·`merge`는 모델을 부르지 않는다. `wait`가 heartbeat·status를 흡수한다(8.6절). 병합 뒤 lint는 트리가 달라졌을 때만 한 번 돈다(M-07). 이 결정은 리뷰와 테스트에 관한 것으로 읽는다. 구현 속도를 위한 병렬 서브에이전트(8.15절)는 별개이고 권장한다. 리뷰·테스트를 서브에이전트로 더 돌리라는 안내는 없고, 병렬 안내 문구(`parallel_brief`)가 그것을 하지 말라고 적는다. 서브에이전트는 호스트 세션이 부르는 것이므로 hook·`wait`·`merge`가 모델을 부르지 않는다는 점은 그대로다 |
+| 리뷰는 위험 기반. 테스트·리뷰는 최소·표적. LLM 호출을 늘리지 않음 | `review need`는 기준 시점 정책(400줄·15파일·always)으로만 판정한다(8.9절). 불필요 판정이면 `merge`가 리뷰 없이 진행한다. hook·`wait`·`merge`는 모델을 부르지 않는다. `wait`가 heartbeat·status를 흡수한다(8.6절). 병합 뒤 lint는 트리가 달라졌을 때만 한 번 돈다(M-07). 이 결정은 리뷰와 테스트에 관한 것으로 읽는다. 구현 속도를 위한 병렬 서브에이전트(8.15절)는 별개이고 사람이 `on`을 고를 때만 쓴다. 리뷰·테스트를 서브에이전트로 더 돌리라는 안내는 없고, 병렬 안내 문구(`parallel_brief`)가 그것을 하지 말라고 적는다. 서브에이전트는 호스트 세션이 부르는 것이므로 hook·`wait`·`merge`가 모델을 부르지 않는다는 점은 그대로다 |
 | 되돌릴 수 있는 선택과 버그 수정 여부는 자율 판단 | SessionStart 안내 문구(S-01)와 스킬 문서. 결정 기록(`decision add`)을 요구하는 규칙이 없다. 사람에게 올리는 곳은 8.8절 M-04(대규모 리뷰), D-07(한도 재배정 초과), `task reopen`의 예산 알림뿐이다 |
 | 운영 배포·부하 테스트·backfill·운영 데이터 정리는 항상 사람 승인 | S-01의 lead 안내에 매 세션 넣는다. `PLANS.md`의 `대기(사람: …)` 행은 준비된 행에서 빠지고 뒤 행을 막지 않는다(6.6절) |
 | 제품이 정한 사용자 선검토 유지 | 같은 `대기(사람: …)` 어휘와 `decision`의 SHA 고정 결정(8.10절) |
@@ -87,7 +87,7 @@ Windows 11, 릴리스 빌드, p95 기준이다. 수치는 측정 전 목표이�
 | 의존 목록 | `deps.toml`(10.7절). 함께 설치할 호스트 플러그인·사용자 스킬·MCP의 선언 |
 | 탐색 결과 | `<git-common-dir>/fullops/explore/<KEY>-find.json`·`-documents-find.json`·`-context.json`. 추천 기록이다. 커밋하지 않는다(2.1.0부터. 그 전에는 `.fullops-squad/docs/evaluations/jev/`에 커밋했다) |
 | 탐색 패킷 | 2.1.0에서 뗐다(`docs/design-changes.md` 9절). worker가 읽고 확인할 파일 목록과 근거를 담던 `<KEY>-packet.json`이다 |
-| 병렬 방침 | `fullops.toml`의 `parallel`. `off`·`read`·`on`·`ultra` 넷이고 기본은 `on`(권장)이다(8.15절). 1.24.0의 `subagent_level`을 대신한다 |
+| 병렬 방침 | `fullops.toml`의 `parallel`. `off`·`read`·`on`·`ultra` 넷이고 기본은 `read`다(8.15절). 1.24.0의 `subagent_level`을 대신한다 |
 | 호스트 서브에이전트 | 호스트 세션이 자기 도구로 띄우는 하위 에이전트. Claude Code의 `Agent`, Codex의 `spawn_agent`, grok의 `spawn_subagent`, agy의 `invoke_subagent`. 부모와 같은 워크트리에서 돈다 |
 | 울트라코드 | Claude Code의 설정. 켜져 있으면 모델이 Workflow 도구로 여러 서브에이전트를 조율한다. 사용자가 켠 세션에서만 쓴다(8.15절) |
 | 하위 배정 | dispatch가 묶인 세션(worker)이 `fullops dispatch --brief`로 자기 Run에 띄우는 Orca worker. 부모와 같은 과제 키·역할·워크트리에서 돌고, 인박스와 completion을 만들지 않는다. 그 worker가 하위 worker다 |
@@ -221,7 +221,7 @@ primary_branch = "main"       # dev 모드에서 필수
 routing = "legacy"            # "legacy" | "split"
 tech_plan_role = "dev"        # routing = "split"일 때 필수. design 역할과 달라야 한다
 test_level = "lite"           # minimal|lite|standard|full|exhaustive
-parallel = "on"               # off|read|on|ultra. 병렬 방침(8.15절)
+parallel = "read"             # off|read|on|ultra. 병렬 방침(8.15절)
 
 [git]
 base = "main"
@@ -1966,8 +1966,8 @@ fullops가 관리하는 세션(lead와 worker)은 나눌 수 있는 일을 서�
 | `on`(기본) | 나눌 수 있는 구현과 탐색을 서브에이전트로 동시에 진행하도록 권한다 | 통과 | 통과 | `standard`·`full`의 허용 범위. 안내가 "허용"에서 "권장"으로 바뀐다 |
 | `ultra` | `on`에 더해 Claude Code에서 울트라코드(Workflow)를 쓰게 한다 | 통과 | 통과 | 없음 |
 
-- `init`의 기본값은 `on`이고 `fullops init --parallel <값>`으로 고른다(10.6절).
-- `migrate`는 `subagent_level`을 이렇게 옮긴다: `off` → `off`, `lite`·`standard`·`full` → `on`, 값이 없으면 `on`. `lite`를 `read`가 아니라 `on`으로 옮기는 이유: `lite`는 1.24.0의 신규 기본값이라 사용자가 고른 제한이 아닌 경우가 대부분이고, 바뀐 컨셉이 기준이다. 값이 없는 레포는 1.24.0에서 실제로는 `off`로 돌았다(`policy.py`의 누락 기본값). 그래도 `on`으로 옮기는 이유: 키가 없는 것은 하위 위임 레벨이 생기기 전에 setup한 레포이고 사용자가 `off`를 고른 것이 아니다(고른 `off`는 `off`로 남는다). 13.2절의 "누락 값은 1.24.0의 실제 동작으로 채운다"의 하나뿐인 예외다. 값이 없었으면 보고서에 "1.24.0에서는 하위 위임이 꺼져 있었다. 그대로 두려면 `parallel = \"off\"`로 고친다"를 함께 낸다. 보고서에 옮긴 값과 "읽기 전용만 허용하려면 `read`, 끄려면 `off`로 고친다"를 낸다(17절 H12).
+- `init`의 기본값은 `read`이고 `fullops init --parallel <값>`으로 고른다(10.6절). 2.2.4까지는 `on`이었다. 단일 에이전트 루프 원칙(기본은 한 루프로 접고 서브에이전트는 격리가 필요할 때만)에 맞춰 낮췄다(`docs/decisions/single-agent-loop.md`).
+- `migrate`는 `subagent_level`을 이렇게 옮긴다: `off` → `off`, `lite` → `read`, `standard`·`full` → `on`, 값이 없으면 `read`. `lite`는 1.24.0의 신규 기본값이라 사용자가 고른 값이 아닌 경우가 대부분이므로 새 기본값 `read`로 옮기고, 사람이 올린 `standard`·`full`만 `on`으로 옮긴다. 값이 없는 레포는 1.24.0에서 실제로는 `off`로 돌았다(`policy.py`의 누락 기본값). 그래도 `read`로 옮기는 이유: 키가 없는 것은 하위 위임 레벨이 생기기 전에 setup한 레포이고 사용자가 `off`를 고른 것이 아니다(고른 `off`는 `off`로 남는다). 13.2절의 "누락 값은 1.24.0의 실제 동작으로 채운다"의 하나뿐인 예외다. 값이 없었으면 보고서에 "1.24.0에서는 하위 위임이 꺼져 있었다. 그대로 두려면 `parallel = \"off\"`로 고친다"를 함께 낸다. 보고서에 옮긴 값과, `read`면 "구현까지 하위 에이전트로 나누려면 사람이 `on`으로, 끄려면 `off`로 고친다", `on`이면 "읽기 전용만 허용하려면 `read`, 끄려면 `off`로 고친다"를 낸다(17절 H12).
 - 동시에 돌리는 수는 강제하지 않는다. 안내 문구가 "한 번에 4개 이하로 시작한다"(1.24.0 `full`의 수)를 적고 실제 상한은 호스트가 정한다.
 - 끄는 방법은 `fullops.toml`의 `parallel = "off"`다(레포 전체). 한 과제만 끄려면 lead가 인박스 본문의 제약에 적는다(기계는 읽지 않는다). 인박스 front matter의 `parallel`은 `task new` 시점의 기록이고, 판정과 안내는 작업 트리의 `fullops.toml`을 본다.
 
@@ -3190,7 +3190,7 @@ expect = { verdict = "pass", flow = "continues" }
 | R5 | 하위 worker 세션: 코드를 고치고 lint 없이 Stop / 보고 없이 Stop / `fullops done` | - | X-01에 걸리지 않는다 / X-03 / R-01 거절 | 커밋·lint·완료 기록은 부모가 한다 |
 | R6 | 병렬 사용 지표: 서브에이전트 도구 호출 3회, `Workflow` 도구 호출 1회, 하위 배정 1회 뒤 `fullops status --json` / 방침 `off`에서 거부된 호출 | - | `metrics.subagent_calls` 3, `workflow_runs` 1, `sub_dispatches` 1. `turns.jsonl`의 그 줄에 `at`·`sid`·`kind`만 있다 / 세지 않는다 | 본문 없이 병렬 사용을 센다 |
 | R7 | 병렬 진행과 게이트: worker가 서브에이전트 도구를 부른 뒤(코드 파일은 준비 동사로 바꾼다) lint 없이 Stop / 커밋과 lint 뒤 `done` / 서브에이전트 안의 호출(`agent_id` 있음)로 날것 `worker-start` | 차단 / 통과 / 거부 | X-01 / 통과 / T-01 | 서브에이전트가 만든 변경에도 같은 게이트가 걸린다 |
-| R8 | `migrate`: `subagent_level`이 `off` / `lite` / `full` / 없음 | - | `parallel`이 `off` / `on` / `on` / `on`이고 보고서에 옮긴 값이 있다. 값이 없던 경우의 보고서에는 "1.24.0에서는 하위 위임이 꺼져 있었다"가 있다 | 기존 값을 옮긴다(H12) |
+| R8 | `migrate`: `subagent_level`이 `off` / `lite` / `full` / 없음 | - | `parallel`이 `off` / `read` / `on` / `read`이고 보고서에 옮긴 값이 있다. 값이 없던 경우의 보고서에는 "1.24.0에서는 하위 위임이 꺼져 있었다"가 있다 | 기존 값을 옮긴다(H12) |
 | S1 | 옛 자리 레포(`.fullops-squad/fullops.toml`만 있다): SessionStart(호스트 `claude` / `grok`) / 날것 `worker-start` / `fullops plan list`·`init` 등 / `status`·`upgrade` / `doctor` | - | 안내를 `Context` / `Warn`으로 / 통과(비활성) / `FullOps[layout]` 종료 코드 2 / 안내와 종료 코드 0 / '레포' 행의 알림 | 13.6절. `crates/fullops/tests/layout.rs` |
 | S2 | `migrate --layout`: `--dry-run` / 실행 / 다시 실행 / 그 커밋의 `git revert` | - | 수와 고칠 파일만 내고 바꾸지 않음 / 표대로 옮기고 추적에서 빼고 글을 고친 커밋 하나 / 거절 / 옛 자리로 돌아옴 | 13.6절 |
 | S3 | `migrate --layout`의 거절: 더러운 작업 트리 / `.fullops/` 있음 / 레포 루트가 홈 / 기준 브랜치 아님 / 인박스에 글 / 보류 / 열린 dispatch / 경로 겹침 / 심볼릭 링크 | - | 각각 `FullOps[migrate]` 종료 코드 2, 아무것도 옮기지 않음 | 13.6절 |
@@ -3291,7 +3291,7 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 | 순서 | 하는 일 | 되돌리기 |
 |---|---|---|
 | 1 | `<git-common-dir>/fullops/py-backup/`에 Python판 상태 폴더(`fullops-flow`, `fullops-integration`, `fullops-decisions`, `fullops-autonomy`, `fullops-issues`)를 복사한다. 원본은 건드리지 않는다 | 남긴다 |
-| 2 | `fullops.json`과 `orca-agents.md`의 라우팅 기준 표식 줄에서 `fullops.toml`을 만든다. `설계 역할` → `kind = "design"`, `coordinator 역할` → `"coordinator"`, `tester 역할` → `"tester"`, `제품 기획 역할`·`기술 계획 역할`이 둘 다 있으면 `routing = "split"`과 `tech_plan_role`. 역할 설명 줄은 `about`. `review_policy`는 `[review]`. `subagent_level`은 `parallel`로 옮긴다(`off` → `off`, `lite`·`standard`·`full` → `on`, 없으면 `on`. 8.15절). 값이 없는 것을 `on`으로 옮기는 것은 바로 뒤 원칙의 하나뿐인 예외다: 1.24.0에서 키가 없으면 실제 동작은 `off`였지만 고른 값이 아니므로 새 기본값을 준다(H12). 그 밖의 누락 값은 1.24.0의 실제 동작(`mode`는 `coor`, `test_level`은 `standard`)으로 채운다. 옮긴 값은 보고서에 낸다(`subagent_level`이 없었으면 "1.24.0에서는 하위 위임이 꺼져 있었다. 그대로 두려면 `parallel = \"off\"`로 고친다"를 함께 낸다). 읽지 못한 줄은 보고서에 낸다. `## 모델 후보` 절의 후보 줄은 `[models]`로 옮긴다(2.2.0. 13.7절) | 파일 삭제 |
+| 2 | `fullops.json`과 `orca-agents.md`의 라우팅 기준 표식 줄에서 `fullops.toml`을 만든다. `설계 역할` → `kind = "design"`, `coordinator 역할` → `"coordinator"`, `tester 역할` → `"tester"`, `제품 기획 역할`·`기술 계획 역할`이 둘 다 있으면 `routing = "split"`과 `tech_plan_role`. 역할 설명 줄은 `about`. `review_policy`는 `[review]`. `subagent_level`은 `parallel`로 옮긴다(`off` → `off`, `lite` → `read`, `standard`·`full` → `on`, 없으면 `read`. 8.15절). 값이 없는 것을 `read`로 옮기는 것은 바로 뒤 원칙의 하나뿐인 예외다: 1.24.0에서 키가 없으면 실제 동작은 `off`였지만 고른 값이 아니므로 새 기본값을 준다(H12). 그 밖의 누락 값은 1.24.0의 실제 동작(`mode`는 `coor`, `test_level`은 `standard`)으로 채운다. 옮긴 값은 보고서에 낸다(`subagent_level`이 없었으면 "1.24.0에서는 하위 위임이 꺼져 있었다. 그대로 두려면 `parallel = \"off\"`로 고친다"를 함께 낸다). 읽지 못한 줄은 보고서에 낸다. `## 모델 후보` 절의 후보 줄은 `[models]`로 옮긴다(2.2.0. 13.7절) | 파일 삭제 |
 | 3 | `lint/lint.json`의 정규식 규칙을 하나씩 컴파일해 본다. 실패한 규칙을 보고서에 낸다(파일은 고치지 않는다) | - |
 | 4 | 열린 결정(`fullops-decisions/D*.json`의 `status: open`)과 hold가 있는 통합 기록을 `state.json`으로 가져온다. 살아 있는 `PLANS.md` 행의 `선행:` 키 가운데 흐름 노드가 `report` 이상인 것을 `archive.jsonl`에 넣는다(`landed_at`에 전환 시각을 쓴다. `stage_of` 1번이 그 줄을 `Done`으로 본다). 그 밖(닫힌 결정, 흐름 노드, 사람 턴, route 기록, 섀도 판정, 이슈 상태)은 가져오지 않는다 | 남긴다. 전환 뒤 생긴 열린 결정과 hold를 화면에 낸다 |
 | 5 | `PLANS.md` 문법 검사 결과를 보고서에 낸다(고치지 않는다) | - |
@@ -3598,7 +3598,7 @@ Python 플러그인 제거는 2주 문제없이 쓴 뒤 따로 승인받는다.
 | H9 | 이슈와 fullops-spec 정리 | #1·#2는 이 문서로 대체해 닫는다. #3~#13은 18.2절의 묶음으로 다시 묶는다. #9의 caveman은 "S-06으로 구현"으로 고친다. #17의 전환 조건은 "12.4절의 합격"으로 바꾼다. fullops-spec은 README에 이 레포를 가리키는 한 줄만 남기고 보관한다 | 열림 | 이슈를 닫고 고치는 일은 사람이 한다 |
 | H10 | 의존 목록 | 10.7절의 `deps.toml`. 플러그인: ponytail(Claude Code·Codex), mattpocock-skills(Claude Code는 플러그인, 그 밖은 스킬), pstack(Claude Code만). 사용자 스킬: caveman, typesafe-ai, diagram-design, frontend-design, ui-ux-pro-max, impeccable, web-design-guidelines. MCP: Context7 원격 HTTP. 선택형은 안내만. `ocr`과 그 delegate 스킬은 뺀다 | **확정** | 되돌리기는 쉽다(선언 파일만 바뀐다). 여기 적는 이유는 `fullops install`이 사용자 홈의 스킬 폴더와 호스트의 플러그인 목록을 바꾸기 때문이다 |
 | H11 | grok과 agy에서 hook이 어디까지 도는가 | 네 호스트 모두 hook을 등록한다(7.2절). grok은 전역 등록 파일로, agy는 패키지의 `hooks.json`으로 넣는다. 남은 조건은 하나다: agy에서 hook 실패가 도구 호출을 막는 것으로 확인되면(미정-M11, 실환경 점검 13번) agy에는 hook 없이 설치한다(G2가 먼저다) | **확정**(2026-11-14, 묶음 0b의 결과) | grok의 lead 세션은 세션 시작 안내가 모델에게 닿지 않고, agy의 IDE·데스크톱 앱에서는 hook이 돌지 않는다. 그런 세션을 lead로 쓰는 레포는 게이트가 줄어든다. 전환한 뒤에 알게 되면 되돌리기가 번거롭다 |
-| H12 | 병렬 진행의 기본값과 이행 | `parallel`의 기본은 `on`(권장)이다. `migrate`는 1.24.0의 `lite`·`standard`·`full`을 `on`으로, `off`를 `off`로 옮긴다. 키가 없던 레포(1.24.0에서 실제로는 `off`로 돌았다)도 `on`으로 옮기고 보고서에 그 사실을 낸다. `ultra`(Claude Code worker를 울트라코드로 띄운다)는 사람이 `fullops.toml`에 직접 적을 때만 켜진다. worker의 울트라코드는 spec의 키워드가 아니라 실행 인자로 켠다(8.15절) | 방향은 **확정**(레포 주인, 2026-11-14). `lite`와 누락을 `on`으로 옮기는 것, `ultra`의 방식은 열림 | 설정 값은 한 줄로 되돌리지만 쓴 사용량은 되돌릴 수 없다. `lite`를 일부러 고른 레포는 전환 뒤 서브에이전트 사용이 늘어난다. 키가 없어 꺼진 채 돌던 레포는 전환 뒤 처음으로 서브에이전트를 쓰게 된다. `ultra`는 worker가 auto 모드나 bypass로 뜨지 않으면 Workflow 승인 창에서 멈춘다(8.15절) |
+| H12 | 병렬 진행의 기본값과 이행 | `parallel`의 기본은 `read`다(2026-11-21에 `on`에서 낮췄다. `docs/decisions/single-agent-loop.md`). `migrate`는 1.24.0의 `lite`를 `read`로, `standard`·`full`을 `on`으로, `off`를 `off`로 옮긴다. 키가 없던 레포(1.24.0에서 실제로는 `off`로 돌았다)는 `read`로 옮기고 보고서에 그 사실을 낸다. `ultra`(Claude Code worker를 울트라코드로 띄운다)는 사람이 `fullops.toml`에 직접 적을 때만 켜진다. worker의 울트라코드는 spec의 키워드가 아니라 실행 인자로 켠다(8.15절) | 방향은 **확정**(레포 주인, 2026-11-14). 기본값 `read`는 레포 주인 지시(2026-11-21). `ultra`의 방식은 열림 | 설정 값은 한 줄로 되돌린다. 이미 `on`으로 setup한 레포는 바뀌지 않는다(`fullops.toml`의 값을 그대로 쓴다). `read`에서는 큰 과제의 완료 시간이 늘 수 있고, 그때는 사람이 `on`을 고른다. `ultra`는 worker가 auto 모드나 bypass로 뜨지 않으면 Workflow 승인 창에서 멈춘다(8.15절) |
 | H13 | `install`이 grok의 전역 hook 폴더에 fullops 전용 등록 파일을 쓰는 것 | 쓴다(`<GROK_HOME 또는 ~/.grok>/hooks/fullops.json`). 계획과 결과에 경로를 보여 주고 `install --remove-hooks`가 지운다. 있는 설정 파일은 고치지 않는다 | 열림 | 지우기는 쉽다. 여기 적는 이유는 "호스트 설정을 대신 바꾸지 않는다"(2.3절)의 하나뿐인 예외이고, 플러그인을 지워도 이 파일이 남아 hook이 계속 돌기 때문이다 |
 | H14 | Orca 패널 플러그인의 id·버전과 배포 자리 | id `fullops-panel`, version `2.0.0`, 설치 키 `tourbut.fullops-panel`. 이 저장소 루트의 Orca 카탈로그 `orca-catalog.json`(카탈로그 v2, `source {kind: "git", url: "https://github.com/tourbut/fullops.git", ref: "main", path: "panel"}`)로 배포한다. Orca의 git 직접 설치(`orca plugin install tourbut/fullops`)는 저장소 루트만 읽어 하위 폴더를 설치하지 못하기 때문이다. 패널 버전은 태그가 아니라 카탈로그 releases 항목의 커밋 SHA로 가리킨다(본체 태그 `v<버전>`과 겹치지 않게). 항목은 릴리스 워크플로가 `cargo xtask orca-catalog --root .`로 `orca plugin release-entry panel`과 같은 규칙으로 만들어 릴리스 PR에 싣고, 첫 릴리스 때 파일이 생긴다(`docs/build.md` '릴리스 워크플로'). 사용자는 `orca plugin catalog add tourbut/fullops` 뒤 `orca plugin install tourbut.fullops-panel`을 하고 Orca가 보여 주는 `--approve` 명령으로 승인한다. npx 실행기는 이 명령을 안내만 한다 | **확정**(2026-11-15, 레포 주인. Orca 안에서의 패널 실환경 점검(M4)은 남았다) | 카탈로그에 올린 플러그인 id는 바꾸기 어렵다. 사용자가 승인한 지문이 id에 묶인다 |
 | H15 | `LICENSE`와 매니페스트의 `license`·`repository` | 저장소에 `LICENSE` 파일이 없다. 있으면 `xtask dist`가 패키지에 싣는다. 매니페스트에 `license` 값을 넣지 않았고 `plugin/plugin.json`의 `repository`는 `https://github.com/tourbut/fullops`다 | 열림 | 배포한 패키지의 라이선스 표기는 이미 받은 사용자에게서 되돌릴 수 없다 |

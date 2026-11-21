@@ -1141,7 +1141,7 @@ fn n3_migrate_round_trip() {
             assert_eq!(config["schema"].as_integer(), Some(2));
             assert_eq!(config["mode"].as_str(), Some("coor"));
             assert_eq!(config["test_level"].as_str(), Some("lite"));
-            assert_eq!(config["parallel"].as_str(), Some("on"));
+            assert_eq!(config["parallel"].as_str(), Some("read"));
             assert_eq!(config["routing"].as_str(), Some("legacy"));
             assert_eq!(config["git"]["remote"].as_str(), Some("origin"));
             assert_eq!(
@@ -1157,8 +1157,8 @@ fn n3_migrate_round_trip() {
             assert_eq!(config["review"]["always"][0].as_str(), Some("db/**"));
             // 보고서: 옮긴 값, 읽지 못한 줄, 사람이 고친 delegation.md
             for line in [
-                "subagent_level lite → parallel = \"on\"",
-                "읽기 전용만 허용하려면 `read`, 끄려면 `off`로 고친다",
+                "subagent_level lite → parallel = \"read\"",
+                "구현까지 하위 에이전트로 나누려면 사람이 `on`으로, 끄려면 `off`로 고친다",
                 "읽지 못한 표식 줄: - 형식이 다른 줄",
                 "병렬 방침(8.15절)에 맞게 고친다",
                 "열린 결정 1건, 보류 1건",
@@ -1236,14 +1236,14 @@ fn n3_migrate_round_trip() {
     assert!(lead.join(".git/fullops/state.json").is_file());
 }
 
-/// R8: `subagent_level`을 `parallel`로 옮긴다. 값이 없던 레포도 `on`이 되고 보고서가 그 사실을 낸다.
+/// R8: `subagent_level`을 `parallel`로 옮긴다. 기본값 lite와 값이 없던 레포는 `read`, 사람이 올린 값만 `on`이 되고 보고서가 그 사실을 낸다.
 #[test]
 fn r8_migrate_moves_subagent_level_to_parallel() {
     for (name, parallel) in [
         ("off", "off"),
-        ("lite", "on"),
+        ("lite", "read"),
         ("full", "on"),
-        ("missing", "on"),
+        ("missing", "read"),
     ] {
         let (driver, results) = play(&format!("r8-{name}"));
         let config = toml_of(&driver.sb.path("lead").join(".fullops/fullops.toml"));
@@ -1253,6 +1253,9 @@ fn r8_migrate_moves_subagent_level_to_parallel() {
         assert_eq!(off_notice, name == "missing", "{name}: {report}");
         if parallel == "on" {
             assert!(report.contains("읽기 전용만 허용하려면 `read`, 끄려면 `off`로 고친다"));
+        }
+        if parallel == "read" {
+            assert!(report.contains("구현까지 하위 에이전트로 나누려면 사람이 `on`으로"));
         }
     }
 }
@@ -1698,7 +1701,7 @@ fn init_mode_and_upgrade() {
     let made = sb.cli(&repo, &init);
     assert_eq!(made.code, Some(0), "{}", made.stderr);
     let config = toml_of(&squad.join("fullops.toml"));
-    assert_eq!(config["parallel"].as_str(), Some("on"));
+    assert_eq!(config["parallel"].as_str(), Some("read"));
     assert_eq!(config["test_level"].as_str(), Some("lite"));
     assert_eq!(config["mode"].as_str(), Some("coor"));
     assert_eq!(config["roles"]["designer"]["kind"].as_str(), Some("design"));

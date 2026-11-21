@@ -166,22 +166,27 @@ fn build_config(old: &Value, guide: &Guide) -> Result<Built, String> {
     });
     let test_level =
         TestLevel::parse(&level_text).ok_or(format!("test_level 값을 모른다: {level_text}"))?;
+    // 기본은 read다(단일 에이전트 루프: 기본은 접는다). 1.24.0의 기본값 lite도 read로, 사람이 올린 standard·full만 on으로 옮긴다
     let parallel = match old["subagent_level"].as_str() {
         Some("off") => Parallel::Off,
-        Some(level @ ("lite" | "standard" | "full")) => {
+        Some("lite") => {
+            report.push("subagent_level lite → parallel = \"read\".".into());
+            Parallel::Read
+        }
+        Some(level @ ("standard" | "full")) => {
             report.push(format!("subagent_level {level} → parallel = \"on\"."));
             Parallel::On
         }
         Some(other) => return Err(format!("subagent_level 값을 모른다: {other}")),
         None => {
             report.push(msg::PARALLEL_WAS_OFF.into());
-            Parallel::On
+            Parallel::Read
         }
     };
-    if parallel == Parallel::Off {
-        report.push("subagent_level off → parallel = \"off\".".into());
-    } else {
-        report.push(msg::PARALLEL_HOW_TO_LIMIT.into());
+    match parallel {
+        Parallel::Off => report.push("subagent_level off → parallel = \"off\".".into()),
+        Parallel::Read => report.push(msg::PARALLEL_HOW_TO_RAISE.into()),
+        _ => report.push(msg::PARALLEL_HOW_TO_LIMIT.into()),
     }
 
     // 역할 종류: 표식 줄에서 읽는다. coor 모드의 primary_role은 coordinator 역할이다

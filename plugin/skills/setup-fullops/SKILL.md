@@ -22,7 +22,7 @@ FullOps는 레포마다 켠다. 활성 표식은 `.fullops/fullops.toml`이고 �
 - 역할: 새 coor 구성은 `coor designer dev ops tester`를 먼저 제안하고 사용자가 더하거나 빼거나 이름을 바꾼 역할로 정한다. 고정 필수 역할은 없다. 역할 ID는 영문 소문자로 시작하고 소문자·숫자·밑줄·하이픈을 쓴다.
 - 역할 종류: 설계 역할은 `design`, 조율 역할은 `coordinator`, 검증 역할은 `tester`, 그 밖은 `worker`다. `design`·`coordinator`·`tester`는 각각 하나까지다.
 - 테스트 레벨: `minimal`·`lite`·`standard`·`full`·`exhaustive`. 새 레포의 기본은 `lite`다. 범위의 정본은 `.fullops/guide/rules/common/testing.md`다.
-- 병렬 방침: `off`·`read`·`on`·`ultra`. 새 레포의 기본은 `on`(권장)이다. `on`은 나눌 수 있는 구현과 조사를 하위 에이전트로 동시에 진행하게 하고 사용량이 빨리 준다. `ultra`는 Claude Code worker를 울트라코드로 띄우며, worker의 권한 모드가 auto나 bypass가 아니면 Workflow 실행마다 승인 창에서 멈춘다. 정본은 `.fullops/guide/rules/delegation.md`다.
+- 병렬 방침: `off`·`read`·`on`·`ultra`. 새 레포의 기본은 `read`(읽기 전용 조사·리뷰만 하위 에이전트)다(근거: 단일 에이전트 루프 원칙, 기본은 한 루프로 접는다). `on`은 사용자가 고를 때만 쓴다. 나눌 수 있는 구현과 조사를 하위 에이전트로 동시에 진행하게 하고 사용량이 빨리 준다. `ultra`는 Claude Code worker를 울트라코드로 띄우며, worker의 권한 모드가 auto나 bypass가 아니면 Workflow 실행마다 승인 창에서 멈춘다. 정본은 `.fullops/guide/rules/delegation.md`다.
 - 원격과 기준 브랜치: 기본은 `origin`과 `main`이다. 원격 없이 쓰려면 `--local-only`를 준다.
 
 ## 2. 초기화

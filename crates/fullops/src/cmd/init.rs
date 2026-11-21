@@ -464,7 +464,8 @@ fn fresh_config(args: &Args, root: &Path) -> Result<(String, Option<String>), Cl
         )?,
         parallel: word(
             Parallel::parse,
-            args.parallel.as_deref().unwrap_or("on"),
+            // 기본은 read다(단일 에이전트 루프: 기본은 접는다). on은 사람이 고를 때만 쓴다
+            args.parallel.as_deref().unwrap_or("read"),
             "--parallel",
             "off, read, on, ultra",
         )?,
