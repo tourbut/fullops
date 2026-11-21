@@ -202,7 +202,7 @@ pub static RULES: &[Rule] = &[
         "미설정 레포 빈 판정, fail-open, 정책 오류 차단"),
     // dev 직접 작업이면 check가 Finding::Hit.always로 BlockAlways로 올린다(설계 7.5절 표)
     rule!("X-01", Stop, seated, BlockOnce, stop::x01,
-        [("", "커밋한 뒤 `fullops lint --from <시작점>`. 적용할 검사가 없으면 이유를 말하고 다시 끝낸다(BlockOnce일 때만)")],
+        [("", "커밋한 뒤 `fullops lint --from <시작점>`. dev 직접 작업이면 다시 끝내도 통과하지 않는다: 하위 에이전트가 아직 쓰고 있으면 끝날 때까지 기다린 뒤 커밋한다. 그 밖에는 적용할 검사가 없으면 이유를 말하고 다시 끝낸다")],
         "Stop lint 통과 게이트, dev 직접 작업의 리뷰 요구"),
     rule!("X-02", Stop, direct_dev, BlockAlways, stop::x02,
         [("", "`fullops review snapshot <KEY>`로 독립 리뷰를 받거나, 사용자 결정 뒤 `fullops review waive`")],

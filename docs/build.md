@@ -101,7 +101,7 @@ cargo xtask dist [--root <폴더>] [--target <타깃>]... [--prebuilt <폴더>] 
 
 ## 릴리스 워크플로
 
-`.github/workflows/release.yml`이 릴리스 커밋을 만들어 PR로 올린다(`docs/install-and-retire.md` 1.8절, 5절 D1·D2·D4·D5·D10). 릴리스 커밋과 패널 카탈로그 항목은 손으로 만들지 않는다. 사람이 PR을 보고 머지하는 것이 공개 승인이다. 워크플로는 main에 바로 push하지 않고 태그도 만들지 않는다(태그 `v<버전>`이 필요하면 머지된 커밋에 사람이 만든다). 서명 없이 시작하고 출처는 `tourbut/fullops`(`plugin/deps.toml`의 `[self].source`)다.
+`.github/workflows/release.yml`이 릴리스 커밋을 만들어 PR로 올린다(`docs/install-and-retire.md` 1.8절, 5절 D1·D2·D4·D5·D10). 릴리스 커밋과 패널 카탈로그 항목은 손으로 만들지 않는다. 사람이 PR을 보고 머지하는 것이 공개 승인이다. 워크플로는 main에 바로 push하지 않는다. 릴리스 PR이 머지되면 같은 워크플로의 `publish` 잡이 머지 커밋에 태그 `v<버전>`과 GitHub Release를 만든다. 서명 없이 시작하고 출처는 `tourbut/fullops`(`plugin/deps.toml`의 `[self].source`)다.
 
 - 릴리스 커밋에는 `dist/native/fullops`(바이너리 넷 포함), 카탈로그 둘(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`), Orca 패널 카탈로그 `orca-catalog.json`만 싣는다. `dist/directory/`는 싣지 않는다. 개발 커밋은 이것들을 건드리지 않는다.
 - 돌리기 전에 `Cargo.toml`의 workspace 버전과 `package.json`의 `version`을 함께 올리고 `crates/fullops/assets/releases/<버전>.md`를 써서 main에 머지해 둔다. 패널을 바꿨으면 `panel/orca-plugin.json`의 `version`도 올린다. 그 뒤 GitHub Actions에서 `release`를 main에서 수동 실행(workflow_dispatch)하고 버전을 넣는다.
@@ -112,10 +112,13 @@ cargo xtask dist [--root <폴더>] [--target <타깃>]... [--prebuilt <폴더>] 
 | `test` | `ci.yml`을 부른다(Windows·macOS·Linux의 빌드·시험, 교차 검사, 패널과 npx 실행기의 `node --test`) |
 | `build` | 타깃마다 `cargo build --release -p fullops --target <타깃>`. Windows 러너가 `x86_64-pc-windows-msvc`, macOS 러너가 `aarch64-apple-darwin`과 `x86_64-apple-darwin`, Linux 러너가 `x86_64-unknown-linux-gnu`를 빌드하고 패키지 안의 이름으로 아티팩트에 올린다 |
 | `dist` | Linux 러너에서 바이너리 넷을 모아 `cargo xtask dist --root . --prebuilt prebuilt --no-validate`, 이어 `cargo xtask orca-catalog --root . --commit <이 실행의 main 커밋>`. 새 브랜치 `release/v<버전>-<실행 번호>`에 커밋하고 main으로 PR을 연다 |
+| `publish` | 수동 실행이 아니라 `release/v<버전>-<실행 번호>` PR이 main에 머지될 때(`pull_request` `closed`, `merged`) 돈다. 브랜치 이름에서 버전을 읽어 `gh release create v<버전> --target <머지 커밋> --title "fullops <버전>" --notes-file crates/fullops/assets/releases/<버전>.md`. 앞의 네 잡은 이 이벤트에서 건너뛴다 |
 
 - POSIX 러너에서 만들므로 런처와 macOS·Linux 바이너리의 실행 비트가 커밋에 잡힌다(위 '실행 비트').
 - 저장소 설정에서 'Allow GitHub Actions to create and approve pull requests'가 켜져 있어야 PR을 열 수 있다. `GITHUB_TOKEN`이 연 PR에서는 `ci` 워크플로가 다시 돌지 않는다(이미 `test` 잡에서 돌았다).
 - 호스트 CLI 검증은 CI에서 하지 않는다(`--no-validate`). 머지 전에 사람이 그 브랜치를 받아 위 '검증'의 명령을 돌린다.
+- 태그는 워크플로 시점이 아니라 머지 뒤에 건다. 사용자가 받는 배포본은 main에 머지된 트리이고, 머지 전에는 그 커밋이 없다(2.0.x 태그도 릴리스 PR의 머지 커밋에 걸었다). 머지하지 않고 닫은 PR은 태그를 남기지 않는다. GitHub Release에는 2.0.x처럼 바이너리 자산을 붙이지 않는다. 바이너리는 git 트리의 `dist/native/fullops/bin`에 있다.
+- 태그나 Release가 이미 있으면 `publish`는 덮지 않고 실패한다. 빠진 판은 손으로 만든다: `gh release create v<버전> --target <머지 커밋> --title "fullops <버전>" --notes-file crates/fullops/assets/releases/<버전>.md`(태그가 이미 있으면 `--target`은 무시된다).
 
 ### Orca 패널 카탈로그
 
@@ -152,7 +155,7 @@ cargo xtask orca-catalog [--root <폴더>] [--commit <SHA>]
 1. 한 번만: 저장소 설정에서 'Allow GitHub Actions to create and approve pull requests'를 켠다.
 2. 버전(`Cargo.toml`, `package.json`, 패널을 바꿨으면 `panel/orca-plugin.json`)을 올리고 릴리스 노트를 써서 main에 머지한 뒤, `release`를 main에서 수동 실행한다.
 3. **(승인)** 워크플로가 연 PR을 검토한다. 호스트 CLI(`claude`·`grok`·`agy`)가 있는 PC에서 그 브랜치를 받아 `cargo xtask dist --root <임시 폴더> --prebuilt dist/native/fullops/bin`을 돌려 출력에 '검증을 건너뛴다'가 없는지 본다(PR의 바이너리로 다시 조립해 위 '검증'을 모두 돌린다). `orca plugin validate orca-catalog.json --json`과 바이너리 모드(`git ls-files -s dist/native/fullops/bin`이 100755)도 본다. 통과하면 머지한다. 머지가 공개 승인이다.
-4. **(승인)** 태그 `v<버전>`과 GitHub Release가 필요하면 머지된 커밋에 사람이 만든다.
+4. 머지하면 `publish` 잡이 태그 `v<버전>`과 GitHub Release를 만든다. Actions에서 그 실행이 성공했는지 본다.
 5. 깨끗한 PC나 임시 HOME에서 `npx --yes github:tourbut/fullops install --dry-run` → 실제 설치 → `install --check` → `doctor` 순서로 확인한다.
 
 이력이 커지는 것이 문제가 되면 기본 브랜치를 배포 전용 브랜치로 바꾸는 쪽으로 옮긴다. 사용자가 등록한 마켓플레이스 출처(`tourbut/fullops`)는 그대로 둘 수 있다.
