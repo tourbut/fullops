@@ -528,6 +528,12 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
         unrunnable,
         passed: errors == 0 && unrunnable == 0,
     };
+    crate::usage::lint(
+        repo,
+        result.findings.iter().map(|f| f.code.as_str()),
+        result.commands.iter().map(|c| c.status.as_str()),
+        result.passed,
+    );
     let result_path = dir.join("result.json");
     fullops_store::write_json(&result_path, &result)?;
     if let Some(out) = &out {

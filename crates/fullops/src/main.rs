@@ -7,6 +7,7 @@ mod assets;
 mod cli;
 mod cmd;
 mod hook;
+mod usage;
 
 use std::process::ExitCode;
 

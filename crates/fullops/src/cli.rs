@@ -359,6 +359,24 @@ fn dispatch(name: &str, args: Vec<OsString>, as_json: &mut bool) -> Result<u8, C
     if command.needs_repo && repo.is_none() {
         return Err(CliError::Inactive);
     }
+    // 사용량 기록(인자 값은 남기지 않는다). 하위 명령은 알려진 낱말일 때만 남긴다
+    let sub = crate::usage::sub_of(rest.first().and_then(|a| a.to_str()));
+    let usage_repo = repo.clone();
+    let result = run_in(command, json_flag, start, repo, rest);
+    if let Some(repo) = &usage_repo {
+        let exit = result.as_ref().map_or_else(CliError::exit, |code| *code);
+        crate::usage::cli(repo, command.name, sub, exit);
+    }
+    result
+}
+
+fn run_in(
+    command: &'static cmd::Command,
+    json_flag: bool,
+    start: PathBuf,
+    repo: Option<Repo>,
+    rest: Vec<OsString>,
+) -> Result<u8, CliError> {
     let config = repo.as_ref().map(fullops_store::load_config);
     if let (Some(Err(e)), false) = (&config, command.recovery) {
         return Err(CliError::Policy(e.clone()));

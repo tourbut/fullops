@@ -140,7 +140,7 @@ pub struct TraceLine {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuleTrace {
     pub id: String,
-    /// `context`·`warn`·`deny`·`block`·`effect`·`unknown`.
+    /// `context`·`warn`·`deny`·`block`·`effect`·`unknown`. `pass`(평가했고 걸리지 않음)는 사용량 기록에만 가고 추적 파일에는 쓰지 않는다.
     pub verdict: String,
     pub fp: Option<String>,
 }
