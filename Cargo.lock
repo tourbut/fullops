@@ -105,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "fullops"
-version = "2.2.4"
+version = "2.3.0"
 dependencies = [
  "fancy-regex",
  "fullops-core",
@@ -122,7 +122,7 @@ dependencies = [
 
 [[package]]
 name = "fullops-core"
-version = "2.2.4"
+version = "2.3.0"
 dependencies = [
  "fancy-regex",
  "globset",
@@ -133,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "fullops-ext"
-version = "2.2.4"
+version = "2.3.0"
 dependencies = [
  "fullops-core",
  "fullops-testkit",
@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "fullops-store"
-version = "2.2.4"
+version = "2.3.0"
 dependencies = [
  "fullops-core",
  "fullops-testkit",
@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "fullops-testkit"
-version = "2.2.4"
+version = "2.3.0"
 dependencies = [
  "fullops-ext",
  "serde",
@@ -392,7 +392,7 @@ checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 
 [[package]]
 name = "xtask"
-version = "2.2.4"
+version = "2.3.0"
 dependencies = [
  "fullops-core",
  "fullops-ext",

@@ -1057,3 +1057,12 @@ jevpet 실사용 보고 묶음 둘째. 근거와 시험 이름은 커밋 `75bed8
 - 결정 번호: 옛 체계의 프로젝트 결정 번호가 `PLANS.md`에 있으면 그 다음부터 매긴다. 결정을 여는 네 곳(`decision add`, M-04, T-16 카드, D-07 한도 결정)이 같은 `decision::open`을 쓴다. 이미 겹친 번호는 고치지 않는다.
 - lint 로그: stdout과 stderr를 따로 받으므로 시간 순서는 알 수 없다. 둘 다 있으면 `--- stderr ---` 줄로 경계를 둔다. jevpet에서 템플릿 준비 자식 프로세스의 `NO TESTS RAN`(stderr)이 끝줄에 와서 서버 시험이 0개 돈 것으로 읽혔다.
 - 고치지 않은 보고: merge의 lint에서 난 "액세스가 거부되었습니다"는 `uv run --with-requirements`의 오류(Windows에서 uv 환경 파일을 다른 프로세스가 쥔 경우로 보인다)이고, worker의 heredoc·`sed -i` 확인 창은 Claude Code 내장 안전 검사가 명령 글의 `$$VAR`·`${VAR:?}`를 비면 위험한 삭제로 읽은 것이다. 둘 다 fullops 바깥이다.
+
+## 15. 2.3.0: 단일 에이전트 루프, 메모 위생 (2026-11-21)
+
+PR #52·#53·#54를 묶은 판. 근거는 `docs/decisions/single-agent-loop.md`와 이슈 #51에 있다.
+
+- 병렬 방침: `init`의 `parallel` 기본값을 `on`에서 `read`로 낮췄다(10.6절, DF-22). 1.24.0 `migrate`는 `lite`와 값 없음을 `read`로 옮긴다(13절). 기존 2.x 레포의 값은 필수 키라 바뀌지 않는다.
+- 템플릿: `handover.md`에서 verifier 하위 에이전트를 뺐고, `FULLOPS.md`는 세션 시작 때 `fullops status`만 실행한다. `init`은 있는 파일을 덮어쓰지 않으므로 기존 레포는 릴리스 노트를 보고 옮긴다. 필수 적용 검사는 더하지 않았다.
+- 메모 위생(6.1.6절): `doctor`의 `메모` 행, `merge` M-08의 `MEMO-TIDY` 정리 과제 행, `task new`·`reopen`의 메모 경로(8.4절). `plan compact`(이슈 #51 방향 B)는 하지 않았다.
+- 스킬: `fullops-orca`·`fullops-work`를 핵심 본문과 참조 파일로 나눴다. `cargo xtask baseline`(고정 케이스 10개, 모델 호출 없음)이 나누기 전후의 필수 문구를 본다.

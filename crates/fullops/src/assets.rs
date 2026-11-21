@@ -256,6 +256,7 @@ pub const RELEASES: &[(&str, &str)] = &[
     ("2.2.2", include_str!("../assets/releases/2.2.2.md")),
     ("2.2.3", include_str!("../assets/releases/2.2.3.md")),
     ("2.2.4", include_str!("../assets/releases/2.2.4.md")),
+    ("2.3.0", include_str!("../assets/releases/2.3.0.md")),
 ];
 
 #[cfg(test)]
