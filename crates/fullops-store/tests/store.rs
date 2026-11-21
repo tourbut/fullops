@@ -115,7 +115,7 @@ fn design_examples_round_trip_through_the_types() {
     let config = parse_config(&config_text).expect("설계의 fullops.toml 예시");
     assert_eq!(
         (config.parallel, config.test_level),
-        (Parallel::On, TestLevel::Lite)
+        (Parallel::Read, TestLevel::Lite)
     );
     assert_eq!(config.code.extensions, [".py", ".ts"]);
     let raw: RawConfig = toml::from_str(&config_text).unwrap();

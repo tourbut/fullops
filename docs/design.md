@@ -2195,7 +2195,7 @@ crates/
          init,mode,upgrade,migrate,install,doctor,env,gc}.rs
     assets/                    # include_str!의 원본. assets/repo/는 .fullops/의 내장 템플릿이고 그 밖은 릴리스 노트다. deps.toml의 내장 사본은 파일을 따로 두지 않고 plugin/deps.toml을 include_str!로 읽는다(assets::DEPS_TOML)
   fullops-testkit/             # dev: 임시 레포 빌더, fake-orca, fake-host, fake-curl, 시나리오 실행기
-xtask/                         # dist, orca-catalog, bench, compare
+xtask/                         # dist, orca-catalog, bench, compare, baseline
 plugin/                        # 매니페스트 재료, 스킬(하위 폴더째), bin 런처, deps.toml, INSTALL.md(hook 등록 파일은 두지 않는다. xtask dist가 만든다), hosts/{grok,agy}/의 패키지 재료
 scenarios/                     # 12절
 panel/                         # Orca 패널(빌드 없는 JS와 HTML. trusted-worker 플러그인). 루트의 orca-catalog.json(릴리스 때 생긴다)이 source.path "panel"로 가리킨다
@@ -2692,7 +2692,7 @@ Claude Code 등록을 exec form으로 고른 이유는 셋이다. (1) Git Bash�
 
 ### 10.6 `init`, `mode`, `upgrade`, `doctor`
 
-- `fullops init --roles a,b [--kind <역할>=<kind>]... [--mode coor|dev --primary-role R] [--remote origin --base main | --local-only] [--test-level L] [--parallel off|read|on|ultra] [--dry-run]`: 없는 파일만 만든다(템플릿은 바이너리에 내장). `fullops.toml`을 쓴다. `AGENTS.md`·`CLAUDE.md`·`GEMINI.md`에 표식으로 감싼 관리 블록을 넣는다(없는 파일은 만든다). 세 블록은 같은 글이고 S-01의 "전부" 항목(역할 판별법, 인박스 규칙, lint 게이트, `fullops done`)과 "세션을 시작하면 `fullops status`를 먼저 실행한다. 역할, 현재 인박스, 병렬 방침, lead의 할 일이 거기 나온다"를 담는다. SessionStart 안내가 모델에게 닿지 않는 grok(`AGENTS.md`를 읽는다)과 hook이 돌지 않는 세션(agy의 IDE·데스크톱 앱은 `GEMINI.md`·`AGENTS.md`를 읽는다)이 이 블록으로 규칙을 받는다. 원격 역할 브랜치 `fullops/<역할>`이 없으면 만든다(있는 브랜치는 옮기지 않는다). 심볼릭 링크 대상은 거부한다. 커밋하지 않는다. 다시 실행하면 이어서 한다. 새 레포의 기본값은 `test_level = "lite"`, `parallel = "on"`이다.
+- `fullops init --roles a,b [--kind <역할>=<kind>]... [--mode coor|dev --primary-role R] [--remote origin --base main | --local-only] [--test-level L] [--parallel off|read|on|ultra] [--dry-run]`: 없는 파일만 만든다(템플릿은 바이너리에 내장). `fullops.toml`을 쓴다. `AGENTS.md`·`CLAUDE.md`·`GEMINI.md`에 표식으로 감싼 관리 블록을 넣는다(없는 파일은 만든다). 세 블록은 같은 글이고 S-01의 "전부" 항목(역할 판별법, 인박스 규칙, lint 게이트, `fullops done`)과 "세션을 시작하면 `fullops status`를 먼저 실행한다. 역할, 현재 인박스, 병렬 방침, lead의 할 일이 거기 나온다"를 담는다. SessionStart 안내가 모델에게 닿지 않는 grok(`AGENTS.md`를 읽는다)과 hook이 돌지 않는 세션(agy의 IDE·데스크톱 앱은 `GEMINI.md`·`AGENTS.md`를 읽는다)이 이 블록으로 규칙을 받는다. 원격 역할 브랜치 `fullops/<역할>`이 없으면 만든다(있는 브랜치는 옮기지 않는다). 심볼릭 링크 대상은 거부한다. 커밋하지 않는다. 다시 실행하면 이어서 한다. 새 레포의 기본값은 `test_level = "lite"`, `parallel = "read"`이다.
 - `fullops mode dev --primary-role R`: `fullops.toml`의 `mode`·`primary_role`·`primary_branch`를 원자 교체로 바꾼다. 떠 있는 세션은 정책 오류가 되어 새 세션이 필요하다. dev → coor는 지원하지 않는다(1.24.0과 같다).
 - `fullops upgrade [--verify]`: `applied_version` 이후의 내장 릴리스 노트를 내고, 코드에 든 필수 적용 검사 목록(`RequiredApply { since, id, check, hint }`)을 돌린다. 전부 통과하면 `applied_version`을 올린다. 낮추지 않는다.
 - `fullops doctor [--json]`: 네트워크 없이 본다. 활성 레포가 아니어도 설치 항목은 본다.
@@ -3016,7 +3016,7 @@ grok과 agy에 ponytail을 스킬로 넣는 줄은 1.24.0의 `portable_skills`�
 | 기각된 안: 실패 명령만 재실행, 레포 밖 쓰기 감지 hook, 대기 시간 뒤 추천안 자동 확정, 지표 임계값 게이트 등 | 어느 것도 없다. 지표는 규칙 조건에 쓰지 않는다 |
 | `auto`·`delay` 자동 병합(미개방) | 섀도 판정 자체를 v1에서 뺐다 |
 | 호환 잔재: `review_schema_version` 없는 기록 통과, Orca 응답 이중 해석, 누락 설정 기본값 | 읽지 않는다. `fullops.toml`은 필수 필드를 명시한다. grok은 지금 Claude Code의 snake_case 이름을 함께 주므로 grok 어댑터도 그 이름으로 읽고 camelCase 전용 해석은 두지 않는다 |
-| 하위 위임의 레벨 제한(1.24.0의 `subagent_level`. 레포 주인이 2026-11-14에 뒤집었다) | 되살리지 않는다. `parallel`의 기본은 권장(`on`)이고 `off`·`read`만 막는다. 동시 수는 안내 문구의 권고이고 강제하지 않는다 |
+| 하위 위임의 레벨 제한(1.24.0의 `subagent_level`. 레포 주인이 2026-11-14에 뒤집었다) | 되살리지 않는다. `parallel`의 기본은 `read`이고(2026-11-21, `docs/decisions/single-agent-loop.md`) 구현 병렬 권장(`on`)은 사람이 고른다. `off`·`read`만 막는다. 동시 수는 안내 문구의 권고이고 강제하지 않는다 |
 
 ## 12. 합격 기준과 비교 방법
 
@@ -3224,7 +3224,7 @@ M1·M2와 Codex의 Stop 동작은 1.24.0도 실제 세션에서 확인하지 못
 | DF-20 | `find`·`context`의 입력에 키 유무(`provider`)가 든다(패킷에 관한 두 가지, 지시서 파일이 항상 필수 항목인 것과 `sources_sha256`은 2.1.0에서 뗐다(`docs/design-changes.md` 9절)) | 키 없이 만든 로컬 결과가 키를 넣은 뒤 조용히 재사용되지 않게 한다 |
 | DF-21 | Orca가 깨우는 세션에서는 `fullops wait`가 `--no-wait` 없이도 기다리지 않는다 | DF-15와 같은 이유다. 1.24.0의 `orca_wait`는 항상 기다렸다 |
 | DF-19 | `dispatch --task`가 없다. `grok_trust --add`가 없다 | Orca가 Task와 spec을 함께 받지 않는다. 신뢰는 사람이 호스트에서 정한다 |
-| DF-22 | 하위 위임의 기본이 제한(`subagent_level`, 신규 기본 `lite`)에서 권장(`parallel`, 기본 `on`)으로 바뀌었다. `on`·`ultra`에서는 서브에이전트 지시에 `Purpose:`를 요구하지 않는다. SessionStart 안내와 배정 spec이 병렬 진행을 요청한다. `migrate`가 `lite`를 `on`으로 옮긴다 | 레포 주인의 결정(2026-11-14): 서브에이전트로 병렬 작업해 개발을 빨리 끝내는 것이 Rust판의 특징이다. 리뷰·테스트의 "최소·표적"은 그대로다 |
+| DF-22 | 하위 위임의 기본이 제한(`subagent_level`, 신규 기본 `lite`)에서 `parallel`로 바뀌었다(기본 `read`, 권장 `on`은 사람이 고른다). `on`·`ultra`에서는 서브에이전트 지시에 `Purpose:`를 요구하지 않는다. SessionStart 안내와 배정 spec이 병렬 진행을 요청한다. `migrate`가 `lite`를 `read`로, `standard`·`full`을 `on`으로 옮긴다 | 레포 주인의 결정(2026-11-14): 서브에이전트로 병렬 작업해 개발을 빨리 끝내는 것이 Rust판의 특징이다. 리뷰·테스트의 "최소·표적"은 그대로다. 2026-11-21에 기본값만 `read`로 낮췄다(`docs/decisions/single-agent-loop.md`) |
 | DF-23 | worker가 띄운 하위 worker가 남아 있으면 `done`이 거절한다(R-11). 하위 배정은 부모의 워크트리·키·역할로만 되고(D-13) completion을 만들지 않는다. 하위 worker에게는 X-01을 적용하지 않고 `done`을 받지 않는다. 하위 worker가 남아 있는 동안 부모의 Stop은 X-01·X-03을 건너뛰고 X-05만 본다 | 1.24.0은 "부모가 하위 결과를 취합한 뒤 보고한다"가 스킬 규약이었다. 보고 하나가 변경 전부를 담고 하위 보고가 lead의 통합 대기에 섞이지 않게 한다. 사람 결정(H5) |
 | DF-24 | grok에서 세션 시작 안내와 프롬프트 문맥을 내지 않는다(사용자에게 한 줄, 모델은 `fullops status`로 받는다). grok의 hook 등록이 플러그인이 아니라 전역 파일이다. grok·agy의 플러그인을 마켓플레이스가 아니라 조립한 로컬 폴더로 설치한다. agy에서 hook이 돈다 | 1.24.0이 grok에 낸 안내는 모델에게 닿지 않았고 agy에서는 hook이 돌지 않았다(묶음 0b). Windows의 PowerShell에서 확실히 도는 등록이 exec form뿐이다 |
 | DF-25 | 정책 오류(설정 파손, 세션 도중 모드 변경)를 모델에게 `Context`로 알린다. SessionStart는 `source`와 무관하게(S-00, `resume`·`compact` 포함), UserPromptSubmit은 세션당 한 번(P-03)이다. 1.24.0은 `startup`·`clear`의 SessionStart와 매 프롬프트에 사용자만 보는 `systemMessage`를 냈고 `resume`에서는 모드 변경을 알리지 않았다 | `systemMessage`는 모델에게 가지 않는다(7.5절 P-03). 이어 가는 세션의 모델도 첫 도구 호출이 거부되기 전에 사유와 복구 방법을 안다. 같은 사유는 T-00 거부와 X-00 차단이 계속 전하므로 안내를 되풀이하지 않는다 |
