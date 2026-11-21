@@ -43,7 +43,7 @@ const CASES: &[Case] = &[
         what: "병렬 방침 read: 읽기 전용 선언이 있어야 하위 에이전트 통과",
         scenario: "d7-read.toml",
         skill: "fullops-work",
-        terms: &["parallel", "delegation.md"],
+        terms: &["기본 `read`", "Purpose: research", "read only", "T-08"],
     },
     Case {
         id: "B04",
@@ -186,6 +186,9 @@ pub fn run(args: &[String]) -> Result<(), String> {
             .iter()
             .map(|(id, p)| format!("{id}\t{}\n", if *p { "pass" } else { "fail" }))
             .collect();
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
         std::fs::write(&file, text).map_err(|e| format!("{}: {e}", file.display()))?;
     }
     if passed < results.len() || worse > 0 {

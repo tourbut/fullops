@@ -52,7 +52,7 @@ worker는 지시서의 완료 기준을 채울 때까지 진행 보고나 승인
 
 ## 병렬 진행
 
-방침은 `fullops.toml`의 `parallel`이고(기본 `read`) `fullops status`의 첫머리와 spec의 `Parallel:`에 나온다. 하위 에이전트나 하위 배정(`fullops dispatch <자기 KEY> --brief "<맡길 파일 묶음과 완료 조건>"`)을 쓸 때 정본 `.fullops/guide/rules/delegation.md`를 읽는다.
+방침은 `fullops.toml`의 `parallel`이고(기본 `read`) `fullops status`의 첫머리와 spec의 `Parallel:`에 나온다. 하위 에이전트나 하위 배정(`fullops dispatch <자기 KEY> --brief "<맡길 파일 묶음과 완료 조건>"`)을 쓸 때 정본 `.fullops/guide/rules/delegation.md`를 읽는다. 기본 `read`에서 하위 에이전트는 읽기 전용 조사·리뷰만 된다: 지시 첫머리에 `Purpose: research`(또는 `review`)와 `read only`를 적는다. 없으면 hook이 T-08로 막는다.
 
 - 나눌 수 없는 일과 방침이 허용하지 않는 일은 직접 한다.
 - 호스트의 워크트리 격리는 쓰지 않는다. 결과는 부모가 직접 확인해 이 워크트리에서 커밋하고 lint를 통과시킨다. 완료 보고는 부모 하나가 한다.
