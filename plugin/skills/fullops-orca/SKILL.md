@@ -51,16 +51,16 @@ fullops wait [--run <ID>] [--ack <메시지 ID>]... [--max-minutes <N>] [--no-wa
 - worker가 실행 중이면 턴을 끝낸다. Orca가 메일이 올 때 lead를 깨운다. 깨어나면 `fullops wait --run <R>`로 받는다. Orca가 깨우는 세션에서는 이 명령이 기다리지 않고 받은 것만 돌려준다.
 - Orca가 깨울 수 없는 세션(세션 핸들이 없는 세션)에서는 `fullops wait --run <R>`가 메시지가 올 때까지 기다린다. 대기 없이 턴을 끝내면 종료가 막힌다.
 - 새 lead 세션은 `fullops wait --run <R>`로 이전 세션이 연 Run을 이어받는다. 열린 Run은 `fullops status`에 나온다.
-- 반환값의 `actionable`이 처리할 메시지이고 `next`가 다음 할 일이다. heartbeat와 status는 세기만 한다.
+- 반환값의 `actionable`이 처리할 메시지이고 `next`가 다음 할 일이다.
 - `ack_by`가 `merge`인 완료 보고는 `fullops merge <KEY>`가 처리 표시까지 한다. 그 밖(리뷰 보고, 실패 보고, 질문, escalation)은 처리한 뒤 `fullops wait --run <R> --ack <메시지 ID> --no-wait`로 표시한다. 표시하지 않은 메시지가 남으면 종료가 막힌다.
 
 ## 질문과 사용자 결정
 
-worker 질문(`fullops wait`의 `actionable`에 `question`)을 받았거나 사용자에게 물을 일이 생기면 [questions.md](questions.md)를 읽는다. 요점: 답은 그 메시지 ID로 `orca orchestration reply`한 뒤 `--ack`로 표시한다. 사용자에게는 질문 카드로만 묻고 답은 `fullops decision answer <ID> --answer "<답>"`으로 닫는다.
+worker 질문(`actionable`의 `question`)은 터미널에 붙여 넣지 않고 `orca orchestration reply --id <질문 메시지 ID> --body "<답>"`으로 답한 뒤 `--ack`로 표시한다. 누가 답할지(설계 역할에 넘기기, 사용자 결정)와 Windows의 `orca.exe`는 [questions.md](questions.md)에 있다. 사용자에게는 질문 카드로만 묻고 답은 `fullops decision answer <ID> --answer "<답>"`으로 닫는다.
 
 ## 메시지
 
-worker의 완료 보고는 `fullops done`이 출력한 본문으로 Orca preamble의 `worker_done`을 한 번 보내는 것이다(`fullops-work`). 날것 `worker_done`도 인정된다. 보고에 SHA가 없어 기록이 비면 `fullops completion set-sha <메시지 ID> <SHA> [--key <KEY>]`로 채운다.
+worker의 완료 보고는 `fullops done`이 출력한 본문으로 Orca preamble의 `worker_done`을 한 번 보내는 것이다(`fullops-work`). 보고에 SHA가 없어 기록이 비면 `fullops completion set-sha <메시지 ID> <SHA> [--key <KEY>]`로 채운다.
 
 ## merge: 병합 책임자
 
