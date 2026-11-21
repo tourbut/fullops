@@ -197,13 +197,13 @@ claude plugin list --json; codex plugin list --json; grok plugin list --json; ag
 
 ### 1.8 릴리스 절차(결정됨, D10. 각 단계에 사람 승인이 필요)
 
-릴리스 커밋은 `.github/workflows/release.yml`이 만들어 PR로 올린다. 손으로 main에 커밋하지 않는다. 워크플로는 main에 바로 push하지 않고 태그도 만들지 않는다. 명령까지 적은 정본은 `docs/build.md` '릴리스 워크플로'다.
+릴리스 커밋은 `.github/workflows/release.yml`이 만들어 PR로 올린다. 손으로 main에 커밋하지 않는다. 워크플로는 main에 바로 push하지 않고, 태그와 GitHub Release는 릴리스 PR이 머지된 뒤 그 머지 커밋에 만든다. 명령까지 적은 정본은 `docs/build.md` '릴리스 워크플로'다.
 
 1. **(사람, 한 번만)** 저장소 설정에서 'Allow GitHub Actions to create and approve pull requests'를 켠다.
 2. 버전(`Cargo.toml`과 `package.json`. 패널을 바꿨으면 `panel/orca-plugin.json`도)을 올리고 `crates/fullops/assets/releases/<버전>.md`를 써서 main에 머지한다.
 3. **(사람)** GitHub Actions에서 `release`를 main에서 수동 실행하고 버전을 넣는다. 워크플로가 버전 확인 → 시험(`ci.yml`) → 네 타깃 빌드 → `cargo xtask dist --root . --prebuilt prebuilt --no-validate` → `cargo xtask orca-catalog --root . --commit <그 main 커밋>`(패널, 1.5절 (A)) → 새 브랜치 `release/v<버전>-<실행 번호>`에 `dist/native/fullops`와 카탈로그 셋을 커밋하고 main으로 PR을 연다.
 4. **(사람 승인)** PR 브랜치를 받아 호스트 검증(`claude plugin validate dist/native/fullops` 등), `orca plugin validate orca-catalog.json --json`, 바이너리 모드 100755를 확인하고 머지한다. 머지가 공개 승인이다.
-5. **(사람 승인)** 필요하면 머지된 커밋에 태그 `v<버전>`과 GitHub Release를 만든다. 워크플로는 태그를 만들지 않는다.
+5. 머지되면 같은 워크플로의 `publish` 잡이 머지 커밋에 태그 `v<버전>`과 GitHub Release(노트는 `crates/fullops/assets/releases/<버전>.md`, 바이너리 자산 없음)를 만든다. 승인은 4의 머지다.
 6. 깨끗한 PC나 임시 HOME에서 `npx --yes github:tourbut/fullops install --dry-run`을 돌리고, 실제 설치 → `install --check` → `doctor` 순서로 확인한다.
 
 ---
@@ -370,7 +370,7 @@ codex plugin list --json; grok plugin list --json; agy plugin list --json
 | P5 `fullops migrate --finalize [--apply] [--early]` | 구현함 | 2주 뒤 레포의 Python판 흔적(`py-backup/`과 그 안의 `migrate.json`, 옛 상태 폴더 5개 등. 3절 1단계)을 `<common>/fullops/py-retired/<시각>/`로 옮기고 `fullops.json.py-1.24.0`의 `git rm`을 안내한다. `state.json`·`archive.jsonl`은 건드리지 않는다 | 기본은 계획만. 지우지 않고 옮긴다. 커밋은 사람이 한다(design.md 13.5) |
 | P6 여러 홈 처리 | 구현함(작은 쪽, D6) | 옛 설치기는 Codex 홈 4곳을 돌았고, 이 PC에는 Orca Codex 홈과 Claude 프로필 4개가 따로 있다. 새 판은 하나만 본다. `deps-state.json`도 호스트 이름으로만 기록해 마지막 홈만 남는다(1.7절) | `doctor`의 '다른 홈' 행이 알리기만 한다. 설치는 1.7절처럼 `CODEX_HOME`·`CLAUDE_CONFIG_DIR`를 바꿔 다시 실행한다 |
 | P7 실행기의 Orca 패널 단계 | **남음** | 패널 실환경 점검(M4)이 끝나면 `orca plugin install tourbut.fullops-panel`을 **`--approve` 없이** 부르고, 승인 명령을 사람에게 보여 준다. 승인하기 전에는 Orca가 아무것도 쓰지 않는다 | 작다. 기본은 끔(`--with-panel`). 지금 실행기는 명령을 안내만 한다 |
-| P8 릴리스 자동화 | 구현함 | 네 타깃 빌드와 `xtask dist --root . --prebuilt`를 CI가 하고, 패널 카탈로그 항목은 `cargo xtask orca-catalog --root .`가 `orca plugin release-entry`와 같은 규칙으로 만든다. 결과를 PR로 올려 사람이 검토·머지한다(main에 바로 push하지 않고 태그를 만들지 않는다) | `.github/workflows/release.yml`, `ci.yml`(`docs/build.md` '릴리스 워크플로') |
+| P8 릴리스 자동화 | 구현함 | 네 타깃 빌드와 `xtask dist --root . --prebuilt`를 CI가 하고, 패널 카탈로그 항목은 `cargo xtask orca-catalog --root .`가 `orca plugin release-entry`와 같은 규칙으로 만든다. 결과를 PR로 올려 사람이 검토·머지한다(main에 바로 push하지 않는다). 머지되면 태그 `v<버전>`과 GitHub Release를 만든다 | `.github/workflows/release.yml`, `ci.yml`(`docs/build.md` '릴리스 워크플로') |
 | P9 `fullops install --restore-skills [--apply]` | 구현함 | 새 판은 공용 스킬을 덮어쓰기 전에 `~/.fullops/skill-backups/`에 백업만 하고 되살리는 명령이 없었다(3절 0단계 되돌리기) | 백업할 때 원래 경로를 함께 적고, `--restore-skills`가 그 경로로 되돌린다. 기본은 계획만 내고 `--apply`로 실행 |
 
 P4 `--retire-python`의 안전장치:
