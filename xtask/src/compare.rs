@@ -20,12 +20,12 @@ pub fn workspace() -> PathBuf {
 
 /// 구동기 하나가 낸 단계 하나.
 #[derive(Clone)]
-struct Out {
+pub(crate) struct Out {
     /// `pass`·`context`·`warn`·`deny`·`block`·`human`·`external`·`error`, 건너뛴 단계는 `pending`, 1.24.0에 대응이 없으면 `n/a`.
-    verdict: String,
+    pub(crate) verdict: String,
     ms: u128,
     /// rs의 기대와 다른 점, 또는 구동 실패 사유.
-    note: String,
+    pub(crate) note: String,
 }
 
 impl Out {
@@ -38,13 +38,13 @@ impl Out {
     }
 }
 
-struct Ran {
-    steps: Vec<Out>,
+pub(crate) struct Ran {
+    pub(crate) steps: Vec<Out>,
     /// 통합 기준 ref에 들어간 과제 수(`<KEY> 구현` 커밋).
     merged: Option<usize>,
 }
 
-fn failed(scenario: &Scenario, why: String) -> Ran {
+pub(crate) fn failed(scenario: &Scenario, why: String) -> Ran {
     let step = Out {
         verdict: "error".into(),
         ms: 0,
@@ -56,7 +56,7 @@ fn failed(scenario: &Scenario, why: String) -> Ran {
     }
 }
 
-fn run_rs(scenario: &Scenario) -> Ran {
+pub(crate) fn run_rs(scenario: &Scenario) -> Ran {
     let mut driver = Driver::new(&scenario.setup);
     let steps = scenario.steps.iter().map(|step| {
         let (verdict, ms, note) = match (&step.pending, &step.expect) {
