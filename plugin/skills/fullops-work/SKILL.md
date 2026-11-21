@@ -9,7 +9,7 @@ description: FullOps setup이 완료된 레포에서 기능 개발을 역할별�
 
 명령 표기: 이 문서의 `fullops`는 Claude Code 세션에서 그대로 실행된다. Codex·grok·agy 세션에서는 고정 위치 실행본을 전체 경로로 부른다: `~/.fullops/bin/fullops`(Windows는 `%USERPROFILE%\.fullops\bin\fullops.exe`). 배정받은 worker는 spec의 끝 문장에 적힌 실행 명령을 그대로 쓴다.
 
-먼저 읽는 것: `.fullops/guide/FULLOPS.md`, `.fullops/guide/rules/common/README.md`와 거기 연결된 세 규칙, `.fullops/guide/project.md`가 가리키는 프로젝트 정본. worker는 자기 역할의 `.fullops/guide/roles/<역할>.md`와 받은 지시서로 범위를 확인한다. 문서를 쓰거나 검토할 때는 `.fullops/guide/agents/document-writing.md`를 따른다.
+worker는 받은 지시서와 거기 적힌 `먼저 읽을 문서`로 범위를 확인한다. 코드를 바꿀 때 `.fullops/guide/rules/common/README.md`와 연결된 규칙을, 프로젝트 정본이 필요할 때 `.fullops/guide/project.md`를 읽는다. 문서를 쓰거나 검토할 때는 `.fullops/guide/agents/document-writing.md`를 따른다. 이 본문은 흔한 경로만 담고 드문 경로는 참조 파일에서 필요할 때 읽는다(근거: 단일 에이전트 루프의 점진적 공개).
 
 dev 모드의 주 담당은 기술 계획·구현·검증을 직접 한다. 직접 작업도 과제 키, 완료 조건, 검증 결과를 남기고 lint를 통과시킨다. 변경이 리뷰 기준을 넘으면 다른 세션의 독립 리뷰를 받는다(`fullops-review`).
 
@@ -34,14 +34,7 @@ dev 모드의 주 담당은 기술 계획·구현·검증을 직접 한다. 직�
    - "신중히 생각해" 같은 사고 지시를 넣지 않는다. 난이도는 모델과 effort 선택으로 조절한다.
 4. UI 작업은 `fullops-frontend`, 코드 기반 모션그래픽 영상은 `fullops-motion`으로 정한 내용을 인박스에 연결한다. 영상 지시서에는 본문에 `템플릿: #<번호> <이름>` 한 줄을 적는다.
 5. 배정은 `fullops-orca`의 dispatch를 따른다. 인박스는 `fullops dispatch`의 준비 커밋으로 worker의 워크트리에 전달된다.
-
-### 먼저 읽을 문서 찾기(선택)
-
-`task new` 뒤, 배정 전에 쓴다. 둘 다 추천이고 건너뛰어도 배정이 막히지 않는다. 결과 파일은 커밋되지 않는 Git 공용 디렉터리(`<git-common-dir>/fullops/explore/`)에 생기고 모든 워크트리가 함께 본다. 고른 경로는 지시서의 "먼저 읽을 문서"에 적어 worker에게 전한다.
-
-1. `fullops find <KEY> --role <역할>`로 코드 후보를, `fullops find <KEY> --role <역할> --scope documents`로 문서 후보를 찾는다.
-2. `fullops context <KEY> --role <역할> --paths <경로>... [--required <경로>]...`로 후보 문서를 분류한다. 후보는 20개 이하로 좁혀 준다.
-3. 같은 입력이면 호출 없이 이전 결과를 다시 쓴다. 입력이 달라졌으면 `--force`로 갱신한다(이전 결과는 `history/`에 남는다). Jev 키가 없거나 `FULLOPS_OFFLINE=1`이면 로컬 검색 후보를 돌려준다. 이때 의미 탐색을 했다고 보고하지 않는다.
+6. 낯선 코드라 먼저 읽을 문서를 찾아야 하면 [explore.md](explore.md)를 읽는다(`fullops find`·`fullops context`, 선택).
 
 ## 작업과 완료
 
@@ -55,43 +48,12 @@ worker는 지시서의 완료 기준을 채울 때까지 진행 보고나 승인
 4. 인박스의 `## 완료 보고`에 변경 이유, 지시와 달라진 판단과 범위, 검증한 것과 못 한 것, 스스로 정한 선택과 되돌리는 방법, 산출물과 후속을 항목당 1~2줄로 쓴다.
 5. `fullops done`을 실행한다. 완료 기록을 `.fullops/tasks/<KEY>/`로 옮겨 커밋하고, 원격이 있으면 역할 브랜치를 push하고, 보낼 본문 한 줄을 출력한다. 다른 역할이나 다른 과제로 넘길 일은 `--followup "<역할>: <글>"`로 준다(반복할 수 있다). 실패로 끝내려면 `--failed "<사유>"`를 준다. 적용할 검사가 없는 변경은 `--no-checks "<사유>"`를 준다.
 6. 출력된 본문으로 Orca preamble의 `worker_done` 명령을 한 번 보낸다. `fullops done`은 보내지 않는다. `--failed`로 끝냈으면 preamble 명령에 `--outcome failed`를 쓴다.
-7. `.fullops/guide/roles/<역할>.md`는 다음에 이 역할을 맡을 세션이 같은 실수를 피하고 같은 결정을 다시 하지 않게 하는 메모다. `task new`가 이 경로를 지시서의 `먼저 읽을 문서`에 적는다.
-   - 그 목적에 필요한 것만 적는다. 과제 경과·수치·경로는 `tasks/<KEY>/`에 이미 있으니 옮겨 적지 않는다.
-   - 읽은 메모가 이번 과제에서 틀렸으면 그 자리에서 고친다.
-   - 같은 실수가 두 번째면 `guide/project.md`의 `## 자주 틀리는 것`에 한 줄로 올린다. 정규식으로 잡을 수 있으면 `config/lint.json`의 `rules`에 규칙으로 넣고 메모 줄은 지운다. 승격은 lint 규칙에서 끝난다.
-   - 150줄이나 10KB를 넘거나 역할 ID가 아닌 파일이 생기면 `fullops doctor`가 알린다. 그러면 `fullops merge`가 정리 과제 행(`MEMO-TIDY-<날짜>`)을 `PLANS.md`에 한 번 더한다. 정리할 때 지난 전문은 `.fullops/archive/contexts/`에 둔다. 고칠 수 없는 경고만 남으면 그 행을 `fullops plan set <KEY> "보류(<사유>)"`로 둔다. 지우면 다시 생긴다.
+7. 역할 메모 `.fullops/guide/roles/<역할>.md`에 남길 것이 있거나 `fullops doctor`가 메모를 알리면 [memo.md](memo.md)를 읽는다.
 
 ## 병렬 진행
 
-방침은 `fullops.toml`의 `parallel`이고 `fullops status`의 첫머리와 spec의 `Parallel:`에 나온다. 정본은 `.fullops/guide/rules/delegation.md`다.
+방침은 `fullops.toml`의 `parallel`이고(기본 `read`) `fullops status`의 첫머리와 spec의 `Parallel:`에 나온다. 하위 에이전트나 하위 배정(`fullops dispatch <자기 KEY> --brief "<맡길 파일 묶음과 완료 조건>"`)을 쓸 때 정본 `.fullops/guide/rules/delegation.md`를 읽는다.
 
-| 방침 | 뜻 |
-|---|---|
-| `off` | 하위 에이전트와 하위 worker를 쓰지 않고 직접 처리한다 |
-| `read` | 읽기 전용 조사·리뷰에만 쓴다. 지시에 `Purpose: research` 또는 `Purpose: review`와 `read only`를 적는다 |
-| `on`(기본) | 서로 겹치지 않는 파일 묶음의 구현과 독립된 조사를 하위 에이전트로 동시에 진행한다. 한 번에 4개 이하로 시작한다 |
-| `ultra` | `on`에 더해 Claude Code에서 울트라코드가 켜져 있으면 조각이 많은 일을 Workflow로 조율한다. 켜져 있지 않으면 `Agent` 도구를 쓴다. 울트라코드는 사용자가 켠다(지시서나 spec에 키워드를 넣어 켜지 않는다). `fullops dispatch`가 새 터미널로 띄운 Claude Code worker는 울트라코드로 뜨고, 그 worker의 권한 모드가 auto나 bypass가 아니면 Workflow 실행마다 승인 창에서 멈춘다 |
-
-수단은 일의 모양으로 고른다.
-
-| 일의 모양 | 수단 | 결과를 받는 쪽 |
-|---|---|---|
-| 한 세션 안에서 끝나는 조사, 서로 겹치지 않는 파일 묶음의 구현 | 호스트의 하위 에이전트 도구(Claude Code `Agent`, Codex `spawn_agent`, grok `spawn_subagent`, agy `invoke_subagent`) | 부모 세션 |
-| 같은 모양인데 조각이 많거나 서로 검증해야 하는 일. Claude Code이고 울트라코드가 켜져 있을 때만 | Workflow | 부모 세션 |
-| 다른 모델·호스트가 맡아야 하는 부분, 하위 에이전트 도구를 쓸 수 없는 세션의 부분 작업 | 하위 배정: `fullops dispatch <자기 KEY> --brief "<맡길 파일 묶음과 완료 조건>"` | 부모 세션(자기 Run의 `worker_done`) |
-| 서로 다른 워크트리가 필요한 독립 과제 | lead의 역할 단위 배정(`fullops-orca`) | lead |
-
-- 묶음마다 맡는 파일과 완료 조건을 적어 준다. 파일 묶음은 겹치지 않게 나눈다.
-- 호스트의 워크트리 격리는 쓰지 않는다. 격리된 사본의 변경은 이 워크트리에 없어서 lint와 `fullops done`에 잡히지 않는다.
-- 결과는 부모가 직접 확인해 이 워크트리에서 커밋하고 lint를 통과시킨다. 완료 보고는 부모 하나가 한다.
-- 리뷰와 테스트를 하위 에이전트로 더 돌리지 않는다. 독립 리뷰는 리뷰 판정이 요구할 때 lead가 한 번 배정하고, 테스트 범위는 테스트 레벨이 정한다.
-- 나눌 수 없는 일은 직접 한다.
-
-### 하위 배정 절차(worker)
-
-1. 배정받은 worker가 `fullops dispatch <자기 KEY> --brief "<맡길 파일 묶음과 완료 조건>"`을 실행한다. 다른 모델이 맡아야 하면 `--agent <CLI> --model <모델> --effort <effort>`를 함께 준다. 하위 worker는 같은 워크트리에서 뜨고 인박스와 준비 커밋을 만들지 않는다. 다른 키, `--brief` 없는 호출, 하위 worker의 재배정은 거절된다.
-2. 부모는 턴을 끝낸다. 하위 worker가 남아 있는 동안에는 커밋·lint·`fullops done` 없이 턴을 끝낼 수 있다. Orca가 깨우면 `fullops wait --run <자기 Run>`으로 보고를 받는다.
-3. 부모가 하위 worker의 변경을 확인해 커밋하고 `fullops wait --run <자기 Run> --ack <메시지 ID> --no-wait`로 처리 표시를 한다.
-4. 그다음 부모가 lint를 통과시키고 `fullops done`을 한다. 하위 worker가 남았거나 받지 않은 보고가 있으면 `fullops done`이 거절한다.
-5. 하위 worker는 맡은 파일만 고치고 커밋·lint·`fullops done`을 하지 않는다. 끝나면 바꾼 파일 목록과 확인한 것을 본문에 적어 preamble의 `worker_done`을 한 번 보낸다.
-6. 다른 역할이나 다른 과제의 일은 하위 배정이 아니라 `fullops done --followup "<역할>: <글>"`로 lead에게 넘긴다.
+- 나눌 수 없는 일과 방침이 허용하지 않는 일은 직접 한다.
+- 호스트의 워크트리 격리는 쓰지 않는다. 결과는 부모가 직접 확인해 이 워크트리에서 커밋하고 lint를 통과시킨다. 완료 보고는 부모 하나가 한다.
+- 리뷰와 테스트를 하위 에이전트로 더 돌리지 않는다. 검증만 맡는 하위 에이전트도 띄우지 않는다. 등록된 명령은 `fullops lint`가 실행하고 증명 방법은 worker가 직접 실행한다.

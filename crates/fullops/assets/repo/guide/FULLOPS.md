@@ -3,15 +3,16 @@
 현재 레포 루트의 `.fullops/fullops.toml`이 있을 때만 이 규약을 적용한다.
 규약은 한국어로 관리하고 식별자·코드베이스의 기존 언어 규칙은 유지한다.
 문서를 새로 쓰거나 수정할 때는 [문서 작성 규칙](agents/document-writing.md)을 읽고 front matter와 한국어 STE 작성 원칙을 적용한다. 검토자는 같은 규칙으로 문서를 확인한다.
+세션을 시작하면 `fullops status`만 실행한다. 아래 표의 문서는 미리 읽지 않고 그 작업을 할 때 연다(근거: 단일 에이전트 루프의 점진적 공개). 지켜야 할 조건은 hook·lint·리뷰 판정이 코드로 검사한다.
 
-| 작업 | 먼저 읽을 문서 (`.fullops/` 기준) |
+| 작업 | 그 작업을 할 때 읽을 문서 (`.fullops/` 기준) |
 |---|---|
 | 공통 코딩·테스트·보안 기준과 우선순위 | [guide/rules/common/README.md](rules/common/README.md) 및 연결된 세 규칙 |
 | 기술 기준·검증 명령·주요 흐름·자주 틀리는 것·문서 정본 | `guide/project.md` |
 | 역할·책임·모델 후보 | `fullops.toml`의 `[roles]`·`[models]` · `fullops-orca` 스킬 |
 | 병렬 진행(하위 에이전트·하위 배정)과 결과 취합 | [guide/rules/delegation.md](rules/delegation.md) |
 | FullOps update 요청과 릴리스별 레포 적용 | `update-fullops` 스킬 |
-| 현재 할 일·우선순위 | `PLANS.md` |
+| 현재 할 일·우선순위 | `fullops status`의 준비된 행 · `fullops plan ready`. 행을 고칠 때만 `PLANS.md` |
 | 세션을 시작할 때의 역할·현재 인박스·병렬 방침·lead의 할 일 | `fullops status` |
 | 역할별 작업 명세와 완료 처리 | `inbox/to_<역할>.md`(틀은 `templates/handover.md`) · `fullops-work` 스킬 |
 | 끝난 과제의 기록(분류·지시서와 완료 보고·리뷰·QA) | `tasks/<KEY>/` |
@@ -30,7 +31,7 @@
 라이브러리·SDK·프레임워크의 API나 설정을 확인할 때는 프로젝트 버전을 기준으로 Context7의 `resolve-library-id` → `query-docs`를 사용한다. 확인한 library ID·버전·출처·필요한 API 근거를 지시서에 남기고 같은 근거는 재사용한다. 버전 변경·근거 부족 시 다시 조회하며, 미지원·연결 실패 시 공식 문서로 확인한다. 비공개 코드·비밀값을 조회문에 포함하지 않는다.
 실질적 개발 작업은 역할별 `inbox/to_<역할>.md`에 과제 키·목적·범위·완료 기준·산출물·복귀 주소를 남긴다. 다음 과제의 대기와 완료 로그 보존은 `fullops-work`의 `역할 인박스 규칙`을 따른다. 과제명 파일은 현재 dispatch 지시서로 사용하지 않는다.
 이미 허가된 작업은 다시 승인받지 않는다. 미승인 외부 발송·배포 등은 실행 직전에 별도로 확인한다.
-작업자와 검토자는 `guide/rules/common/README.md` 및 연결된 세 규칙을 읽고 `guide/project.md`의 정본과 함께 적용한다. 지시서에 규칙 식별자·프로젝트 문서 경로·기준 커밋 또는 스냅샷·예외를 기록하고 worker와 검토자가 같은 버전을 읽는지 확인한다.
+코드를 바꾸거나 검토할 때 `guide/rules/common/README.md` 및 연결된 세 규칙을 읽고 `guide/project.md`의 정본과 함께 적용한다. 지시서에 규칙 식별자·프로젝트 문서 경로·기준 커밋 또는 스냅샷·예외를 기록하고 worker와 검토자가 같은 버전을 읽는지 확인한다.
 프로젝트 보안·아키텍처·테스트 기준이 외부 스킬보다 우선하며, 충돌은 지시서에 기록한다. 공통 기본값으로 기존 기준을 낮추지 않고 보안·권한·미해결 critical/high 차단을 임의 완화하지 않는다.
 ponytail full을 적용하되 검증·산출물·핸드오버 기록은 생략하지 않는다.
 하네스 플러그인 캐시는 읽기 전용 자원으로 취급한다. 개발 산출물은 이 레포에 Git으로 관리한다.

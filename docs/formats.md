@@ -91,7 +91,7 @@
 | `routing` | `"legacy"` \| `"split"` | 필수 | |
 | `tech_plan_role` | `RoleId` | split에서 필수 | 등록 역할이고 design 역할과 달라야 한다 |
 | `test_level` | `"minimal"` \| `"lite"` \| `"standard"` \| `"full"` \| `"exhaustive"` | 필수 | 뒤로 갈수록 높다. 새 레포의 기본값은 `lite` |
-| `parallel` | `"off"` \| `"read"` \| `"on"` \| `"ultra"` | 필수 | 병렬 방침. 새 레포의 기본값은 `on`. 1.24.0의 `subagent_level`은 받지 않는다(`migrate`가 옮긴다) |
+| `parallel` | `"off"` \| `"read"` \| `"on"` \| `"ultra"` | 필수 | 병렬 방침. 새 레포의 기본값은 `read`(`on`은 사람이 고른다). 1.24.0의 `subagent_level`은 받지 않는다(`migrate`가 옮긴다) |
 | `[git] base` | 글 | 필수 | 기본 브랜치 |
 | `[git] remote` | 글 | 선택 | 없으면 로컬 전용이다. 원격 이름의 꼴만 받는다(영문·숫자로 시작, 영문·숫자·`._-/`, `..`·`//`·끝 `/` 금지. URL·경로·빈 문자열은 오류). 쓸 때는 이 레포에 등록된 원격이어야 한다(설계 9.1절) |
 | `[roles.<RoleId>] branch` | 글 | 필수 | 역할마다 고유하다 |

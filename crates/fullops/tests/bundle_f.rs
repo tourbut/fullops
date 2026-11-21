@@ -1005,7 +1005,17 @@ fn skill_docs_name_real_commands_and_skills() {
         .collect();
     assert_eq!(docs.len(), 8);
     docs.push(repo_root().join("plugin/INSTALL.md"));
-    for doc in docs {
+    // 스킬의 참조 파일(점진적 공개)도 같은 명령·옵션 검사를 받는다. 실행본 경로 표기는 본문에만 요구한다
+    let references: Vec<PathBuf> = all_files(&skills_dir)
+        .into_iter()
+        .filter(|f| {
+            f.ends_with(".md") && !f.ends_with("SKILL.md") && !f.starts_with("fullops-motion/")
+        })
+        .map(|f| skills_dir.join(f))
+        .collect();
+    assert!(references.len() >= 5, "{references:?}");
+    for doc in docs.into_iter().chain(references) {
+        let is_reference = !doc.ends_with("SKILL.md") && !doc.ends_with("INSTALL.md");
         let text = std::fs::read_to_string(&doc).unwrap();
         let name = doc.display();
         for banned in [
@@ -1057,18 +1067,27 @@ fn skill_docs_name_real_commands_and_skills() {
             assert!(text.contains(r"<플러그인 폴더>\bin\fullops.exe"), "{name}");
         }
         assert!(
-            text.contains(r"%USERPROFILE%\.fullops\bin\fullops.exe"),
+            is_reference || text.contains(r"%USERPROFILE%\.fullops\bin\fullops.exe"),
             "{name}: Windows의 고정 위치 실행본 경로가 없다"
         );
     }
 }
 
 /// `fullops-orca`가 worker 질문에 답하는 길, 설계 완료 뒤의 배정, 환경 파일 연결을 말한다(1.24.0 스킬의 절).
+/// 본문이나 본문이 가리키는 참조 파일 어딘가에 있으면 된다(점진적 공개).
 /// Orca 명령은 계약 문서(`docs/contracts/orca.md`)에 있는 꼴 그대로다.
 #[test]
 fn orca_skill_tells_how_to_answer_questions_and_continue_after_design() {
     let read = |path: &str| std::fs::read_to_string(repo_root().join(path)).unwrap();
-    let skill = read("plugin/skills/fullops-orca/SKILL.md");
+    let core = read("plugin/skills/fullops-orca/SKILL.md");
+    let mut skill = core.clone();
+    for reference in ["questions.md", "recovery.md", "models.md"] {
+        assert!(
+            core.contains(&format!("]({reference})")),
+            "본문이 {reference}를 가리키지 않는다"
+        );
+        skill.push_str(&read(&format!("plugin/skills/fullops-orca/{reference}")));
+    }
     let reply = "orca orchestration reply --id <질문 메시지 ID> --body \"<답>\"";
     assert!(skill.contains(reply));
     assert!(read("docs/contracts/orca.md").contains("orchestration reply --id <msg_id> --body"));
@@ -1141,7 +1160,7 @@ fn n3_migrate_round_trip() {
             assert_eq!(config["schema"].as_integer(), Some(2));
             assert_eq!(config["mode"].as_str(), Some("coor"));
             assert_eq!(config["test_level"].as_str(), Some("lite"));
-            assert_eq!(config["parallel"].as_str(), Some("on"));
+            assert_eq!(config["parallel"].as_str(), Some("read"));
             assert_eq!(config["routing"].as_str(), Some("legacy"));
             assert_eq!(config["git"]["remote"].as_str(), Some("origin"));
             assert_eq!(
@@ -1157,8 +1176,8 @@ fn n3_migrate_round_trip() {
             assert_eq!(config["review"]["always"][0].as_str(), Some("db/**"));
             // 보고서: 옮긴 값, 읽지 못한 줄, 사람이 고친 delegation.md
             for line in [
-                "subagent_level lite → parallel = \"on\"",
-                "읽기 전용만 허용하려면 `read`, 끄려면 `off`로 고친다",
+                "subagent_level lite → parallel = \"read\"",
+                "구현까지 하위 에이전트로 나누려면 사람이 `on`으로, 끄려면 `off`로 고친다",
                 "읽지 못한 표식 줄: - 형식이 다른 줄",
                 "병렬 방침(8.15절)에 맞게 고친다",
                 "열린 결정 1건, 보류 1건",
@@ -1236,14 +1255,14 @@ fn n3_migrate_round_trip() {
     assert!(lead.join(".git/fullops/state.json").is_file());
 }
 
-/// R8: `subagent_level`을 `parallel`로 옮긴다. 값이 없던 레포도 `on`이 되고 보고서가 그 사실을 낸다.
+/// R8: `subagent_level`을 `parallel`로 옮긴다. 기본값 lite와 값이 없던 레포는 `read`, 사람이 올린 값만 `on`이 되고 보고서가 그 사실을 낸다.
 #[test]
 fn r8_migrate_moves_subagent_level_to_parallel() {
     for (name, parallel) in [
         ("off", "off"),
-        ("lite", "on"),
+        ("lite", "read"),
         ("full", "on"),
-        ("missing", "on"),
+        ("missing", "read"),
     ] {
         let (driver, results) = play(&format!("r8-{name}"));
         let config = toml_of(&driver.sb.path("lead").join(".fullops/fullops.toml"));
@@ -1253,6 +1272,9 @@ fn r8_migrate_moves_subagent_level_to_parallel() {
         assert_eq!(off_notice, name == "missing", "{name}: {report}");
         if parallel == "on" {
             assert!(report.contains("읽기 전용만 허용하려면 `read`, 끄려면 `off`로 고친다"));
+        }
+        if parallel == "read" {
+            assert!(report.contains("구현까지 하위 에이전트로 나누려면 사람이 `on`으로"));
         }
     }
 }
@@ -1698,7 +1720,7 @@ fn init_mode_and_upgrade() {
     let made = sb.cli(&repo, &init);
     assert_eq!(made.code, Some(0), "{}", made.stderr);
     let config = toml_of(&squad.join("fullops.toml"));
-    assert_eq!(config["parallel"].as_str(), Some("on"));
+    assert_eq!(config["parallel"].as_str(), Some("read"));
     assert_eq!(config["test_level"].as_str(), Some("lite"));
     assert_eq!(config["mode"].as_str(), Some("coor"));
     assert_eq!(config["roles"]["designer"]["kind"].as_str(), Some("design"));

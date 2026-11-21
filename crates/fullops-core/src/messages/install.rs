@@ -63,10 +63,13 @@ pub const ULTRA_NOTES: [&str; 2] = [
 ];
 
 /// `migrate`가 `subagent_level`이 없던 레포를 옮길 때(설계 13.2절, H12).
-pub const PARALLEL_WAS_OFF: &str = "subagent_level이 없어 parallel = \"on\"으로 옮겼다. 1.24.0에서는 하위 위임이 꺼져 있었다. 그대로 두려면 `parallel = \"off\"`로 고친다.";
+pub const PARALLEL_WAS_OFF: &str = "subagent_level이 없어 parallel = \"read\"로 옮겼다. 1.24.0에서는 하위 위임이 꺼져 있었다. 그대로 두려면 `parallel = \"off\"`로 고친다.";
 
 /// `migrate`가 `parallel`을 `on`으로 옮겼을 때 덧붙이는 문장.
 pub const PARALLEL_HOW_TO_LIMIT: &str = "읽기 전용만 허용하려면 `read`, 끄려면 `off`로 고친다.";
+
+/// `migrate`가 `parallel`을 `read`로 옮겼을 때 덧붙이는 문장.
+pub const PARALLEL_HOW_TO_RAISE: &str = "구현까지 하위 에이전트로 나누려면 사람이 `on`으로, 끄려면 `off`로 고친다.";
 
 /// `init`·`migrate`가 관리 블록의 시작·끝 표식이 한 쌍이 아닌 엔트리 문서를 만났을 때. 뒤에 문서 이름이 온다.
 pub const BLOCK_BROKEN: &str = "관리 블록의 시작·끝 표식이 한 쌍이 아니라 고치지 않은 것(표식을 한 쌍으로 고친 뒤 다시 실행한다)";
