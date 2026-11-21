@@ -7,6 +7,7 @@
 | `scenarios/drivers/py_driver.py` | 시나리오의 동사를 1.24.0의 hook 명령과 스크립트 호출로 옮겨 돌린다(`py` 구동기). 동사 대응은 파일 첫머리에 있다 | stdout의 JSON |
 | `cargo xtask compare` | 같은 시나리오를 `py`·`rs` 두 구동기로 돌려 판정 종류와 흐름을 견준다. 12.2절의 ID 가운데 시나리오 파일이 없는 것과 남은 `pending`도 센다 | `scenarios/report.md` |
 | `cargo xtask bench` | hook 대표 입력 13개와 명령 2개의 p50·p95·최대, git·Orca 프로세스 수, 상태 파일 쓰기 수를 잰다 | stdout의 Markdown 표 |
+| `cargo xtask baseline` | 역할을 접는 작업 앞뒤에만 고정 케이스 10개를 rs 구동기로 돌리고 스킬 핵심 본문의 명령 문구를 본다. 모델을 부르지 않는다(`docs/decisions/single-agent-loop.md`) | stdout의 Markdown 표, `--out`의 TSV, `--against`의 뒤집힌 케이스 |
 
 ## 1. 준비
 
