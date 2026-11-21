@@ -146,8 +146,7 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             .map(|k| format!("{k}({})", goal(k)))
             .collect();
         if !ready.is_empty() {
-            let together =
-                config.is_some_and(|c| c.parallel != Parallel::Off);
+            let together = config.is_some_and(|c| c.parallel != Parallel::Off);
             out.push(format!(
                 "준비된 행: {}. 계속할지 묻지 않고 배정한다.{}",
                 ready.join(", "),
