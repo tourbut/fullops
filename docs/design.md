@@ -462,7 +462,7 @@ parallel: on
 | `py-backup/` | 디렉터리 | `migrate` | 전환 기록 |
 | `explore/<KEY>-find.json`, `<KEY>-documents-find.json`, `<KEY>-context.json` | JSON (6.1.5절) | `find`, `context` | 탐색 결과. 추천 기록이다. 덮어쓸 때까지 남는다. 2.1.0에서 커밋되는 `docs/evaluations/jev/`에서 옮겼다(파일이 크고 worker는 자기 워크트리에서 같은 파일을 본다) |
 | `explore/history/` | JSON | `find`·`context`의 `--force` | 덮어쓰기 전 사본. 읽는 곳이 없다 |
-| `usage/<YYYY-MM-DD>.jsonl` | JSONL, 추가만 | hook, CLI, `lint` | 날짜(UTC)마다 한 파일. 하루 1MB, 60일까지(6.2.4절). `gc`와 snapshot 정리는 지우지 않는다 |
+| `usage/<YYYY-MM-DD>.jsonl` | JSONL, 추가만 | hook, CLI, `lint` | 날짜(UTC)마다 한 파일. 하루 1MB, 날 파일 60개까지(6.2.4절. 쓰지 않은 날은 세지 않는다). `gc`와 snapshot 정리는 지우지 않는다 |
 
 #### 6.2.1 `state.json`
 

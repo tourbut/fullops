@@ -1066,3 +1066,11 @@ PR #52·#53·#54를 묶은 판. 근거는 `docs/decisions/single-agent-loop.md`�
 - 템플릿: `handover.md`에서 verifier 하위 에이전트를 뺐고, `FULLOPS.md`는 세션 시작 때 `fullops status`만 실행한다. `init`은 있는 파일을 덮어쓰지 않으므로 기존 레포는 릴리스 노트를 보고 옮긴다. 필수 적용 검사는 더하지 않았다.
 - 메모 위생(6.1.6절): `doctor`의 `메모` 행, `merge` M-08의 `MEMO-TIDY` 정리 과제 행, `task new`·`reopen`의 메모 경로(8.4절). `plan compact`(이슈 #51 방향 B)는 하지 않았다.
 - 스킬: `fullops-orca`·`fullops-work`를 핵심 본문과 참조 파일로 나눴다. `cargo xtask baseline`(고정 케이스 10개, 모델 호출 없음)이 나누기 전후의 필수 문구를 본다.
+
+## 16. 2.3.1: 사용량 기록, X-01 문구, Release 자동 생성 (2026-11-22)
+
+PR #64·#65를 묶은 판.
+
+- 사용량 기록(6.2.4절): hook·CLI·`lint`가 `usage/<UTC 날짜>.jsonl`에 호출마다 한 줄을 더한다. 원문은 쓰지 않고, 하루 1MB·날 파일 60개가 상한이다. `doctor`에 `사용량 기록` 줄을 더했다. 2026-11-22 사용량 감사에서 0회 항목을 데이터로 판단할 수 없어 넣었다. 정리 기준은 달력 날짜가 아니라 날 파일 수다(6.2 표 문구를 맞췄다).
+- X-01(이슈 #57): BlockAlways일 때 안내 끝의 탈출구 문구를 고쳤다(7.5절 표). 판정은 그대로다. `delegation.md` 템플릿의 `on` 행에 쓰기 하위 에이전트를 기다리라는 문장을 더했다.
+- 릴리스: `release.yml`이 릴리스 PR 머지 뒤 머지 커밋에 태그와 GitHub Release를 만든다(`docs/build.md`).
