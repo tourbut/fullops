@@ -176,7 +176,10 @@ fn evaluate(input: &HookInput, facts: &mut dyn Facts, trace: &mut Vec<RuleTrace>
             continue;
         }
         let (fp, args, case, always) = match (rule.check)(input, facts) {
-            Finding::None => continue,
+            Finding::None => {
+                trace.push(mark(rule.id, "pass", ""));
+                continue;
+            }
             Finding::Unknown => {
                 trace.push(mark(rule.id, "unknown", ""));
                 continue;

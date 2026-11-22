@@ -19,7 +19,7 @@ use std::path::Path;
 use std::time::Duration;
 
 /// 에폭 초의 UTC 날짜(`YYYY-MM-DD`). 날짜 라이브러리를 쓰지 않는다(설계 10.1절).
-pub(super) fn date_of(epoch: i64) -> String {
+pub(crate) fn date_of(epoch: i64) -> String {
     let days = epoch.div_euclid(86_400) + 719_468;
     let era = days.div_euclid(146_097);
     let doe = days.rem_euclid(146_097);

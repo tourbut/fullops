@@ -153,3 +153,4 @@ pub(crate) use decision::{Ask, floor as decision_floor, open as open_decision};
 pub use install::{platform_binary, runtime_stage};
 /// 유효한 `accepted.json`(설계 8.9절). X-02의 리뷰 증거가 `review check`·`merge`와 같은 판정을 쓴다.
 pub use review::accepted;
+pub(crate) use task::date_of;

@@ -270,7 +270,7 @@ pub enum Effect {
     RecordCards(Vec<(Card, Option<TaskKey>)>),
 }
 
-/// `decide`의 결과. `trace`는 추적 줄의 `rules`가 된다.
+/// `decide`의 결과. `trace`는 평가한 규칙마다 한 줄이다. `pass`를 뺀 것이 추적 줄의 `rules`가 된다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
     pub verdict: Verdict,

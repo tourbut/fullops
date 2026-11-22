@@ -29,7 +29,7 @@
 |---|---|---|
 | G1 | 1.24.0과 같은 상황에서 같은 판정(통과·안내·경고·거부·차단)을 내고, 흐름이 사람 없이 같거나 더 멀리 이어진다 | 12절 비교 |
 | G2 | hook 오류·시간 초과·잠금 실패·Orca 장애가 작업을 막지 않는다 | 장애 주입 시나리오 |
-| G3 | 무관한 도구 호출은 git·Orca 프로세스 0개, 파일 쓰기 0회로 끝난다. 예외는 둘이다: 세션에서 그 이벤트의 첫 호출이 남기는 실행 표식 하나, 프롬프트 이벤트가 없는 호스트(agy)에서 사용자 입력이 바뀐 뒤 첫 호출이 쓰는 세션 파일 한 번(7.5절 "프롬프트 이벤트가 없는 호스트") | `cargo xtask bench`의 프로세스 수 |
+| G3 | 무관한 도구 호출은 git·Orca 프로세스 0개, 파일 쓰기 0회로 끝난다. 예외는 셋이다: 세션에서 그 이벤트의 첫 호출이 남기는 실행 표식 하나, 프롬프트 이벤트가 없는 호스트(agy)에서 사용자 입력이 바뀐 뒤 첫 호출이 쓰는 세션 파일 한 번(7.5절 "프롬프트 이벤트가 없는 호스트"), 사용량 기록 한 줄(6.2.4절. 읽지 않고 `O_APPEND` 한 번) | `cargo xtask bench`의 프로세스 수 |
 | G4 | hook과 흐름 명령이 실행 중 Python·Node를 쓰지 않는다. 예외는 둘이다: `fullops install`의 사용자 스킬 설치 단계가 부르는 `npx`, 그리고 `fullops-motion` 스킬의 `render.mjs`(영상을 렌더할 때 사람이나 에이전트가 `node`로 직접 실행한다. hook과 CLI는 부르지 않는다)(14절) | 배포본의 `.py`·`.js`·`.cjs`·`.mjs`가 `skills/fullops-motion/render.mjs` 하나뿐이다(Orca 패널 제외). `xtask dist`가 검사한다 |
 | G5 | 어떤 차단이든 규칙 ID와 탈출구가 문구에 있고, 사후에 `fullops why`로 확인할 수 있다 | 시나리오 단언 |
 | G6 | jevpet 전환이 명령 하나, 되돌리기가 명령 하나다 | 이행 왕복 시나리오 |
@@ -41,7 +41,7 @@ Windows 11, 릴리스 빌드, p95 기준이다. 수치는 측정 전 목표이�
 | 경로 | 목표 | 1.24.0 기준선(1.17.0 실측, 한 PC) |
 |---|---|---|
 | 비활성 레포의 모든 이벤트 | 15ms | - |
-| PreToolUse, 규칙 후보가 없는 호출 | 30ms, git 0·Orca 0·쓰기 0 | 약 500ms (Pre) + 약 500ms (Post) |
+| PreToolUse, 규칙 후보가 없는 호출 | 30ms, git 0·Orca 0·쓰기 0(사용량 한 줄 추가는 뺀다) | 약 500ms (Pre) + 약 500ms (Post) |
 | PreToolUse, 규칙을 평가하는 호출 | 80ms, git 1 이하 | 약 500ms |
 | Stop, lead, 통합 대기 0건 | 150ms, git 6 이하·Orca 0 | 약 730ms (프로세스 2개) |
 | Stop, dispatch 받은 세션, 미정산 | Orca 응답 시간 + 100ms | - |
@@ -462,6 +462,7 @@ parallel: on
 | `py-backup/` | 디렉터리 | `migrate` | 전환 기록 |
 | `explore/<KEY>-find.json`, `<KEY>-documents-find.json`, `<KEY>-context.json` | JSON (6.1.5절) | `find`, `context` | 탐색 결과. 추천 기록이다. 덮어쓸 때까지 남는다. 2.1.0에서 커밋되는 `docs/evaluations/jev/`에서 옮겼다(파일이 크고 worker는 자기 워크트리에서 같은 파일을 본다) |
 | `explore/history/` | JSON | `find`·`context`의 `--force` | 덮어쓰기 전 사본. 읽는 곳이 없다 |
+| `usage/<YYYY-MM-DD>.jsonl` | JSONL, 추가만 | hook, CLI, `lint` | 날짜(UTC)마다 한 파일. 하루 1MB, 60일까지(6.2.4절). `gc`와 snapshot 정리는 지우지 않는다 |
 
 #### 6.2.1 `state.json`
 
@@ -558,6 +559,58 @@ token, 이슈 본문, 댓글, 프롬프트는 넣지 않는다. 필드는 두 �
 - `pending`: `direct == false`, `outcome == succeeded`, `landed_at == null`인 completion 전부다. 보류된 건도 넣고 `hold_reason`으로 구분한다. `id`는 그 completion의 ID(`completions[].id`. 보고 메시지의 ID)다. 유도값 `landing`을 이 값으로 잇고(SHA가 `null`인 건도 이어진다) `Derived.landing`의 키도 이 값이다. `landing`은 `merge_left`·`push_left`·`null`(아직 계산하지 않았다)이다.
 - 유도값을 넘기는 쪽. `ready`: lead 문맥(lead의 hook이나 lead가 실행한 CLI)이 lead 체크아웃에서 계산해 넘긴다. `landing`: 그 값을 계산한 호출(X-06의 효과, `status`, `settle`, `merge`)이 넘긴다. `metrics`: `fullops status`와 `merge`(M-13)가 `turns.jsonl`·`archive.jsonl`을 잠금 밖에서 읽어 계산해 넘기고 `metrics.at`에 계산한 시각을 쓴다. hook은 `metrics`를 계산하지 않는다. 이유: 두 파일은 영구히 자라므로 잠금 안과 lead의 Stop(2.2절의 150ms)에서 통째로 읽지 않는다.
 - `status.json` 교체가 실패해도 `update_state`는 성공을 돌려준다(유도 파일이다). 같은 잠금 안에서 쓰므로 오래된 요약이 새 요약을 덮지 않는다.
+
+#### 6.2.4 `usage/<YYYY-MM-DD>.jsonl` (사용량)
+
+규칙·명령·lint 규칙을 남길지 지울지 정할 때 쓰는 호출 기록이다(2026-11-22 사용량 감사의 3절). 어떤 규칙의 조건으로도 쓰지 않는다.
+
+- 쓰는 법: hook·CLI·`lint`가 호출 하나마다 한 줄을 `O_APPEND`로 `write` 한 번에 더한다. 잠그지 않고 읽지 않는다. 쓰기 실패는 버린다(fail-open. 판정과 종료 코드가 바뀌지 않는다). hook은 판정을 낸 뒤에 쓴다.
+- 자리: 공용 디렉터리라 리뷰 snapshot 워크트리를 지워도, 세션 파일·추적을 14일 뒤 지워도 남는다. 날짜는 UTC다.
+- 크기: 파일이 1MB를 넘으면 그날 남은 줄은 버린다. 새 날 파일을 만들 때 날 파일이 60개 이상이면 오래된 것부터 지운다. 줄 하나는 대개 60~300바이트다.
+- 원문은 쓰지 않는다: 명령 문자열, 경로, 프롬프트, 인자 값, 판정 문구, 지문(`fp`), 세션 ID, lint 메시지. 규칙 ID, 판정, 명령 이름, 종료 코드, 개수만 쓴다.
+
+줄은 세 가지다. `t`는 에폭 초다.
+
+```json
+{"hook":"PreToolUse","host":"claude","v":"pass","t":1795000000}
+{"hook":"Stop","host":"claude","v":"block","rules":["X-00:pass","X-01:block","X-02:pass","X-03:pass"],"t":1795000000}
+{"hook":"PreToolUse","host":"claude","err":"timeout","t":1795000000}
+{"cli":"review","sub":"check","exit":0,"t":1795000000}
+{"lint":{"SIZE-001":2,"SEC-001":1},"cmds":{"passed":2,"failed":1},"passed":false,"t":1795000000}
+```
+
+- `hook`: 이벤트. `v`: 호스트에 낸 판정(`pass`·`context`·`warn`·`deny`·`block`). `err`: 판정 전에 끝난 호출(7.8절의 `timeout`·`panic`·`json` 등)이면 `v` 없이 오류 종류, 효과 쓰기가 실패했으면(`lock_busy`·`io` 등) `v`와 함께 그 종류.
+- `rules`: 평가한 규칙마다 `<ID>:<결과>`. 결과는 `pass`(평가했고 걸리지 않음), `effect`(조용히 처리한 효과 규칙), `context`, `warn`(한 번 막기를 이미 막은 뒤의 경고), `deny`, `block`, `unknown`(사실을 몰라 건너뜀)이다. 대상(7.5절 표의 "대상" 칸)이 아닌 호출자에게는 평가하지 않으므로 그 ID가 없다. `deny`가 나면 뒤 규칙은 평가하지 않는다. X-07은 앞 규칙이 막거나 경고하면 평가하지 않는다. agy처럼 프롬프트 이벤트가 없는 호스트에서는 P 규칙이 다른 이벤트 줄에 함께 실린다.
+- `rules`가 없는 `hook` 줄: 규칙을 평가하지 않은 호출이다. 대부분은 규칙 후보가 없는 PreToolUse(7.4절 끝)이고, 그 밖에는 정상 종료가 아닌 Stop이다.
+- 활성 레포를 찾지 못한 hook 호출(비활성 레포. S-06만 도는 새 세션)은 쓸 자리가 없어 남지 않는다.
+- `cli`: 8.2절 명령 이름(`resume`·`settle`·`completion`도 각자 이름이다). `sub`: 첫 인자가 알려진 하위 명령 낱말(`new`·`check`·`snapshot`·`answer`·`stamp` 등)일 때만 있다. `exit`: 종료 코드. 활성 레포를 찾은 호출만 남는다. `hook`·`help`·`--version`은 남지 않는다. `merge`가 띄운 `lint`도 따로 한 줄이다.
+- `lint`: 한 실행의 finding 코드별 개수(`[A-Z]+-숫자` 꼴이 아닌 레포 코드는 `OTHER`로 센다). `cmds`: 레포 명령의 상태별 수. `passed`: 통과. 거절로 끝난 실행(더러운 작업 트리, 리뷰 사본)은 `lint` 줄 없이 `cli` 줄만 남는다.
+
+읽는 법. 기간의 날 파일을 이어 읽어 센다. 사용량 감사의 재현 스크립트 `usage.py`(레포 밖 감사 보고서 폴더의 `scripts/`)도 같은 셈이다.
+
+```python
+import collections, glob, json, sys
+c = collections.Counter()
+for f in sorted(glob.glob(sys.argv[1] + '/fullops/usage/*.jsonl')):  # 인자: git rev-parse --git-common-dir
+    for line in open(f, encoding='utf-8'):
+        o = json.loads(line)
+        if 'hook' in o:
+            c['hook', o['hook'], o.get('v', 'err')] += 1
+            if 'rules' not in o and o['hook'] == 'PreToolUse' and 'v' in o:
+                c['PreToolUse 후보 없음'] += 1
+            for r in o.get('rules', []):
+                c[('rule',) + tuple(r.split(':'))] += 1
+        elif 'cli' in o:
+            c['cli', o['cli'], o.get('sub', ''), o['exit']] += 1
+        elif 'lint' in o:
+            c['lint 실행', o['passed']] += 1
+            for code, n in o['lint'].items():
+                c['lint', code] += n
+```
+
+- 규칙의 통과 수 = `<ID>:pass` 수. T 규칙은 여기에 "PreToolUse 후보 없음" 수를 더한다(후보가 없는 호출은 어느 T 규칙에도 걸릴 수 없다). 대상이 lead뿐인 규칙(T-03 등)은 이 더한 값이 lead 아닌 호출을 포함한다.
+- 효과 규칙(P-00·P-01·P-02·T-11·T-12·T-13·T-16·S-02~S-04·F-01)의 횟수 = `<ID>:effect` 수.
+- 한 hook 호출의 판정 수는 줄 수와 같다. 호스트별로는 `host`로 나눈다.
 
 ### 6.3 작업 트리별 Git 디렉터리 (`<git-dir>/fullops/`)
 
@@ -719,6 +772,7 @@ token, 이슈 본문, 댓글, 프롬프트는 넣지 않는다. 필드는 두 �
 - 하위 배정의 뒷정리: 부모 dispatch가 정산됐는데 `settled`가 없는 하위 dispatch는 `gc`가 `settled = { how: "lost" }`로 닫고, 그 부모가 소유한 Run(`owner == "dispatch:<부모 ID>"`)을 닫는다.
 - `state.json`의 닫힌 Run·정산된 dispatch·통합된 completion·닫힌 결정(30일 경과)·제거된 snapshot은 `fullops gc`와 `merge`가 `archive.jsonl`로 옮기거나 지운다. 결정은 `archive.jsonl`에 `{"decision":{…}}` 줄로 남긴다.
 - `turns.jsonl`·`archive.jsonl`은 지우지 않는다.
+- `usage/`: 날 파일이 60개 이상이면 새 날 파일을 만들 때 오래된 것부터 지운다. 하루 파일은 1MB에서 멈춘다. `gc`·snapshot 정리·세션 정리는 건드리지 않는다(6.2.4절).
 
 **구현 묶음이 정한 것**(2026-11-14. 건별 근거는 `docs/design-changes.md` 7절).
 
@@ -749,7 +803,7 @@ token, 이슈 본문, 댓글, 프롬프트는 넣지 않는다. 필드는 두 �
 6. Facts를 지연 계산으로 만들고 core::decide(input, facts)를 부른다.
 7. host::encode(verdict)를 stdout에 한 번에 쓴다.
 8. 효과를 남은 시간 안에서 실행한다. 실패는 추적에만 남긴다.
-9. 통과가 아니거나 오류가 있었으면 추적 한 줄을 쓴다. exit(0).
+9. 사용량 한 줄을 더한다(6.2.4절. 5번에서 끝난 호출도). 통과가 아니거나 오류가 있었으면 추적 한 줄을 쓴다. exit(0).
 전체를 catch_unwind로 감싼다. 어느 단계든 오류·panic이면 통과를 내고 추적에 err를 남긴다.
 ```
 
@@ -2714,6 +2768,7 @@ Claude Code 등록을 exec form으로 고른 이유는 셋이다. (1) Git Bash�
   | 레포 | `fullops.toml` 검증, `state.json` 읽기, Git 공용 디렉터리가 네트워크·동기화 폴더에 있는지, `.fullops/` 아래에 무시 목록에 있으면서 추적되는 파일이 있는지(`git ls-files -ci --exclude-standard -- .fullops`. 수와 앞의 다섯 개를 내고 `git rm --cached`를 안내한다), 옛 자리 레포인지(13.6절. 비활성 레포의 행에 안내를 낸다) | 오류와 알림 |
   | 메모 | 활성 레포에서 메모 위생 세 가지(6.1.6절) | 경고가 있다. 처음 10건과 나머지 건수, `merge`가 정리 과제 행을 더한다는 안내 |
   | hook 실행 | 최근 24시간 추적의 오류·시간 초과 수, 추적과 `seen` 표식이 없는 최근 세션 수 | 0이 아니다 |
+  | 사용량 기록 | 활성 레포에서 `usage/` 날 파일 수와 처음·마지막 날(6.2.4절) | 알리지 않는다(쌓이는지 보는 줄이다) |
   | 폐쇄망 | `FULLOPS_OFFLINE` 값 | 켜져 있으면 "Jev와 설치의 네트워크 단계를 건너뛴다" |
 
 **검증 뒤 수정에서 바뀐 것**(R5-5·R5-6).

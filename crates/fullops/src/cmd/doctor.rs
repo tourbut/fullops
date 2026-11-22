@@ -648,6 +648,30 @@ fn hook_row(report: &mut Report, dirs: &[PathBuf], sessions: &[(PathBuf, Value)]
     );
 }
 
+/// 사용량 기록(설계 6.2.4절)이 쌓이는지: 날 파일 수와 처음·마지막 날.
+fn usage_row(report: &mut Report, repo: &fullops_store::Repo) {
+    let dir = repo.shared().join("usage");
+    let mut days: Vec<String> = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            e.file_name()
+                .to_str()?
+                .strip_suffix(".jsonl")
+                .map(str::to_string)
+        })
+        .collect();
+    days.sort();
+    let detail = match (days.first(), days.last()) {
+        (Some(first), Some(last)) => {
+            format!("{}일({first}~{last}) {}", days.len(), path_text(&dir))
+        }
+        _ => format!("아직 없음 {}", path_text(&dir)),
+    };
+    report.item("사용량 기록", detail, Vec::new());
+}
+
 pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
     if let Some(arg) = parser.next()? {
         return Err(arg.unexpected().into());
@@ -680,6 +704,9 @@ pub fn run(ctx: &Ctx, mut parser: lexopt::Parser) -> Result<u8, CliError> {
     if active {
         memo_row(&mut report, ctx);
         hook_row(&mut report, &dirs, &sessions);
+    }
+    if let Ok(repo) = ctx.repo() {
+        usage_row(&mut report, repo);
     }
     let offline = install::offline();
     let note = if offline {

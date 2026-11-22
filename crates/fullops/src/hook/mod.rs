@@ -269,6 +269,14 @@ fn trace_error(kind: &str) {
     if let Some(run) = running.as_ref() {
         let line = trace_line(run.host, run.event, run.started, Some(kind));
         fullops_store::append_trace(&run.repo, &run.sid, &line);
+        crate::usage::hook(
+            &run.repo,
+            run.host,
+            run.event.as_str(),
+            None,
+            &[],
+            Some(kind),
+        );
     }
 }
 
@@ -455,6 +463,16 @@ fn handle(args: &HookArgs, started: Instant) -> Result<(), &'static str> {
     } = decide_in(&scene, &input, &mut facts);
     let trace_all = std::env::var("FULLOPS_TRACE").is_ok_and(|v| v == "1");
     if verdict == Verdict::Pass && effects.is_empty() && !facts.must_bind() && !trace_all {
+        // 통과를 먼저 내고 사용량만 남긴다
+        emit(args.host.pass(args.event.as_deref()));
+        crate::usage::hook(
+            &facts.repo,
+            host,
+            input.event.as_str(),
+            Some(&verdict),
+            &trace,
+            None,
+        );
         return Ok(());
     }
 
@@ -470,13 +488,22 @@ fn handle(args: &HookArgs, started: Instant) -> Result<(), &'static str> {
     };
     emit(&args.host.encode(input.event, &verdict));
     effects::after_output(&mut facts, &effects, &mut errors);
+    let err = errors.first().copied();
+    crate::usage::hook(
+        &facts.repo,
+        host,
+        input.event.as_str(),
+        Some(&verdict),
+        &trace,
+        err,
+    );
 
     if verdict != Verdict::Pass || !errors.is_empty() || trace_all {
         let (git, orca) = facts.calls();
         let line = TraceLine {
             actor: facts.actor_label(),
             intents: intent_names(&input, &scene),
-            rules: trace,
+            rules: trace.into_iter().filter(|r| r.verdict != "pass").collect(),
             git,
             orca,
             err: errors.first().map(|e| e.to_string()),
