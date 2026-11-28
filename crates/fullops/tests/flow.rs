@@ -200,13 +200,14 @@ fn dispatch_records_state_and_sends_the_spec() {
     );
     assert!(!spec.contains("ultracode") && !spec.contains("Read only"));
 
-    // 준비 커밋이 기본 브랜치·원격·대상 워크트리에 갔다
+    // 준비 커밋이 기본 브랜치·대상 워크트리에 갔다. 원격에는 올리지 않는다(push는 승인 뒤)
     let lead = sb.path("lead");
     assert_eq!(
         sb.git_ok(&lead, &["log", "-1", "--format=%s"]),
         "fullops: 배정 준비 A-1"
     );
-    assert_eq!(
+    assert_eq!(sb.git_ok(&lead, &["rev-parse", "main"]), head(sb, "lead"));
+    assert_ne!(
         sb.git_ok(&lead, &["rev-parse", "origin/main"]),
         head(sb, "lead")
     );
@@ -1646,10 +1647,10 @@ expect = {{ verdict = "pass" }}
             json!(sha)
         )
     );
-    assert_eq!(
+    assert_ne!(
         sb.git_ok(&lead, &["rev-parse", "origin/main"]),
         sha,
-        "주 담당의 브랜치로 push한다"
+        "기본 브랜치 위 직접 작업은 승인 전이라 push하지 않는다"
     );
     assert!(lead.join(".fullops/tasks/A-1/dev.r0.md").is_file());
     // 직접 작업은 통합 대기로 세지 않는다
@@ -1709,15 +1710,16 @@ fn dispatch_publishes_from_a_coordinator_branch_and_guards_the_baseline() {
     };
     sb.orca_rule(json!({"when": ["orchestration", "run-create"], "times": 1, "stdout": orca_shapes::run_created("run_1")}));
 
-    // coordinator 브랜치의 준비 커밋이 기본 브랜치 워크트리(ff)와 원격, 대상 워크트리로 간다
+    // coordinator 브랜치의 준비 커밋이 기본 브랜치 워크트리(ff)와 대상 워크트리로 간다. 원격에는 가지 않는다
     prepare("A-1", "dev", "claude");
     started(1);
+    let remote_before = sb.git_ok(&lead, &["rev-parse", "origin/main"]);
     let run = sb.cli(&coor, &["dispatch", "A-1"]);
     assert_eq!(run.code, Some(0), "{}", run.stderr);
     assert_eq!(head(&sb, "lead"), head(&sb, "coor"));
     assert_eq!(
         sb.git_ok(&lead, &["rev-parse", "origin/main"]),
-        head(&sb, "coor")
+        remote_before
     );
     assert!(sb.path("dev").join(".fullops/inbox/to_dev.md").is_file());
 
@@ -3865,7 +3867,7 @@ fn refused_dispatch_leaves_no_preparation_commit_or_run() {
     }
     std::fs::remove_file(dev.join("stray.txt")).unwrap();
     steps(&mut d, DISPATCH);
-    let log = d.sb.git_ok(&lead, &["log", "--format=%s", "origin/main"]);
+    let log = d.sb.git_ok(&lead, &["log", "--format=%s", "main"]);
     assert_eq!(log.matches("배정 준비").count(), 1, "{log}");
     assert_eq!(head(&d.sb, "dev"), head(&d.sb, "lead"));
     assert_eq!(calls(&d.sb, "run-create").len(), 1);
