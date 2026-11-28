@@ -281,9 +281,13 @@ pub fn run(ctx: &Ctx, mut args: lexopt::Parser) -> Result<u8, CliError> {
             .map(|r| r.branch.clone())
             .unwrap_or_default(),
     };
-    // R-07
+    // R-07. 기본 브랜치 위의 직접 작업은 리뷰·승인 전이라 원격에 올리지 않는다
     if let (Some(remote), None) = (&config.remote, &failed) {
-        git.push(remote, &format!("HEAD:refs/heads/{branch}"))?;
+        if branch == config.base {
+            ctx.note("기본 브랜치는 push하지 않았다. 승인 뒤 `fullops merge`나 사람이 올린다.");
+        } else {
+            git.push(remote, &format!("HEAD:refs/heads/{branch}"))?;
+        }
     }
     // R-08
     let reported = Reported {

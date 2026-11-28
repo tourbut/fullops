@@ -213,7 +213,7 @@ pub(super) fn round_logged(git: &GitCli, branch: &str, inbox: &Inbox) -> bool {
         .is_some()
 }
 
-/// 3단계 기록 게시(설계 8.5절): lead의 커밋을 기본 브랜치와 원격에 올린다. 이미 된 일은 건너뛴다.
+/// 3단계 기록 게시(설계 8.5절): lead의 커밋을 로컬 기본 브랜치에 올린다. 원격 push는 하지 않는다. 이미 된 일은 건너뛴다.
 /// `coming`은 준비 커밋이 곧 생긴다는 뜻이다(미리 맞추기): 올릴 것이 아직 없어도 올릴 자리의 조건을 본다.
 fn publish_records(
     repo: &Repo,
@@ -256,12 +256,7 @@ fn publish_records(
             None => git.update_ref(&base_ref, head, base_tip)?,
         }
     }
-    // 원격이 이미 담고 있으면 올릴 것이 없다. 원격이 앞서 있는 경우는 D-11이 알린다
-    if let Some(remote) = &config.remote
-        && git.is_ancestor(&base_ref, &config.base_ref()) != Known::Yes(true)
-    {
-        git.push(remote, &config.base)?;
-    }
+    // 원격에는 올리지 않는다: push는 승인 뒤(`fullops merge`의 M-09나 사람)다. worker는 같은 레포의 로컬 ref로 base를 받는다
     Ok(())
 }
 
